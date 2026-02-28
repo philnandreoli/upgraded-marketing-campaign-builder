@@ -1,0 +1,318 @@
+"""
+Tests for data models — CampaignBrief, Campaign, and status transitions.
+"""
+
+import pytest
+from pydantic import ValidationError
+
+from backend.models.campaign import (
+    Campaign,
+    CampaignBrief,
+    CampaignStatus,
+    CampaignStrategy,
+    CampaignContent,
+    ContentApprovalStatus,
+    ContentPiece,
+    ChannelPlan,
+    ChannelRecommendation,
+    ChannelType,
+    AnalyticsPlan,
+    KPI,
+    ReviewFeedback,
+    SocialMediaPlatform,
+    TargetAudience,
+)
+from backend.models.messages import (
+    AgentType, AgentTask, AgentResult, AgentMessage, MessageRole,
+    ContentPieceApproval, ContentApprovalResponse,
+)
+
+
+# ---- CampaignBrief ----
+
+class TestCampaignBrief:
+    def test_minimal_brief(self):
+        b = CampaignBrief(product_or_service="Widget", goal="Sell more")
+        assert b.product_or_service == "Widget"
+        assert b.budget is None
+        assert b.currency == "USD"
+
+    def test_full_brief(self):
+        b = CampaignBrief(
+            product_or_service="CloudSync",
+            goal="Growth",
+            budget=50000,
+            currency="EUR",
+            timeline="3 months",
+            additional_context="EMEA focus",
+        )
+        assert b.budget == 50000
+        assert b.currency == "EUR"
+
+    def test_missing_required_raises(self):
+        with pytest.raises(ValidationError):
+            CampaignBrief(product_or_service="X")  # missing goal
+
+    def test_selected_channels_default_empty(self):
+        b = CampaignBrief(product_or_service="Widget", goal="Sell more")
+        assert b.selected_channels == []
+
+    def test_selected_channels_valid(self):
+        b = CampaignBrief(
+            product_or_service="Widget",
+            goal="Sell more",
+            selected_channels=["email", "seo", "paid_ads"],
+        )
+        assert len(b.selected_channels) == 3
+        assert b.selected_channels[0] == ChannelType.EMAIL
+
+    def test_selected_channels_invalid_raises(self):
+        with pytest.raises(ValidationError):
+            CampaignBrief(
+                product_or_service="Widget",
+                goal="Sell more",
+                selected_channels=["invalid_channel"],
+            )
+
+    def test_social_media_platforms_default_empty(self):
+        b = CampaignBrief(product_or_service="Widget", goal="Sell more")
+        assert b.social_media_platforms == []
+
+    def test_social_media_platforms_valid(self):
+        b = CampaignBrief(
+            product_or_service="Widget",
+            goal="Sell more",
+            selected_channels=["social_media"],
+            social_media_platforms=["facebook", "x"],
+        )
+        assert len(b.social_media_platforms) == 2
+        assert b.social_media_platforms[0] == SocialMediaPlatform.FACEBOOK
+        assert b.social_media_platforms[1] == SocialMediaPlatform.X
+
+    def test_social_media_platforms_invalid_raises(self):
+        with pytest.raises(ValidationError):
+            CampaignBrief(
+                product_or_service="Widget",
+                goal="Sell more",
+                social_media_platforms=["tiktok"],
+            )
+
+
+# ---- Campaign ----
+
+class TestCampaign:
+    def test_defaults(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        assert c.status == CampaignStatus.DRAFT
+        assert c.id is not None
+        assert c.strategy is None
+        assert c.content is None
+
+    def test_advance_status(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        old_updated = c.updated_at
+        c.advance_status(CampaignStatus.STRATEGY)
+        assert c.status == CampaignStatus.STRATEGY
+        assert c.updated_at >= old_updated
+
+    def test_model_dump_roundtrip(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        data = c.model_dump(mode="json")
+        assert data["status"] == "draft"
+        assert data["brief"]["product_or_service"] == "X"
+        # Roundtrip
+        c2 = Campaign.model_validate(data)
+        assert c2.id == c.id
+
+
+# ---- Sub-models ----
+
+class TestSubModels:
+    def test_strategy(self):
+        s = CampaignStrategy(
+            objectives=["Increase revenue by 20%"],
+            value_proposition="Best cloud storage",
+            positioning="Enterprise-first",
+            key_messages=["Fast", "Secure"],
+        )
+        assert len(s.objectives) == 1
+        assert s.target_audience.demographics == ""
+
+    def test_content_piece(self):
+        cp = ContentPiece(
+            content_type="headline",
+            content="CloudSync — Your Data, Everywhere",
+        )
+        assert cp.variant == "A"
+        assert cp.channel == ""
+
+    def test_channel_recommendation(self):
+        cr = ChannelRecommendation(
+            channel=ChannelType.EMAIL,
+            rationale="High ROI",
+            budget_pct=25.0,
+        )
+        assert cr.channel == ChannelType.EMAIL
+
+    def test_kpi(self):
+        k = KPI(name="Conversion Rate", target_value="5%")
+        assert k.measurement_method == ""
+
+    def test_review_feedback_score_bounds(self):
+        # Valid score
+        r = ReviewFeedback(brand_consistency_score=7.5)
+        assert r.brand_consistency_score == 7.5
+
+        # Out of bounds
+        with pytest.raises(ValidationError):
+            ReviewFeedback(brand_consistency_score=11.0)
+
+        with pytest.raises(ValidationError):
+            ReviewFeedback(brand_consistency_score=-1.0)
+
+
+# ---- Messages ----
+
+class TestMessages:
+    def test_agent_task(self):
+        t = AgentTask(
+            task_id="t1",
+            agent_type=AgentType.STRATEGY,
+            campaign_id="c1",
+            instruction="Do strategy",
+        )
+        assert t.agent_type == AgentType.STRATEGY
+
+    def test_agent_result_success(self):
+        r = AgentResult(
+            task_id="t1",
+            agent_type=AgentType.STRATEGY,
+            campaign_id="c1",
+            success=True,
+            output={"objectives": ["Grow"]},
+        )
+        assert r.success
+        assert r.error is None
+
+    def test_agent_result_failure(self):
+        r = AgentResult(
+            task_id="t1",
+            agent_type=AgentType.STRATEGY,
+            campaign_id="c1",
+            success=False,
+            error="LLM timeout",
+        )
+        assert not r.success
+        assert "timeout" in r.error
+
+
+# ---- Content Approval Models ----
+
+class TestContentApprovalStatus:
+    def test_enum_values(self):
+        assert ContentApprovalStatus.PENDING.value == "pending"
+        assert ContentApprovalStatus.APPROVED.value == "approved"
+        assert ContentApprovalStatus.REJECTED.value == "rejected"
+
+
+class TestContentPieceApprovalFields:
+    def test_content_piece_approval_status_default(self):
+        cp = ContentPiece(
+            content_type="headline",
+            content="Test Content",
+        )
+        assert cp.approval_status == ContentApprovalStatus.PENDING
+        assert cp.human_edited_content is None
+        assert cp.human_notes == ""
+
+    def test_content_piece_with_approval(self):
+        cp = ContentPiece(
+            content_type="headline",
+            content="Test Content",
+            approval_status=ContentApprovalStatus.APPROVED,
+            human_edited_content="Edited Test",
+            human_notes="Looks great",
+        )
+        assert cp.approval_status == ContentApprovalStatus.APPROVED
+        assert cp.human_edited_content == "Edited Test"
+
+    def test_content_piece_roundtrip(self):
+        cp = ContentPiece(
+            content_type="headline",
+            content="Original",
+            approval_status=ContentApprovalStatus.REJECTED,
+            human_notes="Needs more punch",
+        )
+        data = cp.model_dump(mode="json")
+        assert data["approval_status"] == "rejected"
+        cp2 = ContentPiece.model_validate(data)
+        assert cp2.approval_status == ContentApprovalStatus.REJECTED
+
+
+class TestCampaignOriginalContent:
+    def test_campaign_original_content_default_none(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        assert c.original_content is None
+        assert c.content_revision_count == 0
+
+    def test_campaign_original_content_set(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        c.original_content = CampaignContent(
+            theme="Old Theme",
+            tone_of_voice="Formal",
+            pieces=[ContentPiece(content_type="headline", content="Old Headline")],
+        )
+        c.content_revision_count = 1
+        data = c.model_dump(mode="json")
+        assert data["original_content"]["theme"] == "Old Theme"
+        assert data["content_revision_count"] == 1
+
+    def test_campaign_status_content_revision(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        c.advance_status(CampaignStatus.CONTENT_REVISION)
+        assert c.status == CampaignStatus.CONTENT_REVISION
+
+    def test_campaign_status_content_approval(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        c.advance_status(CampaignStatus.CONTENT_APPROVAL)
+        assert c.status == CampaignStatus.CONTENT_APPROVAL
+
+
+class TestContentApprovalMessages:
+    def test_piece_approval(self):
+        pa = ContentPieceApproval(
+            piece_index=0,
+            approved=True,
+            edited_content="Edited",
+            notes="LGTM",
+        )
+        assert pa.piece_index == 0
+        assert pa.approved is True
+        assert pa.edited_content == "Edited"
+
+    def test_approval_response(self):
+        resp = ContentApprovalResponse(
+            campaign_id="c1",
+            pieces=[
+                ContentPieceApproval(piece_index=0, approved=True),
+                ContentPieceApproval(piece_index=1, approved=False, notes="Fix tone"),
+            ],
+            reject_campaign=False,
+        )
+        assert len(resp.pieces) == 2
+        assert resp.reject_campaign is False
+
+    def test_approval_response_reject_campaign(self):
+        resp = ContentApprovalResponse(
+            campaign_id="c1",
+            reject_campaign=True,
+        )
+        assert resp.reject_campaign is True
+        assert resp.pieces == []

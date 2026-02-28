@@ -1,0 +1,29 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+	"name": "Marketing Campaign Builder",
+	"dockerComposeFile": "docker-compose.yml",
+	"service": "app",
+	"workspaceFolder": "/workspaces/marketing-campaign-builder",
+	"features": {
+		"ghcr.io/devcontainers/features/azure-cli:1": {
+			"version": "latest",
+			"bicepVersion": "latest"
+		},
+		"ghcr.io/devcontainers-extra/features/uv:1": {
+			"version": "latest"
+		}
+	},
+
+	// Forward both the backend and database ports
+	"forwardPorts": [5432, 8000, 5173],
+
+	// Install Python + Node dependencies after the container is created
+	"postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo apt update && sudo apt install -y postgresql-client && pip3 install --user -r requirements.txt && nvm install node && cd frontend && npm install",
+
+	// Configure tool-specific properties.
+	// "customizations": {},
+
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "root"
+}
