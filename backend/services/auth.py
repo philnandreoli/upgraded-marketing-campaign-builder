@@ -27,12 +27,11 @@ logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 # ---------------------------------------------------------------------------
-# JWKS / discovery cache (module-level, refreshed every hour)
+# JWKS / discovery cache (module-level, refreshed based on configured TTL)
 # ---------------------------------------------------------------------------
 
 _jwks_uri: Optional[str] = None
 _jwks_cache: dict = {}
-_JWKS_TTL = 3600  # seconds
 
 
 async def _fetch_jwks_uri(authority: str) -> str:
@@ -56,6 +55,7 @@ async def _get_public_keys() -> list[dict]:
 
     settings = get_settings()
     authority = settings.oidc.authority
+    ttl = settings.oidc.jwks_cache_ttl
 
     now = time.time()
     if (
@@ -71,7 +71,7 @@ async def _get_public_keys() -> list[dict]:
     _jwks_cache = {
         "authority": authority,
         "keys": keys,
-        "expires_at": now + _JWKS_TTL,
+        "expires_at": now + ttl,
     }
     return keys
 
@@ -125,9 +125,6 @@ async def get_current_user(
             if jwk.key_id == unverified_header.get("kid"):
                 signing_key = jwk.key
                 break
-        if signing_key is None and jwks.keys:
-            signing_key = jwks.keys[0].key
-
         if signing_key is None:
             raise credentials_exception
 

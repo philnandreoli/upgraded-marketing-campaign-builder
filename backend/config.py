@@ -69,6 +69,11 @@ class OIDCSettings(BaseSettings):
         alias="OIDC_CLIENT_ID",
         description="Application (client) ID registered in the identity provider.",
     )
+    jwks_cache_ttl: int = Field(
+        default=3600,
+        alias="OIDC_JWKS_CACHE_TTL",
+        description="Seconds to cache the OIDC provider's public keys (default: 3600).",
+    )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
