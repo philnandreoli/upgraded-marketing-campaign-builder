@@ -14,14 +14,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
 
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
+from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.api.websocket import manager as ws_manager
 
@@ -47,6 +48,20 @@ def _get_coordinator() -> CoordinatorAgent:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _require_owner(campaign: Campaign, user_id: Optional[str]) -> None:
+    """Raise 404 if the campaign does not belong to the requesting user.
+
+    When auth is disabled (user_id is None) all campaigns are accessible.
+    We deliberately return 404 (not 403) to avoid leaking campaign existence.
+    """
+    if user_id is not None and campaign.owner_id != user_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -54,10 +69,11 @@ def _get_coordinator() -> CoordinatorAgent:
 async def create_campaign(
     brief: CampaignBrief,
     background_tasks: BackgroundTasks,
+    user_id: Optional[str] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Create a new campaign and kick off the agent pipeline in the background."""
     store = get_campaign_store()
-    campaign = await store.create(brief)
+    campaign = await store.create(brief, owner_id=user_id)
 
     coordinator = _get_coordinator()
 
@@ -80,10 +96,15 @@ async def _run_pipeline(coordinator: CoordinatorAgent, campaign: Campaign) -> No
 
 
 @router.get("/campaigns")
-async def list_campaigns() -> list[dict[str, Any]]:
-    """Return all campaigns (summary view)."""
+async def list_campaigns(
+    user_id: Optional[str] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """Return campaigns visible to the current user (summary view)."""
     store = get_campaign_store()
-    campaigns = await store.list_all()
+    if user_id is not None:
+        campaigns = await store.list_by_owner(user_id)
+    else:
+        campaigns = await store.list_all()
     return [
         {
             "id": c.id,
@@ -98,32 +119,45 @@ async def list_campaigns() -> list[dict[str, Any]]:
 
 
 @router.get("/campaigns/{campaign_id}")
-async def get_campaign(campaign_id: str) -> dict[str, Any]:
+async def get_campaign(
+    campaign_id: str,
+    user_id: Optional[str] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Return the full campaign document."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    _require_owner(campaign, user_id)
     return campaign.model_dump(mode="json")
 
 
 @router.delete("/campaigns/{campaign_id}")
-async def delete_campaign(campaign_id: str) -> Response:
+async def delete_campaign(
+    campaign_id: str,
+    user_id: Optional[str] = Depends(get_current_user),
+) -> Response:
     store = get_campaign_store()
-    if not await store.delete(campaign_id):
+    campaign = await store.get(campaign_id)
+    if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    _require_owner(campaign, user_id)
+    await store.delete(campaign_id)
     return Response(status_code=204)
 
 
 @router.post("/campaigns/{campaign_id}/clarify")
 async def submit_clarification(
-    campaign_id: str, response: ClarificationResponse
+    campaign_id: str,
+    response: ClarificationResponse,
+    user_id: Optional[str] = Depends(get_current_user),
 ) -> dict[str, str]:
     """Submit answers to strategy clarification questions."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    _require_owner(campaign, user_id)
 
     response.campaign_id = campaign_id
 
@@ -149,13 +183,16 @@ async def submit_review(campaign_id: str, response: HumanReviewResponse) -> dict
 
 @router.post("/campaigns/{campaign_id}/content-approve")
 async def submit_content_approval(
-    campaign_id: str, response: ContentApprovalResponse
+    campaign_id: str,
+    response: ContentApprovalResponse,
+    user_id: Optional[str] = Depends(get_current_user),
 ) -> dict[str, str]:
     """Submit per-piece content approval decisions."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    _require_owner(campaign, user_id)
 
     response.campaign_id = campaign_id
 

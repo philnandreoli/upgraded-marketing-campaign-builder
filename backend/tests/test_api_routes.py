@@ -8,11 +8,17 @@ database is required.
 """
 
 import pytest
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.models.campaign import Campaign, CampaignBrief
+from backend.services.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
+
+_TEST_USER = "test-user-001"
+_OTHER_USER = "other-user-999"
 
 
 @pytest.fixture(autouse=True)
@@ -30,9 +36,32 @@ def _isolated_store():
         yield fresh_store
 
 
+@contextmanager
+def _as_user(user_id):
+    """Override get_current_user for the duration of the block."""
+    app.dependency_overrides[get_current_user] = lambda: user_id
+    try:
+        yield TestClient(app, raise_server_exceptions=False)
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
 @pytest.fixture
 def client():
-    return TestClient(app, raise_server_exceptions=False)
+    """Client with auth disabled (get_current_user returns None)."""
+    app.dependency_overrides[get_current_user] = lambda: None
+    c = TestClient(app, raise_server_exceptions=False)
+    yield c
+    app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def authed_client():
+    """Client with auth enabled returning a fixed test user ID."""
+    app.dependency_overrides[get_current_user] = lambda: _TEST_USER
+    c = TestClient(app, raise_server_exceptions=False)
+    yield c
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 # ---- Health Check ----
@@ -100,6 +129,16 @@ class TestCreateCampaign:
         r = client.post("/api/campaigns", json={})
         assert r.status_code == 422
 
+    def test_create_stores_owner_id(self, authed_client, _isolated_store):
+        r = authed_client.post("/api/campaigns", json={
+            "product_or_service": "Owned",
+            "goal": "Test owner",
+        })
+        assert r.status_code == 201
+        cid = r.json()["id"]
+        campaign = _isolated_store._campaigns[cid]
+        assert campaign.owner_id == _TEST_USER
+
 
 # ---- GET /api/campaigns ----
 
@@ -127,6 +166,32 @@ class TestListCampaigns:
         assert "goal" in items[0]
         assert "created_at" in items[0]
 
+    def test_list_scoped_to_owner(self, _isolated_store):
+        """Each authenticated user only sees their own campaigns."""
+        # Directly insert campaigns with different owners (no async needed)
+        _isolated_store._campaigns.update({
+            c.id: c for c in [
+                Campaign(
+                    brief=CampaignBrief(product_or_service="My Campaign", goal="Mine"),
+                    owner_id=_TEST_USER,
+                ),
+                Campaign(
+                    brief=CampaignBrief(product_or_service="Their Campaign", goal="Theirs"),
+                    owner_id=_OTHER_USER,
+                ),
+            ]
+        })
+
+        with _as_user(_TEST_USER) as c:
+            items = c.get("/api/campaigns").json()
+            assert len(items) == 1
+            assert items[0]["product_or_service"] == "My Campaign"
+
+        with _as_user(_OTHER_USER) as c:
+            items = c.get("/api/campaigns").json()
+            assert len(items) == 1
+            assert items[0]["product_or_service"] == "Their Campaign"
+
 
 # ---- GET /api/campaigns/{id} ----
 
@@ -145,6 +210,17 @@ class TestGetCampaign:
     def test_get_not_found(self, client):
         r = client.get("/api/campaigns/nonexistent-id")
         assert r.status_code == 404
+
+    def test_get_other_user_campaign_returns_404(self, authed_client, _isolated_store):
+        """A campaign created by user A should not be visible to user B."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Private", goal="Mine"),
+            owner_id=_TEST_USER,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        with _as_user(_OTHER_USER) as c:
+            r = c.get(f"/api/campaigns/{campaign.id}")
+            assert r.status_code == 404
 
 
 # ---- DELETE /api/campaigns/{id} ----
@@ -165,6 +241,17 @@ class TestDeleteCampaign:
     def test_delete_not_found(self, client):
         r = client.delete("/api/campaigns/nonexistent-id")
         assert r.status_code == 404
+
+    def test_delete_other_user_campaign_returns_404(self, _isolated_store):
+        """A user cannot delete another user's campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Protected", goal="Mine"),
+            owner_id=_TEST_USER,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        with _as_user(_OTHER_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}")
+            assert r.status_code == 404
 
 
 # ---- POST /api/campaigns/{id}/review (deprecated) ----
@@ -232,3 +319,18 @@ class TestSubmitContentApproval:
         })
         assert r.status_code == 200
         assert r.json()["campaign_id"] == cid
+
+    def test_content_approve_other_user_returns_404(self, _isolated_store):
+        """A user cannot approve content for another user's campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Priv", goal="Test"),
+            owner_id=_TEST_USER,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        with _as_user(_OTHER_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/content-approve", json={
+                "campaign_id": campaign.id,
+                "pieces": [],
+                "reject_campaign": False,
+            })
+            assert r.status_code == 404

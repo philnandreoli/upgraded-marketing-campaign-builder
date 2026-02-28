@@ -36,6 +36,7 @@ class CampaignRow(Base):
     __tablename__ = "campaigns"
 
     id = Column(String, primary_key=True)
+    owner_id = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, index=True)
     data = Column(Text, nullable=False)  # JSON text of the full Campaign
     created_at = Column(DateTime, nullable=False)
