@@ -1,4 +1,6 @@
-const API_BASE = "";
+// When VITE_API_URL is set (e.g. for cross-origin deployments), use it;
+// otherwise use relative URLs so the reverse proxy (nginx) handles routing.
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 export async function createCampaign(brief) {
   const res = await fetch(`${API_BASE}/api/campaigns`, {
@@ -30,7 +32,7 @@ export async function deleteCampaign(id) {
     throw new Error(`Delete failed: ${res.status}`);
 }
 
-export async function submitReview(campaignId, approved, notes = "") {
+export async function submitReview() {
   // Legacy — no longer used. Use submitContentApproval instead.
   throw new Error("submitReview is deprecated. Use submitContentApproval.");
 }
@@ -59,13 +61,19 @@ export async function submitClarification(campaignId, answers) {
   return res.json();
 }
 
-export async function submitReviewClarification(campaignId, answers) {
+export async function submitReviewClarification() {
   // Legacy — no longer used.
   throw new Error("submitReviewClarification is deprecated.");
 }
 
 export function getWsUrl(campaignId = null) {
-  const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const base = `${proto}://${window.location.host}`;
+  let base;
+  if (import.meta.env.VITE_API_URL) {
+    // Explicit API URL configured — derive WebSocket URL from it
+    base = import.meta.env.VITE_API_URL.replace(/^http/, "ws");
+  } else {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    base = `${proto}://${window.location.host}`;
+  }
   return campaignId ? `${base}/ws/${campaignId}` : `${base}/ws`;
 }
