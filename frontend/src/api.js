@@ -119,7 +119,13 @@ export async function submitReviewClarification() {
 }
 
 export function getWsUrl(campaignId = null) {
-  const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const base = `${proto}://${window.location.host}`;
+  let base;
+  if (import.meta.env.VITE_API_URL) {
+    // Explicit API URL configured — derive WebSocket URL from it
+    base = import.meta.env.VITE_API_URL.replace(/^http/, "ws");
+  } else {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    base = `${proto}://${window.location.host}`;
+  }
   return campaignId ? `${base}/ws/${campaignId}` : `${base}/ws`;
 }
