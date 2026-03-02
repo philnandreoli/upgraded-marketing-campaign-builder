@@ -1,6 +1,4 @@
-import { useState } from "react";
-
-export default function ReviewSection({ data, campaignId, status, error }) {
+export default function ReviewSection({ data, _campaignId, status, error }) {
   const scoreClass =
     data?.brand_consistency_score >= 7
       ? "high"
