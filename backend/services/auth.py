@@ -128,11 +128,18 @@ async def get_current_user(
         if signing_key is None:
             raise credentials_exception
 
+        # Accept both the bare client-id and the api:// Application ID URI
+        # as valid audiences so tokens acquired with either scope format work.
+        valid_audiences = [
+            settings.oidc.client_id,
+            f"api://{settings.oidc.client_id}",
+        ]
+
         payload = jwt.decode(
             token,
             signing_key,
             algorithms=["RS256"],
-            audience=settings.oidc.client_id,
+            audience=valid_audiences,
         )
 
         # Prefer the Azure AD object ID; fall back to the standard subject.

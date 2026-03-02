@@ -1,3 +1,4 @@
+import { InteractionRequiredAuthError } from "@azure/msal-browser";
 import { msalInstance, loginRequest } from "./authConfig.js";
 
 const API_BASE = "";
@@ -5,6 +6,10 @@ const API_BASE = "";
 /**
  * Acquire a bearer token silently.
  * Returns an empty string when auth is not configured (no client ID set).
+ *
+ * If interactive consent is needed (e.g. a new scope was added), we use a
+ * popup so that the current page is NOT navigated away — preserving any
+ * in-progress form data.
  */
 async function getBearerToken() {
   const clientId = import.meta.env.VITE_AZURE_CLIENT_ID;
@@ -19,9 +24,22 @@ async function getBearerToken() {
       account,
     });
     return result.accessToken;
-  } catch {
-    // Token expired / consent required — trigger an interactive redirect.
-    await msalInstance.acquireTokenRedirect({ ...loginRequest, account });
+  } catch (error) {
+    // Only prompt interactively when the error actually requires it
+    // (consent, MFA, expired refresh token, etc.)
+    if (error instanceof InteractionRequiredAuthError) {
+      try {
+        const result = await msalInstance.acquireTokenPopup({
+          ...loginRequest,
+          account,
+        });
+        return result.accessToken;
+      } catch (popupError) {
+        console.error("Interactive token acquisition failed", popupError);
+        return "";
+      }
+    }
+    console.error("Silent token acquisition failed", error);
     return "";
   }
 }
@@ -66,7 +84,7 @@ export async function deleteCampaign(id) {
     throw new Error(`Delete failed: ${res.status}`);
 }
 
-export async function submitReview(campaignId, approved, notes = "") {
+export async function submitReview() {
   // Legacy — no longer used. Use submitContentApproval instead.
   throw new Error("submitReview is deprecated. Use submitContentApproval.");
 }
@@ -95,7 +113,7 @@ export async function submitClarification(campaignId, answers) {
   return res.json();
 }
 
-export async function submitReviewClarification(campaignId, answers) {
+export async function submitReviewClarification() {
   // Legacy — no longer used.
   throw new Error("submitReviewClarification is deprecated.");
 }

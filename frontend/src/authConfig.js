@@ -25,8 +25,13 @@ const msalConfig = {
   },
   system: {
     loggerOptions: {
-      logLevel: LogLevel.Warning,
+      logLevel: LogLevel.Verbose,
+      loggerCallback: (level, message, containsPii) => {
+        if (containsPii) return;
+        console.debug(`[MSAL:${level}]`, message);
+      },
     },
+    navigateToLoginRequestUrl: true,
   },
 };
 
