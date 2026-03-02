@@ -36,6 +36,7 @@ class CampaignRow(Base):
     __tablename__ = "campaigns"
 
     id = Column(String, primary_key=True)
+    owner_id = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, index=True)
     data = Column(Text, nullable=False)  # JSON text of the full Campaign
     created_at = Column(DateTime, nullable=False)
@@ -47,9 +48,26 @@ class CampaignRow(Base):
 # ---------------------------------------------------------------------------
 
 async def init_db() -> None:
-    """Create tables if they don't exist."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Apply Alembic migrations to bring the schema up to date.
+
+    Running migrations (rather than plain create_all) ensures that both
+    fresh databases and existing ones that pre-date the owner_id column
+    are handled correctly.
+    """
+    import asyncio
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(
+        os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "migrations"))
+    ))
+    alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL.replace("+asyncpg", ""))
+
+    # Alembic's command.upgrade is synchronous — run it in a thread executor
+    # so we don't block the event loop.
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, lambda: command.upgrade(alembic_cfg, "head"))
 
 
 async def close_db() -> None:

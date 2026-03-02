@@ -191,6 +191,10 @@ class Campaign(BaseModel):
     """Full campaign document built progressively by the agents."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    owner_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier of the user who created the campaign (JWT oid/sub).",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     status: CampaignStatus = CampaignStatus.DRAFT

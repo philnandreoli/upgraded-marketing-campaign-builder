@@ -51,6 +51,33 @@ class TracingSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class OIDCSettings(BaseSettings):
+    """OIDC / OAuth 2.0 authentication settings."""
+
+    enabled: bool = Field(
+        default=False,
+        alias="AUTH_ENABLED",
+        description="Enable JWT authentication for all campaign endpoints.",
+    )
+    authority: str = Field(
+        default="",
+        alias="OIDC_AUTHORITY",
+        description="OIDC authority URL, e.g. https://login.microsoftonline.com/{tenant_id}/v2.0",
+    )
+    client_id: str = Field(
+        default="",
+        alias="OIDC_CLIENT_ID",
+        description="Application (client) ID registered in the identity provider.",
+    )
+    jwks_cache_ttl: int = Field(
+        default=3600,
+        alias="OIDC_JWKS_CACHE_TTL",
+        description="Seconds to cache the OIDC provider's public keys (default: 3600).",
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class FoundryAgentsSettings(BaseSettings):
     """AI Foundry Agent Operations settings."""
 
@@ -81,6 +108,7 @@ class Settings(BaseSettings):
     agent: AgentSettings = AgentSettings()
     tracing: TracingSettings = TracingSettings()
     foundry_agents: FoundryAgentsSettings = FoundryAgentsSettings()
+    oidc: OIDCSettings = OIDCSettings()
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

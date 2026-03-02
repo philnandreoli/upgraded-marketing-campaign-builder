@@ -10,7 +10,6 @@ simply ``await`` these methods.
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from sqlalchemy import delete as sa_delete, select
@@ -26,11 +25,12 @@ class CampaignStore:
     # CRUD — all async
     # ------------------------------------------------------------------
 
-    async def create(self, brief: CampaignBrief) -> Campaign:
+    async def create(self, brief: CampaignBrief, owner_id: Optional[str] = None) -> Campaign:
         """Create a new campaign from a brief and persist it."""
-        campaign = Campaign(brief=brief)
+        campaign = Campaign(brief=brief, owner_id=owner_id)
         row = CampaignRow(
             id=campaign.id,
+            owner_id=campaign.owner_id,
             status=campaign.status.value,
             data=campaign.model_dump_json(),
             created_at=campaign.created_at,
@@ -55,6 +55,7 @@ class CampaignStore:
                 # First time persisting — insert instead
                 row = CampaignRow(
                     id=campaign.id,
+                    owner_id=campaign.owner_id,
                     status=campaign.status.value,
                     data=campaign.model_dump_json(),
                     created_at=campaign.created_at,
@@ -72,6 +73,17 @@ class CampaignStore:
         async with async_session() as session:
             result = await session.execute(
                 select(CampaignRow).order_by(CampaignRow.created_at.desc())
+            )
+            rows = result.scalars().all()
+            return [Campaign.model_validate_json(r.data) for r in rows]
+
+    async def list_by_owner(self, owner_id: str) -> list[Campaign]:
+        """Return all campaigns belonging to a specific owner."""
+        async with async_session() as session:
+            result = await session.execute(
+                select(CampaignRow)
+                .where(CampaignRow.owner_id == owner_id)
+                .order_by(CampaignRow.created_at.desc())
             )
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows]

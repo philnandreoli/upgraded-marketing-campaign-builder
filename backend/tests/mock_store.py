@@ -18,8 +18,8 @@ class InMemoryCampaignStore:
     def __init__(self) -> None:
         self._campaigns: dict[str, Campaign] = {}
 
-    async def create(self, brief: CampaignBrief) -> Campaign:
-        campaign = Campaign(brief=brief)
+    async def create(self, brief: CampaignBrief, owner_id: Optional[str] = None) -> Campaign:
+        campaign = Campaign(brief=brief, owner_id=owner_id)
         self._campaigns[campaign.id] = campaign
         return campaign
 
@@ -32,6 +32,9 @@ class InMemoryCampaignStore:
 
     async def list_all(self) -> list[Campaign]:
         return list(self._campaigns.values())
+
+    async def list_by_owner(self, owner_id: str) -> list[Campaign]:
+        return [c for c in self._campaigns.values() if c.owner_id == owner_id]
 
     async def delete(self, campaign_id: str) -> bool:
         if campaign_id in self._campaigns:
