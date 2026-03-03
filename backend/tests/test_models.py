@@ -26,6 +26,7 @@ from backend.models.messages import (
     AgentType, AgentTask, AgentResult, AgentMessage, MessageRole,
     ContentPieceApproval, ContentApprovalResponse,
 )
+from backend.models.user import User, UserRole
 
 
 # ---- CampaignBrief ----
@@ -316,3 +317,64 @@ class TestContentApprovalMessages:
         )
         assert resp.reject_campaign is True
         assert resp.pieces == []
+
+
+# ---- User model ----
+
+class TestUserRole:
+    def test_enum_values(self):
+        assert UserRole.ADMIN.value == "admin"
+        assert UserRole.CAMPAIGN_BUILDER.value == "campaign_builder"
+        assert UserRole.VIEWER.value == "viewer"
+
+    def test_str_coercion(self):
+        assert UserRole("admin") == UserRole.ADMIN
+        assert UserRole("campaign_builder") == UserRole.CAMPAIGN_BUILDER
+        assert UserRole("viewer") == UserRole.VIEWER
+
+    def test_invalid_role_raises(self):
+        with pytest.raises(ValueError):
+            UserRole("superuser")
+
+
+class TestUserModel:
+    def test_defaults(self):
+        u = User(id="oid-123")
+        assert u.id == "oid-123"
+        assert u.role == UserRole.VIEWER
+        assert u.is_active is True
+        assert u.email is None
+        assert u.display_name is None
+
+    def test_full_user(self):
+        u = User(
+            id="oid-456",
+            email="alice@example.com",
+            display_name="Alice",
+            role=UserRole.ADMIN,
+            is_active=True,
+        )
+        assert u.email == "alice@example.com"
+        assert u.display_name == "Alice"
+        assert u.role == UserRole.ADMIN
+
+    def test_missing_id_raises(self):
+        with pytest.raises(ValidationError):
+            User()  # id is required
+
+    def test_roundtrip(self):
+        u = User(
+            id="oid-789",
+            email="bob@example.com",
+            display_name="Bob",
+            role=UserRole.CAMPAIGN_BUILDER,
+        )
+        data = u.model_dump(mode="json")
+        assert data["role"] == "campaign_builder"
+        u2 = User.model_validate(data)
+        assert u2.id == u.id
+        assert u2.role == UserRole.CAMPAIGN_BUILDER
+
+    def test_inactive_user(self):
+        u = User(id="oid-000", is_active=False)
+        assert u.is_active is False

@@ -5,20 +5,29 @@ Validates bearer tokens issued by an OIDC provider (e.g. Microsoft Entra).
 When AUTH_ENABLED=False (the default) all requests are treated as anonymous
 and the user_id is returned as None — useful for local development without
 an identity provider configured.
+
+When AUTH_ENABLED=True, the authenticated user is also JIT-provisioned in the
+database on first login using their OIDC claims (oid/sub, email, name).
+The first user to authenticate when the users table is empty is granted the
+admin role (bootstrap); all subsequent new users default to viewer.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 from typing import Optional
 
 import httpx
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
+from backend.services.database import UserRow, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +86,53 @@ async def _get_public_keys() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# JIT user provisioning
+# ---------------------------------------------------------------------------
+
+async def _provision_user(
+    db: AsyncSession,
+    user_id: str,
+    email: Optional[str],
+    display_name: Optional[str],
+) -> None:
+    """Create a UserRow for ``user_id`` if one does not already exist.
+
+    The first user provisioned in an empty users table is bootstrapped as
+    admin (solving the chicken-and-egg problem).  All subsequent new users
+    default to the viewer role.
+    """
+    result = await db.get(UserRow, user_id)
+    if result is not None:
+        return  # User already exists — nothing to do.
+
+    # Determine the role: admin if the table is currently empty, else viewer.
+    count_result = await db.execute(select(func.count()).select_from(UserRow))
+    user_count = count_result.scalar_one()
+    role = "admin" if user_count == 0 else "viewer"
+
+    now = datetime.utcnow()
+    new_user = UserRow(
+        id=user_id,
+        email=email,
+        display_name=display_name,
+        role=role,
+        created_at=now,
+        updated_at=now,
+        is_active=True,
+    )
+    db.add(new_user)
+    await db.commit()
+    logger.info("Provisioned new user %s with role %s", user_id, role)
+
+
+# ---------------------------------------------------------------------------
 # FastAPI dependency
 # ---------------------------------------------------------------------------
 
 
 async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
 ) -> Optional[str]:
     """
     Validate the bearer token and return the user's unique identifier.
@@ -90,6 +140,7 @@ async def get_current_user(
     - When AUTH_ENABLED=False: auth is skipped and None is returned.
     - When AUTH_ENABLED=True:  a valid Bearer token is required; raises
       HTTP 401 on failure and HTTP 503 if the OIDC provider is unreachable.
+      On success the user is JIT-provisioned in the database if needed.
 
     The returned identifier is the ``oid`` claim (Azure AD object ID) when
     present, otherwise ``sub``.
@@ -146,6 +197,11 @@ async def get_current_user(
         user_id: Optional[str] = payload.get("oid") or payload.get("sub")
         if not user_id:
             raise credentials_exception
+
+        # JIT-provision the user from JWT claims if this is their first login.
+        email: Optional[str] = payload.get("preferred_username") or payload.get("email")
+        display_name: Optional[str] = payload.get("name")
+        await _provision_user(db, user_id, email, display_name)
 
         return user_id
 

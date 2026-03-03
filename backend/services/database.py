@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import os
 
-from sqlalchemy import Column, DateTime, String, Text, text
+from typing import AsyncGenerator
+
+from sqlalchemy import Boolean, Column, DateTime, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -41,6 +43,30 @@ class CampaignRow(Base):
     data = Column(Text, nullable=False)  # JSON text of the full Campaign
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+
+
+class UserRow(Base):
+    """Persisted platform user created JIT on first authentication."""
+
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)           # OIDC oid/sub
+    email = Column(String, nullable=True, index=True)
+    display_name = Column(String, nullable=True)
+    role = Column(String, nullable=False, default="viewer")
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+
+# ---------------------------------------------------------------------------
+# Session dependency
+# ---------------------------------------------------------------------------
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency that yields a database session per request."""
+    async with async_session() as session:
+        yield session
 
 
 # ---------------------------------------------------------------------------
