@@ -316,9 +316,7 @@ export default function CampaignDetail() {
               Split
             </button>
           </div>
-          <span className={`badge badge-${campaign.status}`}>
-            {campaign.status.replace(/_/g, " ")}
-          </span>
+
         </div>
       </div>
 
