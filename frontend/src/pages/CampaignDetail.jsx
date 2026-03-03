@@ -239,7 +239,6 @@ export default function CampaignDetail() {
       </nav>
       <div className="section-header">
         <div>
-          <h2>{campaign.brief.product_or_service}</h2>
           <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
             {campaign.brief.goal}
           </p>
