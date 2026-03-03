@@ -328,7 +328,6 @@ export default function CampaignDetail() {
                 <span>Pipeline is running — {campaign.status === "draft" ? "starting up…" : <><strong>{PIPELINE_STAGES.find(s => s.statusKey === campaign.status)?.label || campaign.status}</strong> in progress…</>}</span>
               </div>
             )}
-            {renderPipelineTabs()}
             <div className="detail-tab-content">{renderTabContent()}</div>
           </div>
 
@@ -361,11 +360,17 @@ export default function CampaignDetail() {
               <div className="sidebar-stages">
                 {PIPELINE_STAGES.filter((stage) => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(stage.key))).map((stage) => {
                   const state = stageStates[stage.key] || "pending";
+                  const isClickable = clickableTabs.includes(stage.key);
                   return (
-                    <div key={stage.key} className={`sidebar-stage sidebar-stage-${state}`}>
+                    <button
+                      key={stage.key}
+                      className={`sidebar-stage sidebar-stage-${state}${activeTab === stage.key ? " sidebar-stage-selected" : ""}${isClickable ? " sidebar-stage-clickable" : ""}`}
+                      disabled={!isClickable}
+                      onClick={() => setUserTab(stage.key)}
+                    >
                       <span className="sidebar-stage-dot" />
                       <span className="sidebar-stage-label">{stage.label}</span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>

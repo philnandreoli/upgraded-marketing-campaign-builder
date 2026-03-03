@@ -280,7 +280,15 @@ a:hover { color: var(--color-primary-hover); }
 .sidebar-stage {
   display: flex; align-items: center; gap: 0.5rem;
   font-size: 0.8rem; font-weight: 500;
+  background: none; border: none; border-radius: var(--radius);
+  padding: 0.3rem 0.4rem; width: 100%; text-align: left;
+  cursor: default; font-family: inherit; color: var(--color-text);
+  transition: background 0.15s;
 }
+.sidebar-stage:disabled { cursor: default; }
+.sidebar-stage-clickable { cursor: pointer; }
+.sidebar-stage-clickable:hover { background: var(--color-surface-2); }
+.sidebar-stage-selected { background: var(--color-surface-2); outline: 1px solid var(--color-border); }
 .sidebar-stage-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   background: var(--color-border);
