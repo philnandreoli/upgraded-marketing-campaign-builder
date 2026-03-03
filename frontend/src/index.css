@@ -240,6 +240,16 @@ a:hover { color: var(--color-primary-hover); }
 
 .detail-tab-content { padding-top: 1rem; }
 
+/* Breadcrumb navigation */
+.breadcrumb {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.82rem; color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+.breadcrumb a { color: var(--color-text-muted); }
+.breadcrumb a:hover { color: var(--color-primary-hover); }
+.breadcrumb-divider { color: var(--color-text-dim); }
+
 /* Pipeline running banner */
 .pipeline-running-banner {
   display: flex; align-items: center; gap: 0.6rem;

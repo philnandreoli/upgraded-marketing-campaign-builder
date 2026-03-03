@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { getCampaign } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import StrategySection from "../components/StrategySection.jsx";
@@ -232,6 +232,11 @@ export default function CampaignDetail() {
 
   return (
     <div>
+      <nav className="breadcrumb">
+        <Link to="/">Dashboard</Link>
+        <span className="breadcrumb-divider">/</span>
+        <span>{campaign?.brief?.product_or_service}</span>
+      </nav>
       <div className="section-header">
         <div>
           <h2>{campaign.brief.product_or_service}</h2>
