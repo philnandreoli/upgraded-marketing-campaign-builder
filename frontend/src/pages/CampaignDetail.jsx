@@ -274,25 +274,29 @@ export default function CampaignDetail() {
       </nav>
       <div className="section-header">
         <div>
-          <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
-            {campaign.brief.goal}
-          </p>
-          {campaign.brief.selected_channels?.length > 0 && (
-            <div style={{ marginTop: "0.4rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-              {campaign.brief.selected_channels.map((ch) => (
-                <span
-                  key={ch}
-                  className="badge"
-                  style={{
-                    background: "rgba(99,102,241,0.15)",
-                    color: "var(--color-primary-hover)",
-                    fontSize: "0.7rem",
-                  }}
-                >
-                  {ch.replace(/_/g, " ")}
-                </span>
-              ))}
-            </div>
+          {viewMode === "focus" && (
+            <>
+              <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
+                {campaign.brief.goal}
+              </p>
+              {campaign.brief.selected_channels?.length > 0 && (
+                <div style={{ marginTop: "0.4rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                  {campaign.brief.selected_channels.map((ch) => (
+                    <span
+                      key={ch}
+                      className="badge"
+                      style={{
+                        background: "rgba(99,102,241,0.15)",
+                        color: "var(--color-primary-hover)",
+                        fontSize: "0.7rem",
+                      }}
+                    >
+                      {ch.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
