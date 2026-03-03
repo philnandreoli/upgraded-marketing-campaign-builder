@@ -22,6 +22,7 @@ from fastapi.responses import Response
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
+from backend.models.user import User
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.api.websocket import manager as ws_manager
@@ -51,13 +52,13 @@ def _get_coordinator() -> CoordinatorAgent:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _require_owner(campaign: Campaign, user_id: Optional[str]) -> None:
+def _require_owner(campaign: Campaign, user: Optional[User]) -> None:
     """Raise 404 if the campaign does not belong to the requesting user.
 
-    When auth is disabled (user_id is None) all campaigns are accessible.
+    When auth is disabled (user is None) all campaigns are accessible.
     We deliberately return 404 (not 403) to avoid leaking campaign existence.
     """
-    if user_id is not None and campaign.owner_id != user_id:
+    if user is not None and campaign.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
 
@@ -69,11 +70,11 @@ def _require_owner(campaign: Campaign, user_id: Optional[str]) -> None:
 async def create_campaign(
     brief: CampaignBrief,
     background_tasks: BackgroundTasks,
-    user_id: Optional[str] = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Create a new campaign and kick off the agent pipeline in the background."""
     store = get_campaign_store()
-    campaign = await store.create(brief, owner_id=user_id)
+    campaign = await store.create(brief, owner_id=user.id if user else None)
 
     coordinator = _get_coordinator()
 
@@ -97,12 +98,12 @@ async def _run_pipeline(coordinator: CoordinatorAgent, campaign: Campaign) -> No
 
 @router.get("/campaigns")
 async def list_campaigns(
-    user_id: Optional[str] = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """Return campaigns visible to the current user (summary view)."""
     store = get_campaign_store()
-    if user_id is not None:
-        campaigns = await store.list_by_owner(user_id)
+    if user is not None:
+        campaigns = await store.list_by_owner(user.id)
     else:
         campaigns = await store.list_all()
     return [
@@ -121,27 +122,27 @@ async def list_campaigns(
 @router.get("/campaigns/{campaign_id}")
 async def get_campaign(
     campaign_id: str,
-    user_id: Optional[str] = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Return the full campaign document."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user_id)
+    _require_owner(campaign, user)
     return campaign.model_dump(mode="json")
 
 
 @router.delete("/campaigns/{campaign_id}")
 async def delete_campaign(
     campaign_id: str,
-    user_id: Optional[str] = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user),
 ) -> Response:
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user_id)
+    _require_owner(campaign, user)
     await store.delete(campaign_id)
     return Response(status_code=204)
 
@@ -150,14 +151,14 @@ async def delete_campaign(
 async def submit_clarification(
     campaign_id: str,
     response: ClarificationResponse,
-    user_id: Optional[str] = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user),
 ) -> dict[str, str]:
     """Submit answers to strategy clarification questions."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user_id)
+    _require_owner(campaign, user)
 
     response.campaign_id = campaign_id
 
@@ -185,14 +186,14 @@ async def submit_review(campaign_id: str, response: HumanReviewResponse) -> dict
 async def submit_content_approval(
     campaign_id: str,
     response: ContentApprovalResponse,
-    user_id: Optional[str] = Depends(get_current_user),
+    user: Optional[User] = Depends(get_current_user),
 ) -> dict[str, str]:
     """Submit per-piece content approval decisions."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user_id)
+    _require_owner(campaign, user)
 
     response.campaign_id = campaign_id
 
