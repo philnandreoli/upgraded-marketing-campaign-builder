@@ -9,6 +9,17 @@ from backend.models.campaign import CampaignBrief, Campaign
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
+# ---- Isolate tests from Foundry agent registration state ----
+
+@pytest.fixture(autouse=True)
+def _no_foundry_agents():
+    """Ensure all tests use the direct-LLM path (chat_json), not the
+    Foundry agent path (chat_json_with_agent), regardless of whether
+    register_agents() has populated the global registry."""
+    with patch("backend.agents.base_agent.get_agent_ref", return_value=None):
+        yield
+
+
 # ---- Reusable brief & campaign fixtures ----
 
 @pytest.fixture
