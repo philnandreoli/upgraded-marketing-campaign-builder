@@ -27,12 +27,22 @@ const PIPELINE_STAGES = [
 
 const STATUS_ORDER = ["draft", ...PIPELINE_STAGES.map((s) => s.statusKey)];
 
+const VIEW_MODE_KEY = "campaign_detail_view_mode";
+
 export default function CampaignDetail() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState(null);
   const [error, setError] = useState(null);
   const [userTab, setUserTab] = useState(null);
+  const [viewMode, setViewMode] = useState(
+    () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
+  );
   const { events } = useWebSocket(id);
+
+  const handleViewMode = (mode) => {
+    setViewMode(mode);
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  };
   const pollRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -230,6 +240,31 @@ export default function CampaignDetail() {
     }
   };
 
+  const renderPipelineTabs = () => (
+    <div className="pipeline-tabs">
+      {PIPELINE_STAGES.filter((stage) => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(stage.key))).map((stage) => {
+        const state = stageStates[stage.key] || "pending";
+        const isClickable = clickableTabs.includes(stage.key);
+        return (
+          <button
+            key={stage.key}
+            className={`pipeline-tab ${state}${activeTab === stage.key ? " selected" : ""}${state === "active" && isPipelineRunning ? " running" : ""}`}
+            disabled={!isClickable}
+            onClick={() => isClickable && setUserTab(stage.key)}
+          >
+            {stage.label}
+          </button>
+        );
+      })}
+      <button
+        className={`pipeline-tab completed${activeTab === "events" ? " selected" : ""}`}
+        onClick={() => setUserTab("events")}
+      >
+        Event Log
+      </button>
+    </div>
+  );
+
   return (
     <div>
       <nav className="breadcrumb">
@@ -260,43 +295,102 @@ export default function CampaignDetail() {
             </div>
           )}
         </div>
-        <span className={`badge badge-${campaign.status}`}>
-          {campaign.status.replace(/_/g, " ")}
-        </span>
-      </div>
-
-      {/* Pipeline running banner */}
-      {isPipelineRunning && (
-        <div className="pipeline-running-banner">
-          <span className="spinner" />
-          <span>Pipeline is running — {campaign.status === "draft" ? "starting up…" : <><strong>{PIPELINE_STAGES.find(s => s.statusKey === campaign.status)?.label || campaign.status}</strong> in progress…</>}</span>
-        </div>
-      )}
-
-      {/* Pipeline progress tabs */}
-      <div className="pipeline-tabs">
-        {PIPELINE_STAGES.filter((stage) => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(stage.key))).map((stage) => {
-          const state = stageStates[stage.key] || "pending";
-          const isClickable = clickableTabs.includes(stage.key);
-          return (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <div className="view-toggle" role="group" aria-label="Layout view">
             <button
-              key={stage.key}
-              className={`pipeline-tab ${state}${activeTab === stage.key ? " selected" : ""}${state === "active" && isPipelineRunning ? " running" : ""}`}
-              disabled={!isClickable}
-              onClick={() => isClickable && setUserTab(stage.key)}
+              className={`view-toggle-btn${viewMode === "focus" ? " active" : ""}`}
+              onClick={() => handleViewMode("focus")}
+              title="Focus view — single column, active stage front and center"
             >
-              {stage.label}
+              Focus
             </button>
-          );
-        })}
-        <button
-          className={`pipeline-tab completed${activeTab === "events" ? " selected" : ""}`}
-          onClick={() => setUserTab("events")}
-        >
-          Event Log
-        </button>
+            <button
+              className={`view-toggle-btn${viewMode === "split" ? " active" : ""}`}
+              onClick={() => handleViewMode("split")}
+              title="Split view — two-column layout with persistent sidebar"
+            >
+              Split
+            </button>
+          </div>
+          <span className={`badge badge-${campaign.status}`}>
+            {campaign.status.replace(/_/g, " ")}
+          </span>
+        </div>
       </div>
-      <div className="detail-tab-content">{renderTabContent()}</div>
+
+      {viewMode === "split" ? (
+        <div className="detail-split-layout">
+          {/* Main column */}
+          <div className="detail-split-main">
+            {isPipelineRunning && (
+              <div className="pipeline-running-banner">
+                <span className="spinner" />
+                <span>Pipeline is running — {campaign.status === "draft" ? "starting up…" : <><strong>{PIPELINE_STAGES.find(s => s.statusKey === campaign.status)?.label || campaign.status}</strong> in progress…</>}</span>
+              </div>
+            )}
+            {renderPipelineTabs()}
+            <div className="detail-tab-content">{renderTabContent()}</div>
+          </div>
+
+          {/* Sticky sidebar */}
+          <aside className="detail-split-sidebar">
+            {/* Campaign metadata */}
+            <div className="card sidebar-meta">
+              <h3 style={{ marginBottom: "0.5rem" }}>Campaign</h3>
+              <p className="sidebar-meta-goal">
+                {campaign.brief.goal}
+              </p>
+              {campaign.brief.selected_channels?.length > 0 && (
+                <div className="sidebar-meta-channels">
+                  {campaign.brief.selected_channels.map((ch) => (
+                    <span
+                      key={ch}
+                      className="badge"
+                      style={{ background: "rgba(99,102,241,0.15)", color: "var(--color-primary-hover)", fontSize: "0.68rem" }}
+                    >
+                      {ch.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pipeline progress overview */}
+            <div className="card sidebar-pipeline">
+              <h3 style={{ marginBottom: "0.6rem" }}>Pipeline Progress</h3>
+              <div className="sidebar-stages">
+                {PIPELINE_STAGES.filter((stage) => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(stage.key))).map((stage) => {
+                  const state = stageStates[stage.key] || "pending";
+                  return (
+                    <div key={stage.key} className={`sidebar-stage sidebar-stage-${state}`}>
+                      <span className="sidebar-stage-dot" />
+                      <span className="sidebar-stage-label">{stage.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Event log */}
+            <div className="card sidebar-events">
+              <h3 style={{ marginBottom: "0.6rem" }}>Event Log</h3>
+              <EventLog events={events} isPipelineRunning={isPipelineRunning} />
+            </div>
+          </aside>
+        </div>
+      ) : (
+        <>
+          {/* Pipeline running banner */}
+          {isPipelineRunning && (
+            <div className="pipeline-running-banner">
+              <span className="spinner" />
+              <span>Pipeline is running — {campaign.status === "draft" ? "starting up…" : <><strong>{PIPELINE_STAGES.find(s => s.statusKey === campaign.status)?.label || campaign.status}</strong> in progress…</>}</span>
+            </div>
+          )}
+          {renderPipelineTabs()}
+          <div className="detail-tab-content">{renderTabContent()}</div>
+        </>
+      )}
     </div>
   );
 }
