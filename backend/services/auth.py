@@ -27,6 +27,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
+from backend.models.user import User, UserRole
 from backend.services.database import UserRow, get_db
 
 logger = logging.getLogger(__name__)
@@ -94,16 +95,18 @@ async def _provision_user(
     user_id: str,
     email: Optional[str],
     display_name: Optional[str],
-) -> None:
+) -> UserRow:
     """Create a UserRow for ``user_id`` if one does not already exist.
 
     The first user provisioned in an empty users table is bootstrapped as
     admin (solving the chicken-and-egg problem).  All subsequent new users
     default to the viewer role.
+
+    Returns the existing or newly-created UserRow.
     """
     result = await db.get(UserRow, user_id)
     if result is not None:
-        return  # User already exists — nothing to do.
+        return result  # User already exists — nothing to do.
 
     # Determine the role: admin if the table is currently empty, else viewer.
     count_result = await db.execute(select(func.count()).select_from(UserRow))
@@ -123,6 +126,7 @@ async def _provision_user(
     db.add(new_user)
     await db.commit()
     logger.info("Provisioned new user %s with role %s", user_id, role)
+    return new_user
 
 
 # ---------------------------------------------------------------------------
@@ -133,16 +137,16 @@ async def _provision_user(
 async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
-) -> Optional[str]:
+) -> Optional[User]:
     """
-    Validate the bearer token and return the user's unique identifier.
+    Validate the bearer token and return the authenticated User object.
 
     - When AUTH_ENABLED=False: auth is skipped and None is returned.
     - When AUTH_ENABLED=True:  a valid Bearer token is required; raises
       HTTP 401 on failure and HTTP 503 if the OIDC provider is unreachable.
       On success the user is JIT-provisioned in the database if needed.
 
-    The returned identifier is the ``oid`` claim (Azure AD object ID) when
+    The user's identifier is the ``oid`` claim (Azure AD object ID) when
     present, otherwise ``sub``.
     """
     settings = get_settings()
@@ -201,9 +205,17 @@ async def get_current_user(
         # JIT-provision the user from JWT claims if this is their first login.
         email: Optional[str] = payload.get("preferred_username") or payload.get("email")
         display_name: Optional[str] = payload.get("name")
-        await _provision_user(db, user_id, email, display_name)
+        user_row = await _provision_user(db, user_id, email, display_name)
 
-        return user_id
+        return User(
+            id=user_row.id,
+            email=user_row.email,
+            display_name=user_row.display_name,
+            role=UserRole(user_row.role),
+            created_at=user_row.created_at,
+            updated_at=user_row.updated_at,
+            is_active=user_row.is_active,
+        )
 
     except jwt.ExpiredSignatureError:
         logger.debug("JWT expired")
@@ -217,3 +229,57 @@ async def get_current_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",
         )
+
+
+# ---------------------------------------------------------------------------
+# Convenience dependencies
+# ---------------------------------------------------------------------------
+
+
+async def require_authenticated(
+    user: Optional[User] = Depends(get_current_user),
+) -> User:
+    """Raise 401 if auth is disabled (user is None) or token is missing."""
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+async def require_campaign_builder(
+    user: Optional[User] = Depends(get_current_user),
+) -> User:
+    """Raise 403 if the user has viewer role (cannot build campaigns)."""
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.role == UserRole.VIEWER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return user
+
+
+async def require_admin(
+    user: Optional[User] = Depends(get_current_user),
+) -> User:
+    """Raise 403 if the user is not an admin."""
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return user

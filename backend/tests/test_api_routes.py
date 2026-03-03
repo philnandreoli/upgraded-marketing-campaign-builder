@@ -14,11 +14,22 @@ from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.models.campaign import Campaign, CampaignBrief
+from backend.models.user import User, UserRole
 from backend.services.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
 
-_TEST_USER = "test-user-001"
-_OTHER_USER = "other-user-999"
+_TEST_USER = User(
+    id="test-user-001",
+    email="test@example.com",
+    display_name="Test User",
+    role=UserRole.CAMPAIGN_BUILDER,
+)
+_OTHER_USER = User(
+    id="other-user-999",
+    email="other@example.com",
+    display_name="Other User",
+    role=UserRole.CAMPAIGN_BUILDER,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -37,9 +48,9 @@ def _isolated_store():
 
 
 @contextmanager
-def _as_user(user_id):
+def _as_user(user: User):
     """Override get_current_user for the duration of the block."""
-    app.dependency_overrides[get_current_user] = lambda: user_id
+    app.dependency_overrides[get_current_user] = lambda: user
     try:
         yield TestClient(app, raise_server_exceptions=False)
     finally:
@@ -57,7 +68,7 @@ def client():
 
 @pytest.fixture
 def authed_client():
-    """Client with auth enabled returning a fixed test user ID."""
+    """Client with auth enabled returning a fixed test user."""
     app.dependency_overrides[get_current_user] = lambda: _TEST_USER
     c = TestClient(app, raise_server_exceptions=False)
     yield c
@@ -137,7 +148,7 @@ class TestCreateCampaign:
         assert r.status_code == 201
         cid = r.json()["id"]
         campaign = _isolated_store._campaigns[cid]
-        assert campaign.owner_id == _TEST_USER
+        assert campaign.owner_id == _TEST_USER.id
 
 
 # ---- GET /api/campaigns ----
@@ -173,11 +184,11 @@ class TestListCampaigns:
             c.id: c for c in [
                 Campaign(
                     brief=CampaignBrief(product_or_service="My Campaign", goal="Mine"),
-                    owner_id=_TEST_USER,
+                    owner_id=_TEST_USER.id,
                 ),
                 Campaign(
                     brief=CampaignBrief(product_or_service="Their Campaign", goal="Theirs"),
-                    owner_id=_OTHER_USER,
+                    owner_id=_OTHER_USER.id,
                 ),
             ]
         })
@@ -215,7 +226,7 @@ class TestGetCampaign:
         """A campaign created by user A should not be visible to user B."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Private", goal="Mine"),
-            owner_id=_TEST_USER,
+            owner_id=_TEST_USER.id,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_OTHER_USER) as c:
@@ -246,7 +257,7 @@ class TestDeleteCampaign:
         """A user cannot delete another user's campaign."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Protected", goal="Mine"),
-            owner_id=_TEST_USER,
+            owner_id=_TEST_USER.id,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_OTHER_USER) as c:
@@ -324,7 +335,7 @@ class TestSubmitContentApproval:
         """A user cannot approve content for another user's campaign."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Priv", goal="Test"),
-            owner_id=_TEST_USER,
+            owner_id=_TEST_USER.id,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_OTHER_USER) as c:
@@ -334,3 +345,95 @@ class TestSubmitContentApproval:
                 "reject_campaign": False,
             })
             assert r.status_code == 404
+
+
+# ---- Convenience auth dependencies ----
+
+class TestAuthDependencies:
+    """Tests for require_authenticated, require_campaign_builder, require_admin."""
+
+    async def test_require_authenticated_passes_for_user(self):
+        """require_authenticated returns the user when one is present."""
+        from backend.services.auth import require_authenticated
+
+        result = await require_authenticated(_TEST_USER)
+        assert result == _TEST_USER
+
+    async def test_require_authenticated_raises_401_for_none(self):
+        """require_authenticated raises 401 when user is None (auth disabled)."""
+        from fastapi import HTTPException
+        from backend.services.auth import require_authenticated
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_authenticated(None)
+        assert exc_info.value.status_code == 401
+
+    async def test_require_campaign_builder_passes_for_builder(self):
+        """require_campaign_builder passes for campaign_builder role."""
+        from backend.services.auth import require_campaign_builder
+
+        result = await require_campaign_builder(_TEST_USER)
+        assert result == _TEST_USER
+
+    async def test_require_campaign_builder_passes_for_admin(self):
+        """require_campaign_builder passes for admin role."""
+        from backend.services.auth import require_campaign_builder
+
+        admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", role=UserRole.ADMIN)
+        result = await require_campaign_builder(admin_user)
+        assert result == admin_user
+
+    async def test_require_campaign_builder_raises_403_for_viewer(self):
+        """require_campaign_builder raises 403 for viewer role."""
+        from fastapi import HTTPException
+        from backend.services.auth import require_campaign_builder
+
+        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", role=UserRole.VIEWER)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_campaign_builder(viewer)
+        assert exc_info.value.status_code == 403
+
+    async def test_require_campaign_builder_raises_401_for_none(self):
+        """require_campaign_builder raises 401 when user is None."""
+        from fastapi import HTTPException
+        from backend.services.auth import require_campaign_builder
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_campaign_builder(None)
+        assert exc_info.value.status_code == 401
+
+    async def test_require_admin_passes_for_admin(self):
+        """require_admin passes for admin role."""
+        from backend.services.auth import require_admin
+
+        admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", role=UserRole.ADMIN)
+        result = await require_admin(admin_user)
+        assert result == admin_user
+
+    async def test_require_admin_raises_403_for_campaign_builder(self):
+        """require_admin raises 403 for campaign_builder role."""
+        from fastapi import HTTPException
+        from backend.services.auth import require_admin
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(_TEST_USER)
+        assert exc_info.value.status_code == 403
+
+    async def test_require_admin_raises_403_for_viewer(self):
+        """require_admin raises 403 for viewer role."""
+        from fastapi import HTTPException
+        from backend.services.auth import require_admin
+
+        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", role=UserRole.VIEWER)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(viewer)
+        assert exc_info.value.status_code == 403
+
+    async def test_require_admin_raises_401_for_none(self):
+        """require_admin raises 401 when user is None."""
+        from fastapi import HTTPException
+        from backend.services.auth import require_admin
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(None)
+        assert exc_info.value.status_code == 401

@@ -97,3 +97,22 @@ class TestProvisionUser:
         user = await db_session.get(UserRow, "user-ts")
         assert before <= user.created_at <= after
         assert before <= user.updated_at <= after
+
+    async def test_provision_returns_userrow(self, db_session):
+        """_provision_user returns the UserRow for the provisioned user."""
+        from backend.services.database import UserRow as UR
+
+        row = await _provision_user(db_session, "user-ret", "ret@example.com", "Return Test")
+        assert isinstance(row, UR)
+        assert row.id == "user-ret"
+        assert row.email == "ret@example.com"
+        assert row.display_name == "Return Test"
+        assert row.role == "admin"  # first user → admin
+
+    async def test_provision_returns_existing_userrow(self, db_session):
+        """_provision_user returns the existing UserRow when called a second time."""
+        await _provision_user(db_session, "user-existing", "a@example.com", "Alice")
+        row = await _provision_user(db_session, "user-existing", "b@example.com", "Alice Updated")
+        # Returns the original row, not the updated claims
+        assert row.id == "user-existing"
+        assert row.email == "a@example.com"
