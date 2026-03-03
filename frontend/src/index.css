@@ -18,6 +18,7 @@
   --color-text-dim: #64748b;
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --sidebar-width: 280px;
 }
 
 [data-theme="light"] {
@@ -239,6 +240,79 @@ a:hover { color: var(--color-primary-hover); }
 .spinner { width: 20px; height: 20px; border: 2px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 0.5rem; }
 
 .detail-tab-content { padding-top: 1rem; }
+
+/* ------------------------------------------------------------------ */
+/* View toggle (Focus / Split)                                         */
+/* ------------------------------------------------------------------ */
+.view-toggle {
+  display: inline-flex; align-items: center;
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  border-radius: var(--radius); padding: 2px; gap: 2px;
+}
+.view-toggle-btn {
+  padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 600;
+  border: none; border-radius: calc(var(--radius) - 2px);
+  background: transparent; color: var(--color-text-muted);
+  cursor: pointer; font-family: inherit; transition: background 0.15s, color 0.15s;
+}
+.view-toggle-btn:hover { color: var(--color-text); }
+.view-toggle-btn.active {
+  background: var(--color-primary); color: #fff;
+}
+
+/* ------------------------------------------------------------------ */
+/* Split layout                                                         */
+/* ------------------------------------------------------------------ */
+.detail-split-layout {
+  display: grid;
+  grid-template-columns: 1fr var(--sidebar-width);
+  gap: 1.25rem;
+  align-items: start;
+}
+.detail-split-main { min-width: 0; }
+.detail-split-sidebar {
+  position: sticky;
+  top: 1rem;
+  display: flex; flex-direction: column; gap: 0.75rem;
+}
+.detail-split-sidebar .card { margin-bottom: 0; }
+.sidebar-stages { display: flex; flex-direction: column; gap: 0.4rem; }
+.sidebar-stage {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.8rem; font-weight: 500;
+  background: none; border: none; border-radius: var(--radius);
+  padding: 0.3rem 0.4rem; width: 100%; text-align: left;
+  cursor: default; font-family: inherit; color: var(--color-text);
+  transition: background 0.15s;
+}
+.sidebar-stage:disabled { cursor: default; }
+.sidebar-stage-clickable { cursor: pointer; }
+.sidebar-stage-clickable:hover { background: var(--color-surface-2); }
+.sidebar-stage-selected { background: var(--color-surface-2); outline: 1px solid var(--color-border); }
+.sidebar-stage-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--color-border);
+}
+.sidebar-stage-completed .sidebar-stage-dot { background: var(--color-success); }
+.sidebar-stage-active .sidebar-stage-dot { background: var(--color-primary); box-shadow: 0 0 0 3px rgba(99,102,241,0.25); }
+.sidebar-stage-error .sidebar-stage-dot { background: var(--color-danger); }
+.sidebar-stage-pending .sidebar-stage-label { color: var(--color-text-dim); }
+.sidebar-stage-completed .sidebar-stage-label { color: var(--color-success); }
+.sidebar-stage-active .sidebar-stage-label { color: var(--color-primary-hover); font-weight: 700; }
+.sidebar-stage-error .sidebar-stage-label { color: var(--color-danger); }
+.sidebar-events .event-log { max-height: 220px; }
+.sidebar-meta-goal { font-size: 0.82rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
+.sidebar-meta-channels { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
+
+/* Collapse split layout to single column on narrow screens */
+@media (max-width: 768px) {
+  .detail-split-layout {
+    grid-template-columns: 1fr;
+  }
+  .detail-split-sidebar {
+    position: static;
+  }
+}
 
 /* Breadcrumb navigation */
 .breadcrumb {
