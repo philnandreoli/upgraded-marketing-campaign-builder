@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.models.campaign import CampaignBrief, Campaign
+from backend.models.user import User, UserRole
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
@@ -18,6 +19,41 @@ def _no_foundry_agents():
     register_agents() has populated the global registry."""
     with patch("backend.agents.base_agent.get_agent_ref", return_value=None):
         yield
+
+
+# ---- Role-based user fixtures ----
+
+@pytest.fixture
+def admin_user() -> User:
+    """A platform admin user."""
+    return User(
+        id="admin-fixture-001",
+        email="admin@example.com",
+        display_name="Admin User",
+        role=UserRole.ADMIN,
+    )
+
+
+@pytest.fixture
+def builder_user() -> User:
+    """A campaign builder user."""
+    return User(
+        id="builder-fixture-001",
+        email="builder@example.com",
+        display_name="Builder User",
+        role=UserRole.CAMPAIGN_BUILDER,
+    )
+
+
+@pytest.fixture
+def viewer_user() -> User:
+    """A viewer user (read-only)."""
+    return User(
+        id="viewer-fixture-001",
+        email="viewer@example.com",
+        display_name="Viewer User",
+        role=UserRole.VIEWER,
+    )
 
 
 # ---- Reusable brief & campaign fixtures ----
