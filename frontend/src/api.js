@@ -166,6 +166,50 @@ export async function listAllCampaigns() {
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Campaign member management API
+// ---------------------------------------------------------------------------
+
+export async function listCampaignMembers(campaignId) {
+  const res = await fetch(`${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`List members failed: ${res.status}`);
+  return res.json();
+}
+
+export async function addCampaignMember(campaignId, userId, role) {
+  const res = await fetch(`${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ user_id: userId, role }),
+  });
+  if (!res.ok) throw new Error(`Add member failed: ${res.status}`);
+  return res.json();
+}
+
+export async function removeCampaignMember(campaignId, userId) {
+  const res = await fetch(
+    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE", headers: await authHeaders() }
+  );
+  if (!res.ok && res.status !== 204)
+    throw new Error(`Remove member failed: ${res.status}`);
+}
+
+export async function updateCampaignMemberRole(campaignId, userId, role) {
+  const res = await fetch(
+    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ role }),
+    }
+  );
+  if (!res.ok) throw new Error(`Update member role failed: ${res.status}`);
+  return res.json();
+}
+
 export function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {
