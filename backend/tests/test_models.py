@@ -341,7 +341,7 @@ class TestUserModel:
     def test_defaults(self):
         u = User(id="oid-123")
         assert u.id == "oid-123"
-        assert u.role == UserRole.VIEWER
+        assert UserRole.VIEWER in u.roles
         assert u.is_active is True
         assert u.email is None
         assert u.display_name is None
@@ -351,12 +351,12 @@ class TestUserModel:
             id="oid-456",
             email="alice@example.com",
             display_name="Alice",
-            role=UserRole.ADMIN,
+            roles=[UserRole.ADMIN],
             is_active=True,
         )
         assert u.email == "alice@example.com"
         assert u.display_name == "Alice"
-        assert u.role == UserRole.ADMIN
+        assert UserRole.ADMIN in u.roles
 
     def test_missing_id_raises(self):
         with pytest.raises(ValidationError):
@@ -367,13 +367,13 @@ class TestUserModel:
             id="oid-789",
             email="bob@example.com",
             display_name="Bob",
-            role=UserRole.CAMPAIGN_BUILDER,
+            roles=[UserRole.CAMPAIGN_BUILDER],
         )
         data = u.model_dump(mode="json")
-        assert data["role"] == "campaign_builder"
+        assert data["roles"] == ["campaign_builder"]
         u2 = User.model_validate(data)
         assert u2.id == u.id
-        assert u2.role == UserRole.CAMPAIGN_BUILDER
+        assert UserRole.CAMPAIGN_BUILDER in u2.roles
 
     def test_inactive_user(self):
         u = User(id="oid-000", is_active=False)

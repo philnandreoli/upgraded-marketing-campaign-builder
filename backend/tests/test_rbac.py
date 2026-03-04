@@ -55,10 +55,10 @@ from backend.tests.mock_store import InMemoryCampaignStore
 # Module-level user constants
 # ---------------------------------------------------------------------------
 
-_ADMIN = User(id="rbac-admin-001", email="admin@rbac.test", display_name="Admin", role=UserRole.ADMIN)
-_BUILDER = User(id="rbac-builder-001", email="builder@rbac.test", display_name="Builder", role=UserRole.CAMPAIGN_BUILDER)
-_BUILDER2 = User(id="rbac-builder-002", email="builder2@rbac.test", display_name="Builder2", role=UserRole.CAMPAIGN_BUILDER)
-_VIEWER = User(id="rbac-viewer-001", email="viewer@rbac.test", display_name="Viewer", role=UserRole.VIEWER)
+_ADMIN = User(id="rbac-admin-001", email="admin@rbac.test", display_name="Admin", roles=[UserRole.ADMIN])
+_BUILDER = User(id="rbac-builder-001", email="builder@rbac.test", display_name="Builder", roles=[UserRole.CAMPAIGN_BUILDER])
+_BUILDER2 = User(id="rbac-builder-002", email="builder2@rbac.test", display_name="Builder2", roles=[UserRole.CAMPAIGN_BUILDER])
+_VIEWER = User(id="rbac-viewer-001", email="viewer@rbac.test", display_name="Viewer", roles=[UserRole.VIEWER])
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +394,7 @@ class TestUnauthenticatedAccess:
             ):
                 transport = ASGITransport(app=app)
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                    r = await client.patch("/api/admin/users/some-id/role", json={"role": "viewer"})
+                    r = await client.patch("/api/admin/users/some-id/role", json={"roles": ["viewer"]})
             assert r.status_code == 401
         finally:
             app.dependency_overrides.pop(get_current_user, None)
@@ -462,7 +462,7 @@ class TestEdgeCases:
             id="inactive-001",
             email="inactive@example.com",
             display_name="Inactive",
-            role=UserRole.VIEWER,
+            roles=[UserRole.VIEWER],
             is_active=False,
         )
         store._users[inactive_user.id] = inactive_user

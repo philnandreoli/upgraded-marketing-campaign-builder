@@ -5,7 +5,7 @@ const UserContext = createContext(null);
 
 const DEFAULT_VALUE = {
   user: null,
-  role: "campaign_builder",
+  roles: ["campaign_builder"],
   isAdmin: false,
   canBuild: true,
   isViewer: false,
@@ -26,7 +26,7 @@ export function UserProvider({ children }) {
     ? DEFAULT_VALUE
     : {
         user: userInfo,
-        role: userInfo?.role ?? "campaign_builder",
+        roles: userInfo?.roles ?? ["campaign_builder"],
         isAdmin: userInfo?.is_admin ?? false,
         canBuild: userInfo?.can_build ?? true,
         isViewer: userInfo?.is_viewer ?? false,

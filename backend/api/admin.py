@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.user import User, UserRole
+from backend.models.user import User, UserRole, roles_from_db, roles_to_db
 from backend.services.auth import require_admin
 from backend.services.campaign_store import get_campaign_store
 from backend.services.database import CampaignMemberRow, UserRow, get_db
@@ -34,14 +34,14 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 class RoleUpdateRequest(BaseModel):
-    role: str
+    roles: list[str]
 
 
 class UserListResponse(BaseModel):
     id: str
     email: Optional[str]
     display_name: Optional[str]
-    role: str
+    roles: list[str]
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -51,7 +51,7 @@ class UserDetailResponse(BaseModel):
     id: str
     email: Optional[str]
     display_name: Optional[str]
-    role: str
+    roles: list[str]
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -86,7 +86,7 @@ async def list_users(
             id=r.id,
             email=r.email,
             display_name=r.display_name,
-            role=r.role,
+            roles=[v.strip() for v in r.role.split(",") if v.strip()],
             is_active=r.is_active,
             created_at=r.created_at,
             updated_at=r.updated_at,
@@ -115,7 +115,7 @@ async def get_user(
         id=row.id,
         email=row.email,
         display_name=row.display_name,
-        role=row.role,
+        roles=[v.strip() for v in row.role.split(",") if v.strip()],
         is_active=row.is_active,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -137,22 +137,35 @@ async def update_user_role(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> UserListResponse:
-    """Change a user's platform role. Prevents removing the last admin."""
+    """Change a user's platform roles. Prevents removing the last admin."""
+    # Validate each role string
     try:
-        new_role = UserRole(body.role)
+        new_roles = [UserRole(r) for r in body.roles]
     except ValueError:
-        raise HTTPException(status_code=422, detail=f"Invalid role: {body.role!r}")
+        raise HTTPException(status_code=422, detail=f"Invalid role(s): {body.roles!r}")
+
+    if not new_roles:
+        raise HTTPException(status_code=422, detail="At least one role is required.")
+
+    if UserRole.CAMPAIGN_BUILDER in new_roles and UserRole.VIEWER in new_roles:
+        raise HTTPException(
+            status_code=422,
+            detail="A user cannot be both a campaign_builder and a viewer.",
+        )
 
     row = await db.get(UserRow, user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Guard: when demoting an admin, ensure at least one other active admin remains.
-    if row.role == UserRole.ADMIN.value and new_role != UserRole.ADMIN:
+    # Guard: when removing admin, ensure at least one other active admin remains.
+    current_roles = [v.strip() for v in row.role.split(",") if v.strip()]
+    was_admin = UserRole.ADMIN.value in current_roles
+    will_be_admin = UserRole.ADMIN in new_roles
+    if was_admin and not will_be_admin:
         count_result = await db.execute(
             select(func.count())
             .select_from(UserRow)
-            .where(UserRow.role == UserRole.ADMIN.value, UserRow.is_active == True)  # noqa: E712
+            .where(UserRow.role.contains(UserRole.ADMIN.value), UserRow.is_active == True)  # noqa: E712
         )
         admin_count = count_result.scalar_one()
         if admin_count <= 1:
@@ -161,7 +174,7 @@ async def update_user_role(
                 detail="Cannot remove the last admin. Assign another admin first.",
             )
 
-    row.role = new_role.value
+    row.role = roles_to_db(new_roles)
     row.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(row)
@@ -170,7 +183,7 @@ async def update_user_role(
         id=row.id,
         email=row.email,
         display_name=row.display_name,
-        role=row.role,
+        roles=[v.strip() for v in row.role.split(",") if v.strip()],
         is_active=row.is_active,
         created_at=row.created_at,
         updated_at=row.updated_at,

@@ -22,13 +22,13 @@ _TEST_USER = User(
     id="test-user-001",
     email="test@example.com",
     display_name="Test User",
-    role=UserRole.CAMPAIGN_BUILDER,
+    roles=[UserRole.CAMPAIGN_BUILDER],
 )
 _OTHER_USER = User(
     id="other-user-999",
     email="other@example.com",
     display_name="Other User",
-    role=UserRole.CAMPAIGN_BUILDER,
+    roles=[UserRole.CAMPAIGN_BUILDER],
 )
 
 
@@ -95,7 +95,7 @@ class TestGetMe:
         assert r.status_code == 200
         data = r.json()
         assert data["id"] == "local"
-        assert data["role"] == "campaign_builder"
+        assert data["roles"] == ["campaign_builder"]
         assert data["is_admin"] is False
         assert data["can_build"] is True
         assert data["is_viewer"] is False
@@ -108,31 +108,31 @@ class TestGetMe:
         assert data["id"] == _TEST_USER.id
         assert data["email"] == _TEST_USER.email
         assert data["display_name"] == _TEST_USER.display_name
-        assert data["role"] == "campaign_builder"
+        assert data["roles"] == ["campaign_builder"]
         assert data["is_admin"] is False
         assert data["can_build"] is True
         assert data["is_viewer"] is False
 
     def test_me_returns_admin_flags_for_admin(self, _isolated_store):
         """Returns is_admin=True for an admin user."""
-        admin = User(id="admin-001", email="admin@example.com", display_name="Admin", role=UserRole.ADMIN)
+        admin = User(id="admin-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
         with _as_user(admin) as c:
             r = c.get("/api/me")
             assert r.status_code == 200
             data = r.json()
-            assert data["role"] == "admin"
+            assert data["roles"] == ["admin"]
             assert data["is_admin"] is True
             assert data["can_build"] is True
             assert data["is_viewer"] is False
 
     def test_me_returns_viewer_flags_for_viewer(self, _isolated_store):
         """Returns is_viewer=True for a viewer user."""
-        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", role=UserRole.VIEWER)
+        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
         with _as_user(viewer) as c:
             r = c.get("/api/me")
             assert r.status_code == 200
             data = r.json()
-            assert data["role"] == "viewer"
+            assert data["roles"] == ["viewer"]
             assert data["is_admin"] is False
             assert data["can_build"] is False
             assert data["is_viewer"] is True
@@ -194,7 +194,7 @@ class TestCreateCampaign:
 
     def test_create_viewer_returns_403(self, _isolated_store):
         """A viewer cannot create campaigns."""
-        viewer = User(id="viewer-001", email="v@example.com", display_name="Viewer", role=UserRole.VIEWER)
+        viewer = User(id="viewer-001", email="v@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
         with _as_user(viewer) as c:
             r = c.post("/api/campaigns", json={
                 "product_or_service": "Test", "goal": "Test",
@@ -447,7 +447,7 @@ class TestAuthDependencies:
         """require_campaign_builder passes for admin role."""
         from backend.services.auth import require_campaign_builder
 
-        admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", role=UserRole.ADMIN)
+        admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
         result = await require_campaign_builder(admin_user)
         assert result == admin_user
 
@@ -456,7 +456,7 @@ class TestAuthDependencies:
         from fastapi import HTTPException
         from backend.services.auth import require_campaign_builder
 
-        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", role=UserRole.VIEWER)
+        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
         with pytest.raises(HTTPException) as exc_info:
             await require_campaign_builder(viewer)
         assert exc_info.value.status_code == 403
@@ -474,7 +474,7 @@ class TestAuthDependencies:
         """require_admin passes for admin role."""
         from backend.services.auth import require_admin
 
-        admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", role=UserRole.ADMIN)
+        admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
         result = await require_admin(admin_user)
         assert result == admin_user
 
@@ -492,7 +492,7 @@ class TestAuthDependencies:
         from fastapi import HTTPException
         from backend.services.auth import require_admin
 
-        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", role=UserRole.VIEWER)
+        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(viewer)
         assert exc_info.value.status_code == 403
@@ -509,8 +509,8 @@ class TestAuthDependencies:
 
 # ---- RBAC Authorization Matrix ----
 
-_ADMIN_USER = User(id="admin-rbac-001", email="admin@example.com", display_name="Admin", role=UserRole.ADMIN)
-_VIEWER_USER = User(id="viewer-rbac-001", email="viewer@example.com", display_name="Viewer", role=UserRole.VIEWER)
+_ADMIN_USER = User(id="admin-rbac-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
+_VIEWER_USER = User(id="viewer-rbac-001", email="viewer@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
 
 
 class TestAuthorizeFunction:
@@ -795,7 +795,7 @@ class TestCampaignMembers:
             id="inactive-user",
             email="inactive@example.com",
             display_name="Inactive",
-            role=UserRole.CAMPAIGN_BUILDER,
+            roles=[UserRole.CAMPAIGN_BUILDER],
             is_active=False,
         )
         _isolated_store._users[inactive.id] = inactive
@@ -810,7 +810,7 @@ class TestCampaignMembers:
         """An editor member cannot add other members (requires MANAGE_MEMBERS)."""
         campaign = self._setup_campaign(_isolated_store)
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
-        third = User(id="third-user", email="third@example.com", display_name="Third", role=UserRole.CAMPAIGN_BUILDER)
+        third = User(id="third-user", email="third@example.com", display_name="Third", roles=[UserRole.CAMPAIGN_BUILDER])
         _isolated_store._users[third.id] = third
         with _as_user(_OTHER_USER) as c:
             r = c.post(f"/api/campaigns/{campaign.id}/members", json={
@@ -902,7 +902,7 @@ class TestCampaignMembers:
         """An editor cannot remove members."""
         campaign = self._setup_campaign(_isolated_store)
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
-        third = User(id="third-user", email="third@example.com", display_name="Third", role=UserRole.CAMPAIGN_BUILDER)
+        third = User(id="third-user", email="third@example.com", display_name="Third", roles=[UserRole.CAMPAIGN_BUILDER])
         _isolated_store._members[(campaign.id, third.id)] = "viewer"
         with _as_user(_OTHER_USER) as c:
             r = c.delete(f"/api/campaigns/{campaign.id}/members/{third.id}")

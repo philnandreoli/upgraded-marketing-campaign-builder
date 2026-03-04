@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
-from backend.models.user import CampaignMemberRole, User, UserRole
+from backend.models.user import CampaignMemberRole, User, UserRole, roles_to_db
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.api.websocket import manager as ws_manager
@@ -84,7 +84,7 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
     if user is None:
         return  # auth disabled — allow everything
 
-    if user.role == UserRole.ADMIN:
+    if user.is_admin:
         return  # admins have full access
 
     member_role = await store.get_member_role(campaign_id, user.id)
@@ -92,14 +92,14 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     allowed: bool
-    if user.role == UserRole.CAMPAIGN_BUILDER:
+    if user.can_build:
         if member_role == CampaignMemberRole.OWNER:
             allowed = True
         elif member_role == CampaignMemberRole.EDITOR:
             allowed = action in (Action.READ, Action.WRITE)
         else:  # CampaignMemberRole.VIEWER
             allowed = action == Action.READ
-    else:  # UserRole.VIEWER
+    else:  # pure viewer role
         allowed = action == Action.READ
 
     if not allowed:
@@ -134,7 +134,7 @@ class MeResponse(BaseModel):
     id: str
     email: Optional[str]
     display_name: Optional[str]
-    role: str
+    roles: list[str]
     is_admin: bool
     can_build: bool
     is_viewer: bool
@@ -155,7 +155,7 @@ async def get_me(
             id="local",
             email=None,
             display_name="Local Dev",
-            role=UserRole.CAMPAIGN_BUILDER.value,
+            roles=[UserRole.CAMPAIGN_BUILDER.value],
             is_admin=False,
             can_build=True,
             is_viewer=False,
@@ -164,10 +164,10 @@ async def get_me(
         id=user.id,
         email=user.email,
         display_name=user.display_name,
-        role=user.role.value,
-        is_admin=user.role == UserRole.ADMIN,
-        can_build=user.role != UserRole.VIEWER,
-        is_viewer=user.role == UserRole.VIEWER,
+        roles=[r.value for r in user.roles],
+        is_admin=user.is_admin,
+        can_build=user.can_build,
+        is_viewer=user.is_viewer,
     )
 
 
@@ -180,12 +180,23 @@ async def create_campaign(
     """Create a new campaign and kick off the agent pipeline in the background."""
     # When auth is enabled, only campaign_builder and admin may create campaigns.
     # When auth is disabled (user is None) all requests are allowed (dev mode).
-    if user is not None and user.role == UserRole.VIEWER:
+    if user is not None and user.is_viewer:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    store = get_campaign_store()
-    campaign = await store.create(brief, owner_id=user.id if user else None)
 
-    coordinator = _get_coordinator()
+    try:
+        logger.info("Creating campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())
+        store = get_campaign_store()
+        campaign = await store.create(brief, owner_id=user.id if user else None)
+        logger.info("Campaign %s created successfully", campaign.id)
+    except Exception as exc:
+        logger.exception("Failed to create campaign: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Campaign creation failed: {exc}")
+
+    try:
+        coordinator = _get_coordinator()
+    except Exception as exc:
+        logger.exception("Failed to initialise coordinator: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Coordinator init failed: {exc}")
 
     # Run the pipeline in the background so the HTTP response returns immediately
     background_tasks.add_task(_run_pipeline, coordinator, campaign)
@@ -200,9 +211,11 @@ async def create_campaign(
 async def _run_pipeline(coordinator: CoordinatorAgent, campaign: Campaign) -> None:
     """Wrapper executed as a background task."""
     try:
+        logger.info("Starting pipeline for campaign %s", campaign.id)
         await coordinator.run_pipeline(campaign)
-    except Exception:
-        logger.exception("Pipeline crashed for campaign %s", campaign.id)
+        logger.info("Pipeline completed for campaign %s", campaign.id)
+    except Exception as exc:
+        logger.exception("Pipeline crashed for campaign %s: %s", campaign.id, exc)
 
 
 @router.get("/campaigns")
@@ -212,7 +225,7 @@ async def list_campaigns(
     """Return campaigns visible to the current user (summary view)."""
     store = get_campaign_store()
     if user is not None:
-        campaigns = await store.list_accessible(user.id, is_admin=(user.role == UserRole.ADMIN))
+        campaigns = await store.list_accessible(user.id, is_admin=user.is_admin)
     else:
         campaigns = await store.list_all()
     return [

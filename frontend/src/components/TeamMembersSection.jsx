@@ -131,83 +131,43 @@ function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
   };
 
   return (
-    <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--color-border)" }}>
-      <h3 style={{ marginBottom: "0.6rem" }}>Add Member</h3>
-      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+    <div className="add-member">
+      <h3>Add Member</h3>
+      <div className="add-member-row">
         {/* User search */}
-        <div style={{ position: "relative", flex: "1 1 200px" }}>
+        <div className="add-member-search-wrap">
           <input
             type="search"
+            className="add-member-search"
             placeholder="Search by name or email…"
             value={search}
             onChange={handleSearchChange}
             onFocus={() => results.length > 0 && setShowDropdown(true)}
             onBlur={() => setTimeout(() => setShowDropdown(false), DROPDOWN_CLOSE_DELAY)}
-            style={{ width: "100%", padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}
           />
           {searchLoading && (
             <span
-              className="spinner"
-              style={{ position: "absolute", right: "0.5rem", top: "50%", transform: "translateY(-50%)", width: SPINNER_SIZE, height: SPINNER_SIZE }}
+              className="spinner add-member-search-spinner"
+              style={{ width: SPINNER_SIZE, height: SPINNER_SIZE }}
             />
           )}
           {showDropdown && results.length > 0 && (
-            <ul
-              style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                right: 0,
-                zIndex: 100,
-                background: "var(--color-surface)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius)",
-                marginTop: "0.2rem",
-                listStyle: "none",
-                maxHeight: 200,
-                overflowY: "auto",
-                boxShadow: "var(--shadow)",
-              }}
-            >
+            <ul className="add-member-dropdown">
               {results.map((u) => (
                 <li
                   key={u.id}
                   onMouseDown={() => handleSelectUser(u)}
-                  style={{
-                    padding: "0.5rem 0.75rem",
-                    cursor: "pointer",
-                    fontSize: "0.875rem",
-                    borderBottom: "1px solid var(--color-border)",
-                  }}
                 >
-                  <span style={{ fontWeight: 500 }}>{u.display_name || "—"}</span>
+                  <span className="add-member-dropdown-name">{u.display_name || "—"}</span>
                   {u.email && (
-                    <span style={{ color: "var(--color-text-muted)", marginLeft: "0.4rem" }}>
-                      {u.email}
-                    </span>
+                    <span className="add-member-dropdown-email">{u.email}</span>
                   )}
                 </li>
               ))}
             </ul>
           )}
           {showDropdown && !searchLoading && results.length === 0 && search.trim() && (
-            <div
-              style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                right: 0,
-                zIndex: 100,
-                background: "var(--color-surface)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius)",
-                marginTop: "0.2rem",
-                padding: "0.5rem 0.75rem",
-                fontSize: "0.875rem",
-                color: "var(--color-text-muted)",
-                boxShadow: "var(--shadow)",
-              }}
-            >
+            <div className="add-member-no-results">
               No users found.
             </div>
           )}
@@ -215,16 +175,9 @@ function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
 
         {/* Role selector */}
         <select
+          className="add-member-role"
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          style={{
-            padding: "0.5rem 0.75rem",
-            fontSize: "0.875rem",
-            background: "var(--color-surface-2)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius)",
-            color: "var(--color-text)",
-          }}
         >
           {CAMPAIGN_ROLES.map((r) => (
             <option key={r} value={r}>
@@ -238,21 +191,226 @@ function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
           className="btn btn-primary"
           onClick={handleAdd}
           disabled={!selectedUser || adding}
-          style={{ padding: "0.5rem 1rem", fontSize: "0.875rem" }}
+          style={{ padding: "0.55rem 1.1rem", fontSize: "0.875rem" }}
         >
           {adding ? <><span className="spinner" style={{ width: SPINNER_SIZE, height: SPINNER_SIZE }} /> Adding…</> : "Add"}
         </button>
       </div>
 
       {searchError && (
-        <p style={{ color: "var(--color-danger)", fontSize: "0.8rem", marginTop: "0.4rem" }}>
+        <p className="add-member-error">
           Search failed: {searchError}
         </p>
       )}
       {addError && (
-        <p style={{ color: "var(--color-danger)", fontSize: "0.8rem", marginTop: "0.4rem" }}>
+        <p className="add-member-error">
           {addError}
         </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compact add-member form for sidebar — inline search + role + add
+// ---------------------------------------------------------------------------
+function CompactAddMemberForm({ campaignId, existingUserIds, onAdded }) {
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [role, setRole] = useState("viewer");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const debounceRef = useRef(null);
+
+  const doSearch = useCallback(async (term) => {
+    if (!term.trim()) { setResults([]); setShowDropdown(false); return; }
+    setSearchLoading(true);
+    try {
+      const users = await listUsers(term);
+      setResults(users.filter((u) => u.is_active && !existingUserIds.includes(u.id)));
+      setShowDropdown(true);
+    } catch { setResults([]); }
+    finally { setSearchLoading(false); }
+  }, [existingUserIds]);
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    setSelectedUser(null);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => doSearch(val), 300);
+  };
+
+  const handleSelectUser = (user) => {
+    setSelectedUser(user);
+    setSearch(user.display_name || user.email || user.id);
+    setShowDropdown(false);
+    setResults([]);
+  };
+
+  const handleAdd = async () => {
+    if (!selectedUser) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      const member = await addCampaignMember(campaignId, selectedUser.id, role);
+      onAdded(member, selectedUser);
+      setSearch("");
+      setSelectedUser(null);
+      setRole("viewer");
+    } catch (err) { setAddError(err.message); }
+    finally { setAdding(false); }
+  };
+
+  return (
+    <div className="compact-add-form">
+      <div className="compact-add-search-wrap">
+        <input
+          type="search"
+          className="compact-add-search"
+          placeholder="Name or email…"
+          value={search}
+          onChange={handleSearchChange}
+          onFocus={() => results.length > 0 && setShowDropdown(true)}
+          onBlur={() => setTimeout(() => setShowDropdown(false), DROPDOWN_CLOSE_DELAY)}
+        />
+        {searchLoading && (
+          <span className="spinner compact-add-spinner" style={{ width: 12, height: 12 }} />
+        )}
+        {showDropdown && results.length > 0 && (
+          <ul className="add-member-dropdown">
+            {results.map((u) => (
+              <li key={u.id} onMouseDown={() => handleSelectUser(u)}>
+                <span className="add-member-dropdown-name">{u.display_name || "—"}</span>
+                {u.email && <span className="add-member-dropdown-email">{u.email}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+        {showDropdown && !searchLoading && results.length === 0 && search.trim() && (
+          <div className="add-member-no-results">No users found.</div>
+        )}
+      </div>
+      <div className="compact-add-actions">
+        <select
+          className="compact-add-role"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+        >
+          {CAMPAIGN_ROLES.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+        <button
+          className="btn btn-primary compact-add-btn"
+          onClick={handleAdd}
+          disabled={!selectedUser || adding}
+        >
+          {adding ? "…" : "Add"}
+        </button>
+      </div>
+      {addError && <p className="add-member-error">{addError}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TeamMembersCompact — sidebar variant (names only + expandable add form)
+// ---------------------------------------------------------------------------
+export function TeamMembersCompact({ campaignId, canManage }) {
+  const [members, setMembers] = useState([]);
+  const [userMap, setUserMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await listCampaignMembers(campaignId);
+      setMembers(data);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [campaignId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!canManage) return;
+    listUsers("").then((users) => {
+      const map = {};
+      users.forEach((u) => { map[u.id] = { display_name: u.display_name, email: u.email }; });
+      setUserMap(map);
+    }).catch(() => {});
+  }, [canManage]);
+
+  const getUserLabel = (userId) => {
+    const info = userMap[userId];
+    if (!info) return userId;
+    return info.display_name || info.email || userId;
+  };
+
+  const handleMemberAdded = (member, user) => {
+    setMembers((prev) => {
+      const exists = prev.find((m) => m.user_id === member.user_id);
+      if (exists) return prev.map((m) => (m.user_id === member.user_id ? { ...m, role: member.role } : m));
+      return [...prev, member];
+    });
+    if (user) {
+      setUserMap((prev) => ({ ...prev, [user.id]: { display_name: user.display_name, email: user.email } }));
+    }
+    setShowAddForm(false);
+  };
+
+  const existingUserIds = members.map((m) => m.user_id);
+
+  return (
+    <div className="card sidebar-team">
+      <div className="sidebar-team-header">
+        <h3>Team</h3>
+        {canManage && (
+          <button
+            className={`sidebar-team-add-btn${showAddForm ? " active" : ""}`}
+            onClick={() => setShowAddForm((v) => !v)}
+            title="Add member"
+          >
+            {showAddForm ? "✕" : "+"}
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="loading" style={{ padding: "0.5rem" }}>
+          <span className="spinner" style={{ width: 14, height: 14 }} />
+        </div>
+      ) : (
+        <ul className="sidebar-team-list">
+          {members.map((m) => (
+            <li key={m.user_id} className="sidebar-team-member">
+              <span className="sidebar-team-name">{getUserLabel(m.user_id)}</span>
+              <span
+                className="badge"
+                style={{
+                  background: m.role === "owner" ? "rgba(99,102,241,0.15)" : "rgba(148,163,184,0.12)",
+                  color: m.role === "owner" ? "var(--color-primary-hover)" : "var(--color-text-dim)",
+                  fontSize: "0.65rem",
+                  padding: "0.12rem 0.45rem",
+                }}
+              >
+                {m.role}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showAddForm && canManage && (
+        <CompactAddMemberForm
+          campaignId={campaignId}
+          existingUserIds={existingUserIds}
+          onAdded={handleMemberAdded}
+        />
       )}
     </div>
   );

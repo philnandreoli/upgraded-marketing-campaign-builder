@@ -1,18 +1,32 @@
 import { useEffect, useState, useCallback } from "react";
-import { listUsers, updateUserRole, deactivateUser, listAllCampaigns } from "../api";
+import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns } from "../api";
 
 const ROLES = ["admin", "campaign_builder", "viewer"];
+const INCOMPATIBLE = { campaign_builder: "viewer", viewer: "campaign_builder" };
 
-function RoleSelect({ userId, currentRole, onRoleChange }) {
+function RoleCheckboxes({ userId, currentRoles, onRolesChange }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleChange = async (e) => {
-    const newRole = e.target.value;
+  const handleToggle = async (toggledRole) => {
     setSaving(true);
     setError(null);
     try {
-      await onRoleChange(userId, newRole);
+      let next;
+      if (currentRoles.includes(toggledRole)) {
+        // Remove the role (but don't allow empty)
+        next = currentRoles.filter((r) => r !== toggledRole);
+        if (next.length === 0) {
+          setError("At least one role is required.");
+          setSaving(false);
+          return;
+        }
+      } else {
+        // Add the role & remove incompatible
+        const incomp = INCOMPATIBLE[toggledRole];
+        next = [...currentRoles.filter((r) => r !== incomp), toggledRole];
+      }
+      await onRolesChange(userId, next);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -21,30 +35,32 @@ function RoleSelect({ userId, currentRole, onRoleChange }) {
   };
 
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-      <select
-        value={currentRole}
-        onChange={handleChange}
-        disabled={saving}
-        style={{
-          padding: "0.3rem 0.5rem",
-          fontSize: "0.8rem",
-          background: "var(--color-surface-2)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
-          color: "var(--color-text)",
-        }}
-      >
-        {ROLES.map((r) => (
-          <option key={r} value={r}>
-            {r.replace(/_/g, " ")}
-          </option>
-        ))}
-      </select>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+      {ROLES.map((r) => (
+        <label
+          key={r}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.25rem",
+            fontSize: "0.8rem",
+            cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.6 : 1,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={currentRoles.includes(r)}
+            disabled={saving}
+            onChange={() => handleToggle(r)}
+          />
+          {r.replace(/_/g, " ")}
+        </label>
+      ))}
       {saving && <span className="spinner" style={{ width: 14, height: 14 }} />}
       {error && (
         <span style={{ fontSize: "0.75rem", color: "var(--color-danger)" }} title={error}>
-          ⚠
+          ⚠ {error}
         </span>
       )}
     </span>
@@ -97,9 +113,9 @@ export default function Admin() {
     fetchUsers(val);
   };
 
-  const handleRoleChange = async (userId, newRole) => {
-    const updated = await updateUserRole(userId, newRole);
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: updated.role } : u)));
+  const handleRolesChange = async (userId, newRoles) => {
+    const updated = await updateUserRoles(userId, newRoles);
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, roles: updated.roles } : u)));
   };
 
   const handleDeactivate = async (userId) => {
@@ -156,7 +172,7 @@ export default function Admin() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                  {["Display Name", "Email", "Role", "Active", "Date Added", "Actions"].map((h) => (
+                  {["Display Name", "Email", "Roles", "Active", "Date Added", "Actions"].map((h) => (
                     <th
                       key={h}
                       style={{
@@ -189,14 +205,14 @@ export default function Admin() {
                     </td>
                     <td style={{ padding: "0.6rem 0.75rem" }}>
                       {u.is_active ? (
-                        <RoleSelect
+                        <RoleCheckboxes
                           userId={u.id}
-                          currentRole={u.role}
-                          onRoleChange={handleRoleChange}
+                          currentRoles={u.roles}
+                          onRolesChange={handleRolesChange}
                         />
                       ) : (
                         <span style={{ color: "var(--color-text-dim)", fontSize: "0.8rem" }}>
-                          {u.role.replace(/_/g, " ")}
+                          {u.roles.map((r) => r.replace(/_/g, " ")).join(", ")}
                         </span>
                       )}
                     </td>

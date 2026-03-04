@@ -65,18 +65,19 @@ class TestProvisionUser:
         assert viewer.role == "viewer"
 
     async def test_idempotent_for_existing_user(self, db_session):
-        """Calling _provision_user twice for the same user is a no-op."""
+        """Calling _provision_user twice updates claims but keeps one row."""
         await _provision_user(db_session, "user-001", "a@example.com", "Alice")
         await _provision_user(db_session, "user-001", "b@example.com", "Alice Updated")
 
-        # Only one row should exist, and it keeps the original data.
+        # Only one row should exist, but claims should be updated.
         count_result = await db_session.execute(
             select(func.count()).select_from(UserRow)
         )
         assert count_result.scalar_one() == 1
 
         user = await db_session.get(UserRow, "user-001")
-        assert user.email == "a@example.com"  # original value, not overwritten
+        assert user.email == "b@example.com"  # updated from latest JWT claims
+        assert user.display_name == "Alice Updated"
 
     async def test_user_with_no_claims(self, db_session):
         """Provisioning works even when email and display_name are None."""
@@ -110,9 +111,9 @@ class TestProvisionUser:
         assert row.role == "admin"  # first user → admin
 
     async def test_provision_returns_existing_userrow(self, db_session):
-        """_provision_user returns the existing UserRow when called a second time."""
+        """_provision_user returns the existing UserRow with updated claims."""
         await _provision_user(db_session, "user-existing", "a@example.com", "Alice")
         row = await _provision_user(db_session, "user-existing", "b@example.com", "Alice Updated")
-        # Returns the original row, not the updated claims
+        # Returns the row with updated claims from the latest JWT
         assert row.id == "user-existing"
-        assert row.email == "a@example.com"
+        assert row.email == "b@example.com"

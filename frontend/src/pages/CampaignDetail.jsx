@@ -9,7 +9,7 @@ import AnalyticsSection from "../components/AnalyticsSection.jsx";
 import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
 import EventLog from "../components/EventLog.jsx";
-import TeamMembersSection from "../components/TeamMembersSection.jsx";
+import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import { useUser } from "../UserContext";
 
 const TERMINAL_STATES = ["approved", "rejected", "content_approval"];
@@ -332,7 +332,7 @@ export default function CampaignDetail() {
         </div>
       </div>
 
-      <TeamMembersSection campaignId={id} canManage={canManage} />
+      {viewMode === "focus" && <TeamMembersSection campaignId={id} canManage={canManage} />}
 
       {viewMode === "split" ? (
         <div className="detail-split-layout">
@@ -391,6 +391,9 @@ export default function CampaignDetail() {
                 })}
               </div>
             </div>
+
+            {/* Team members (compact) */}
+            <TeamMembersCompact campaignId={id} canManage={canManage} />
 
             {/* Event log */}
             <div className="card sidebar-events">
