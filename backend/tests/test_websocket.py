@@ -28,9 +28,9 @@ from backend.tests.mock_store import InMemoryCampaignStore
 # Shared test users
 # ---------------------------------------------------------------------------
 
-_ADMIN = User(id="admin-1", email="admin@example.com", role=UserRole.ADMIN)
-_MEMBER = User(id="member-1", email="member@example.com", role=UserRole.CAMPAIGN_BUILDER)
-_OUTSIDER = User(id="outsider-1", email="outsider@example.com", role=UserRole.VIEWER)
+_ADMIN = User(id="admin-1", email="admin@example.com", roles=[UserRole.ADMIN])
+_MEMBER = User(id="member-1", email="member@example.com", roles=[UserRole.CAMPAIGN_BUILDER])
+_OUTSIDER = User(id="outsider-1", email="outsider@example.com", roles=[UserRole.VIEWER])
 
 _CAMPAIGN_ID = "campaign-abc"
 

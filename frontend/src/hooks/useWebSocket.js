@@ -13,8 +13,8 @@ export default function useWebSocket(campaignId = null) {
   const reconnectTimer = useRef(null);
   const connectRef = useRef(null);
 
-  const connect = useCallback(() => {
-    const url = getWsUrl(campaignId);
+  const connect = useCallback(async () => {
+    const url = await getWsUrl(campaignId);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 

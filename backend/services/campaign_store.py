@@ -44,6 +44,9 @@ class CampaignStore:
         )
         async with async_session() as session:
             session.add(row)
+            # Flush the campaign row first so it exists in the DB before
+            # inserting the campaign_members row (FK constraint).
+            await session.flush()
             if owner_id is not None:
                 member_row = CampaignMemberRow(
                     campaign_id=campaign.id,

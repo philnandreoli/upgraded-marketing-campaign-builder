@@ -27,7 +27,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
-from backend.models.user import User, UserRole
+from backend.models.user import User, UserRole, roles_from_db, roles_to_db
 from backend.services.database import UserRow, get_db
 
 logger = logging.getLogger(__name__)
@@ -106,9 +106,22 @@ async def _provision_user(
     """
     result = await db.get(UserRow, user_id)
     if result is not None:
-        return result  # User already exists — nothing to do.
+        # Update email / display_name if the JWT now carries claims that
+        # were missing (or changed) since the user was first provisioned.
+        dirty = False
+        if email and result.email != email:
+            result.email = email
+            dirty = True
+        if display_name and result.display_name != display_name:
+            result.display_name = display_name
+            dirty = True
+        if dirty:
+            result.updated_at = datetime.utcnow()
+            await db.commit()
+            logger.info("Updated profile claims for user %s", user_id)
+        return result
 
-    # Determine the role: admin if the table is currently empty, else viewer.
+    # Determine the role(s): admin if the table is currently empty, else viewer.
     count_result = await db.execute(select(func.count()).select_from(UserRow))
     user_count = count_result.scalar_one()
     role = "admin" if user_count == 0 else "viewer"
@@ -225,7 +238,7 @@ async def validate_token(token: str, db: AsyncSession) -> User:
             id=user_row.id,
             email=user_row.email,
             display_name=user_row.display_name,
-            role=UserRole(user_row.role),
+            roles=roles_from_db(user_row.role),
             created_at=user_row.created_at,
             updated_at=user_row.updated_at,
             is_active=user_row.is_active,
@@ -266,14 +279,14 @@ async def require_authenticated(
 async def require_campaign_builder(
     user: Optional[User] = Depends(get_current_user),
 ) -> User:
-    """Raise 403 if the user has viewer role (cannot build campaigns)."""
+    """Raise 403 if the user is purely a viewer (cannot build campaigns)."""
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if user.role == UserRole.VIEWER:
+    if not user.can_build:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions",
@@ -291,7 +304,7 @@ async def require_admin(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if user.role != UserRole.ADMIN:
+    if not user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions",

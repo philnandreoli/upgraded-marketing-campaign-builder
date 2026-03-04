@@ -63,7 +63,14 @@ export async function createCampaign(brief) {
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify(brief),
   });
-  if (!res.ok) throw new Error(`Create failed: ${res.status}`);
+  if (!res.ok) {
+    let detail = `Create failed: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = `Create failed: ${res.status} — ${body.detail}`;
+    } catch { /* response wasn't JSON */ }
+    throw new Error(detail);
+  }
   return res.json();
 }
 
@@ -139,13 +146,13 @@ export async function listUsers(search = "") {
   return res.json();
 }
 
-export async function updateUserRole(userId, role) {
+export async function updateUserRoles(userId, roles) {
   const res = await fetch(`${API_BASE}/api/admin/users/${encodeURIComponent(userId)}/role`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({ role }),
+    body: JSON.stringify({ roles }),
   });
-  if (!res.ok) throw new Error(`Update role failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Update roles failed: ${res.status}`);
   return res.json();
 }
 
@@ -210,7 +217,7 @@ export async function updateCampaignMemberRole(campaignId, userId, role) {
   return res.json();
 }
 
-export function getWsUrl(campaignId = null) {
+export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {
     // Explicit API URL configured — derive WebSocket URL from it
@@ -219,5 +226,7 @@ export function getWsUrl(campaignId = null) {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     base = `${proto}://${window.location.host}`;
   }
-  return campaignId ? `${base}/ws/${campaignId}` : `${base}/ws`;
+  const path = campaignId ? `${base}/ws/${campaignId}` : `${base}/ws`;
+  const token = await getBearerToken();
+  return token ? `${path}?token=${encodeURIComponent(token)}` : path;
 }

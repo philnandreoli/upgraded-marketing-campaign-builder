@@ -564,3 +564,258 @@ a:hover { color: var(--color-primary-hover); }
   white-space: pre-wrap; font-size: 0.88rem; line-height: 1.6;
   color: var(--color-text); padding: 0.5rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Add Member form                                                     */
+/* ------------------------------------------------------------------ */
+.add-member {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+.add-member h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+.add-member-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.add-member-search-wrap {
+  position: relative;
+  flex: 1 1 260px;
+}
+.add-member-search {
+  width: 100%;
+  padding: 0.55rem 0.85rem;
+  padding-right: 2.2rem;           /* room for spinner */
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.add-member-search::placeholder {
+  color: var(--color-text-dim);
+}
+.add-member-search:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(99,102,241,0.18);
+}
+.add-member-search-spinner {
+  position: absolute;
+  right: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.add-member-role {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+}
+.add-member-role:focus {
+  border-color: var(--color-primary);
+}
+.add-member-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+.add-member-dropdown li {
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background 0.12s;
+}
+.add-member-dropdown li:not(:last-child) {
+  border-bottom: 1px solid var(--color-border);
+}
+.add-member-dropdown li:hover {
+  background: var(--color-surface-2);
+}
+.add-member-dropdown-name {
+  font-weight: 500;
+  color: var(--color-text);
+}
+.add-member-dropdown-email {
+  color: var(--color-text-dim);
+  font-size: 0.8rem;
+}
+.add-member-no-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.84rem;
+  color: var(--color-text-dim);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+.add-member-error {
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  margin-top: 0.5rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Compact sidebar team members                                        */
+/* ------------------------------------------------------------------ */
+.sidebar-team-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+.sidebar-team-header h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+.sidebar-team-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.sidebar-team-add-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.sidebar-team-add-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.sidebar-team-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.sidebar-team-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.35rem;
+  border-radius: calc(var(--radius) - 2px);
+  transition: background 0.12s;
+}
+.sidebar-team-member:hover {
+  background: var(--color-surface-2);
+}
+.sidebar-team-name {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 0.4rem;
+}
+
+/* Compact add-member form (sidebar) */
+.compact-add-form {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.compact-add-search-wrap {
+  position: relative;
+}
+.compact-add-search {
+  width: 100%;
+  padding: 0.4rem 0.65rem;
+  padding-right: 1.8rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.compact-add-search::placeholder {
+  color: var(--color-text-dim);
+}
+.compact-add-search:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(99,102,241,0.18);
+}
+.compact-add-spinner {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.compact-add-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+.compact-add-role {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  outline: none;
+  cursor: pointer;
+}
+.compact-add-role:focus {
+  border-color: var(--color-primary);
+}
+.compact-add-btn {
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.78rem !important;
+}

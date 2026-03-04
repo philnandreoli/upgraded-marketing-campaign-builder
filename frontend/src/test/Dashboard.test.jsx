@@ -33,7 +33,7 @@ function makeMeResponse({ isViewer = false, isAdmin = false, userId = 'user-1' }
     id: userId,
     email: 'test@example.com',
     display_name: 'Test User',
-    role: isAdmin ? 'admin' : isViewer ? 'viewer' : 'campaign_builder',
+    roles: isAdmin ? ['admin'] : isViewer ? ['viewer'] : ['campaign_builder'],
     is_admin: isAdmin,
     can_build: !isViewer,
     is_viewer: isViewer,

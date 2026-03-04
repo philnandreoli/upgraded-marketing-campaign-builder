@@ -28,21 +28,21 @@ _ADMIN_USER = User(
     id="admin-001",
     email="admin@example.com",
     display_name="Admin User",
-    role=UserRole.ADMIN,
+    roles=[UserRole.ADMIN],
 )
 
 _BUILDER_USER = User(
     id="builder-001",
     email="builder@example.com",
     display_name="Builder User",
-    role=UserRole.CAMPAIGN_BUILDER,
+    roles=[UserRole.CAMPAIGN_BUILDER],
 )
 
 _VIEWER_USER = User(
     id="viewer-001",
     email="viewer@example.com",
     display_name="Viewer User",
-    role=UserRole.VIEWER,
+    roles=[UserRole.VIEWER],
 )
 
 
@@ -221,7 +221,7 @@ class TestGetUser:
         data = r.json()
         assert data["id"] == "u1"
         assert data["email"] == "alice@example.com"
-        assert data["role"] == "admin"
+        assert data["roles"] == ["admin"]
         assert data["campaign_memberships"] == []
 
     async def test_returns_404_for_unknown_user(self, admin_client):
@@ -265,15 +265,15 @@ class TestUpdateUserRole:
         db_session.add(_make_user_row("u2", role="admin"))
         await db_session.commit()
 
-        r = await client.patch("/api/admin/users/u1/role", json={"role": "campaign_builder"})
+        r = await client.patch("/api/admin/users/u1/role", json={"roles": ["campaign_builder"]})
         assert r.status_code == 200
         data = r.json()
         assert data["id"] == "u1"
-        assert data["role"] == "campaign_builder"
+        assert data["roles"] == ["campaign_builder"]
 
     async def test_returns_404_for_unknown_user(self, admin_client):
         client, _ = admin_client
-        r = await client.patch("/api/admin/users/nobody/role", json={"role": "viewer"})
+        r = await client.patch("/api/admin/users/nobody/role", json={"roles": ["viewer"]})
         assert r.status_code == 404
 
     async def test_returns_422_for_invalid_role(self, admin_client, db_session):
@@ -281,7 +281,7 @@ class TestUpdateUserRole:
         db_session.add(_make_user_row("u1"))
         await db_session.commit()
 
-        r = await client.patch("/api/admin/users/u1/role", json={"role": "superuser"})
+        r = await client.patch("/api/admin/users/u1/role", json={"roles": ["superuser"]})
         assert r.status_code == 422
 
     async def test_prevents_demoting_last_admin(self, admin_client, db_session):
@@ -289,7 +289,7 @@ class TestUpdateUserRole:
         db_session.add(_make_user_row("u1", role="admin"))
         await db_session.commit()
 
-        r = await client.patch("/api/admin/users/u1/role", json={"role": "viewer"})
+        r = await client.patch("/api/admin/users/u1/role", json={"roles": ["viewer"]})
         assert r.status_code == 409
         assert "last admin" in r.json()["detail"].lower()
 
@@ -298,9 +298,9 @@ class TestUpdateUserRole:
         db_session.add(_make_user_row("u1", role="viewer"))
         await db_session.commit()
 
-        r = await client.patch("/api/admin/users/u1/role", json={"role": "admin"})
+        r = await client.patch("/api/admin/users/u1/role", json={"roles": ["admin"]})
         assert r.status_code == 200
-        assert r.json()["role"] == "admin"
+        assert r.json()["roles"] == ["admin"]
 
     async def test_allows_demoting_admin_when_another_admin_exists(self, admin_client, db_session):
         client, _ = admin_client
@@ -308,9 +308,29 @@ class TestUpdateUserRole:
         db_session.add(_make_user_row("u2", role="admin"))
         await db_session.commit()
 
-        r = await client.patch("/api/admin/users/u1/role", json={"role": "viewer"})
+        r = await client.patch("/api/admin/users/u1/role", json={"roles": ["viewer"]})
         assert r.status_code == 200
-        assert r.json()["role"] == "viewer"
+        assert r.json()["roles"] == ["viewer"]
+
+    async def test_allows_admin_and_campaign_builder_together(self, admin_client, db_session):
+        """A user can be both admin and campaign_builder."""
+        client, _ = admin_client
+        db_session.add(_make_user_row("u1", role="viewer"))
+        await db_session.commit()
+
+        r = await client.patch("/api/admin/users/u1/role", json={"roles": ["admin", "campaign_builder"]})
+        assert r.status_code == 200
+        assert set(r.json()["roles"]) == {"admin", "campaign_builder"}
+
+    async def test_rejects_campaign_builder_and_viewer_together(self, admin_client, db_session):
+        """A user cannot be both campaign_builder and viewer."""
+        client, _ = admin_client
+        db_session.add(_make_user_row("u1", role="viewer"))
+        await db_session.commit()
+
+        r = await client.patch("/api/admin/users/u1/role", json={"roles": ["campaign_builder", "viewer"]})
+        assert r.status_code == 422
+        assert "campaign_builder" in r.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------

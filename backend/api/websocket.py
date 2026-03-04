@@ -158,7 +158,7 @@ async def ws_global(websocket: WebSocket, token: Optional[str] = None) -> None:
         return
 
     user_id = user.id if user else None
-    is_admin = (user.role == UserRole.ADMIN) if user else False
+    is_admin = user.is_admin if user else False
 
     await manager.connect(websocket, "*", user_id=user_id, is_admin=is_admin)
     try:
@@ -185,7 +185,7 @@ async def ws_campaign(
         await websocket.close(code=_WS_UNAUTHORIZED)
         return
 
-    if user is not None and user.role != UserRole.ADMIN:
+    if user is not None and not user.is_admin:
         store = get_campaign_store()
         role = await store.get_member_role(campaign_id, user.id)
         if role is None:
@@ -193,7 +193,7 @@ async def ws_campaign(
             return
 
     user_id = user.id if user else None
-    is_admin = (user.role == UserRole.ADMIN) if user else False
+    is_admin = user.is_admin if user else False
 
     await manager.connect(websocket, campaign_id, user_id=user_id, is_admin=is_admin)
     try:

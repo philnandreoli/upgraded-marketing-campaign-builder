@@ -30,7 +30,7 @@ def admin_user() -> User:
         id="admin-fixture-001",
         email="admin@example.com",
         display_name="Admin User",
-        role=UserRole.ADMIN,
+        roles=[UserRole.ADMIN],
     )
 
 
@@ -41,7 +41,7 @@ def builder_user() -> User:
         id="builder-fixture-001",
         email="builder@example.com",
         display_name="Builder User",
-        role=UserRole.CAMPAIGN_BUILDER,
+        roles=[UserRole.CAMPAIGN_BUILDER],
     )
 
 
@@ -52,7 +52,7 @@ def viewer_user() -> User:
         id="viewer-fixture-001",
         email="viewer@example.com",
         display_name="Viewer User",
-        role=UserRole.VIEWER,
+        roles=[UserRole.VIEWER],
     )
 
 
