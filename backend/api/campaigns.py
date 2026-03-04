@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from enum import Enum
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -22,8 +23,8 @@ from fastapi.responses import Response
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
-from backend.models.user import User, UserRole
-from backend.services.auth import get_current_user
+from backend.models.user import CampaignMemberRole, User, UserRole
+from backend.services.auth import get_current_user, require_campaign_builder
 from backend.services.campaign_store import get_campaign_store
 from backend.api.websocket import manager as ws_manager
 
@@ -52,14 +53,54 @@ def _get_coordinator() -> CoordinatorAgent:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _require_owner(campaign: Campaign, user: Optional[User]) -> None:
-    """Raise 404 if the campaign does not belong to the requesting user.
+class Action(str, Enum):
+    """Actions that can be performed on a campaign, used in authorization checks."""
+    READ = "read"
+    WRITE = "write"
+    DELETE = "delete"
+    MANAGE_MEMBERS = "manage_members"
+
+
+async def _authorize(campaign_id: str, user: Optional[User], action: Action, store: Any) -> None:
+    """Enforce RBAC for campaign access.
+
+    Authorization matrix:
+      Platform Role     | Campaign Membership | READ | WRITE | DELETE | MANAGE_MEMBERS
+      admin             | (any/none)          |  ✅  |  ✅   |  ✅    |  ✅
+      campaign_builder  | owner               |  ✅  |  ✅   |  ✅    |  ✅
+      campaign_builder  | editor              |  ✅  |  ✅   |  ❌    |  ❌
+      campaign_builder  | viewer              |  ✅  |  ❌   |  ❌    |  ❌
+      campaign_builder  | (none)              |  ❌  |  ❌   |  ❌    |  ❌
+      viewer            | owner/editor/viewer |  ✅  |  ❌   |  ❌    |  ❌
+      viewer            | (none)              |  ❌  |  ❌   |  ❌    |  ❌
 
     When auth is disabled (user is None) all campaigns are accessible.
-    We deliberately return 404 (not 403) to avoid leaking campaign existence.
+    Raises 404 when the user has no membership (to avoid leaking campaign existence).
+    Raises 403 when authenticated but the action exceeds the user's permission.
     """
-    if user is not None and campaign.owner_id != user.id:
+    if user is None:
+        return  # auth disabled — allow everything
+
+    if user.role == UserRole.ADMIN:
+        return  # admins have full access
+
+    member_role = await store.get_member_role(campaign_id, user.id)
+    if member_role is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
+
+    allowed: bool
+    if user.role == UserRole.CAMPAIGN_BUILDER:
+        if member_role == CampaignMemberRole.OWNER:
+            allowed = True
+        elif member_role == CampaignMemberRole.EDITOR:
+            allowed = action in (Action.READ, Action.WRITE)
+        else:  # CampaignMemberRole.VIEWER
+            allowed = action == Action.READ
+    else:  # UserRole.VIEWER
+        allowed = action == Action.READ
+
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
 # ---------------------------------------------------------------------------
@@ -70,11 +111,11 @@ def _require_owner(campaign: Campaign, user: Optional[User]) -> None:
 async def create_campaign(
     brief: CampaignBrief,
     background_tasks: BackgroundTasks,
-    user: Optional[User] = Depends(get_current_user),
+    user: User = Depends(require_campaign_builder),
 ) -> dict[str, Any]:
     """Create a new campaign and kick off the agent pipeline in the background."""
     store = get_campaign_store()
-    campaign = await store.create(brief, owner_id=user.id if user else None)
+    campaign = await store.create(brief, owner_id=user.id)
 
     coordinator = _get_coordinator()
 
@@ -129,7 +170,7 @@ async def get_campaign(
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user)
+    await _authorize(campaign_id, user, Action.READ, store)
     return campaign.model_dump(mode="json")
 
 
@@ -142,7 +183,7 @@ async def delete_campaign(
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user)
+    await _authorize(campaign_id, user, Action.DELETE, store)
     await store.delete(campaign_id)
     return Response(status_code=204)
 
@@ -158,7 +199,7 @@ async def submit_clarification(
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user)
+    await _authorize(campaign_id, user, Action.WRITE, store)
 
     response.campaign_id = campaign_id
 
@@ -193,7 +234,7 @@ async def submit_content_approval(
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    _require_owner(campaign, user)
+    await _authorize(campaign_id, user, Action.WRITE, store)
 
     response.campaign_id = campaign_id
 

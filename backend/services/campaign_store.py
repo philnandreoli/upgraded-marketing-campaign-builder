@@ -123,6 +123,14 @@ class CampaignStore:
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows]
 
+    async def get_member_role(self, campaign_id: str, user_id: str) -> Optional[CampaignMemberRole]:
+        """Return the membership role for *user_id* in *campaign_id*, or ``None`` if not a member."""
+        async with async_session() as session:
+            row = await session.get(CampaignMemberRow, (campaign_id, user_id))
+            if row is None:
+                return None
+            return CampaignMemberRole(row.role)
+
     async def add_member(
         self,
         campaign_id: str,
