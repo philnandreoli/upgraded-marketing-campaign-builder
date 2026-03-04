@@ -24,7 +24,7 @@ from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
 from backend.models.user import CampaignMemberRole, User, UserRole
-from backend.services.auth import get_current_user, require_campaign_builder
+from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.api.websocket import manager as ws_manager
 
@@ -111,11 +111,15 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
 async def create_campaign(
     brief: CampaignBrief,
     background_tasks: BackgroundTasks,
-    user: User = Depends(require_campaign_builder),
+    user: Optional[User] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Create a new campaign and kick off the agent pipeline in the background."""
+    # When auth is enabled, only campaign_builder and admin may create campaigns.
+    # When auth is disabled (user is None) all requests are allowed (dev mode).
+    if user is not None and user.role == UserRole.VIEWER:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
     store = get_campaign_store()
-    campaign = await store.create(brief, owner_id=user.id)
+    campaign = await store.create(brief, owner_id=user.id if user else None)
 
     coordinator = _get_coordinator()
 

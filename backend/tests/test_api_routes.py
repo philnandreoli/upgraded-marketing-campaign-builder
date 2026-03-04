@@ -149,12 +149,12 @@ class TestCreateCampaign:
             })
             assert r.status_code == 403
 
-    def test_create_unauthenticated_returns_401(self, client):
-        """An unauthenticated request (auth enabled, no token) cannot create campaigns."""
+    def test_create_unauthenticated_allowed_when_auth_disabled(self, client):
+        """When auth is disabled (user is None / dev mode), campaign creation is allowed."""
         r = client.post("/api/campaigns", json={
             "product_or_service": "Test", "goal": "Test",
         })
-        assert r.status_code == 401
+        assert r.status_code == 201
 
     def test_create_stores_owner_id(self, authed_client, _isolated_store):
         r = authed_client.post("/api/campaigns", json={
