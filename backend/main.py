@@ -79,8 +79,10 @@ async def on_shutdown():
 # ------------------------------------------------------------------
 # API routers
 # ------------------------------------------------------------------
+from backend.api.admin import router as admin_router
 from backend.api.campaigns import router as campaigns_router
 from backend.api.websocket import router as ws_router
 
+app.include_router(admin_router)
 app.include_router(campaigns_router, prefix="/api")
 app.include_router(ws_router, prefix="/ws")
