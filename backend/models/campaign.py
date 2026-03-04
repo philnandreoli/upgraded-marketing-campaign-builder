@@ -5,11 +5,11 @@ Campaign data models — represent the marketing campaign lifecycle.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +175,8 @@ class CampaignBrief(BaseModel):
     goal: str = Field(description="High-level campaign goal")
     budget: Optional[float] = None
     currency: str = Field(default="USD")
-    timeline: str = Field(default="", description="Desired campaign duration")
+    start_date: Optional[date] = Field(default=None, description="Campaign start date (ISO 8601)")
+    end_date: Optional[date] = Field(default=None, description="Campaign end date (ISO 8601)")
     additional_context: str = Field(default="", description="Any extra information")
     selected_channels: list[ChannelType] = Field(
         default_factory=list,
@@ -185,6 +186,13 @@ class CampaignBrief(BaseModel):
         default_factory=list,
         description="Specific social-media platforms when social_media channel is selected.",
     )
+
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> "CampaignBrief":
+        if self.start_date is not None and self.end_date is not None:
+            if self.end_date < self.start_date:
+                raise ValueError("end_date must be on or after start_date")
+        return self
 
 
 class Campaign(BaseModel):

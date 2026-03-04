@@ -75,8 +75,8 @@ Rules:
             parts.append(
                 f"**Budget:** {brief.get('currency', 'USD')} {brief['budget']:,.2f}"
             )
-        if brief.get("timeline"):
-            parts.append(f"**Timeline:** {brief['timeline']}")
+        if brief.get("start_date") and brief.get("end_date"):
+            parts.append(f"**Timeline:** {brief['start_date']} to {brief['end_date']}")
         if brief.get("additional_context"):
             parts.append(f"**Additional Context:** {brief['additional_context']}")
         selected = brief.get("selected_channels", [])
@@ -161,8 +161,8 @@ Guidelines:
             parts.append(
                 f"**Budget:** {brief.get('currency', 'USD')} {brief['budget']:,.2f}"
             )
-        if brief.get("timeline"):
-            parts.append(f"**Timeline:** {brief['timeline']}")
+        if brief.get("start_date") and brief.get("end_date"):
+            parts.append(f"**Timeline:** {brief['start_date']} to {brief['end_date']}")
         if brief.get("additional_context"):
             parts.append(f"**Additional Context:** {brief['additional_context']}")
         selected = brief.get("selected_channels", [])

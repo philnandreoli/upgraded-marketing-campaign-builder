@@ -44,7 +44,8 @@ SAMPLE_BRIEF = {
     "goal": "Increase enterprise signups by 30%",
     "budget": 50000,
     "currency": "USD",
-    "timeline": "3 months",
+    "start_date": "2026-04-01",
+    "end_date": "2026-06-30",
     "additional_context": "Focus on mid-market",
     "selected_channels": [],
 }
@@ -114,7 +115,8 @@ class TestStrategyAgent:
         prompt = agent.build_user_prompt(task, SAMPLE_CAMPAIGN_DATA)
         assert "CloudSync" in prompt
         assert "50,000" in prompt
-        assert "3 months" in prompt
+        assert "2026-04-01" in prompt
+        assert "2026-06-30" in prompt
 
     def test_parse_valid_response(self, mock_llm):
         agent = StrategyAgent(llm_service=mock_llm)
