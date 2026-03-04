@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional
 
 from backend.models.campaign import Campaign, CampaignBrief
-from backend.models.user import CampaignMemberRole
+from backend.models.user import CampaignMember, CampaignMemberRole, User
 
 
 class InMemoryCampaignStore:
@@ -21,6 +21,7 @@ class InMemoryCampaignStore:
         self._campaigns: dict[str, Campaign] = {}
         # (campaign_id, user_id) -> role value string
         self._members: dict[tuple[str, str], str] = {}
+        self._users: dict[str, User] = {}
 
     async def create(self, brief: CampaignBrief, owner_id: Optional[str] = None) -> Campaign:
         campaign = Campaign(brief=brief, owner_id=owner_id)
@@ -63,6 +64,18 @@ class InMemoryCampaignStore:
             return None
         return CampaignMemberRole(role_str)
 
+    async def get_member(self, campaign_id: str, user_id: str) -> Optional[CampaignMember]:
+        """Return the full CampaignMember for *user_id* in *campaign_id*, or ``None`` if not a member."""
+        role_str = self._members.get((campaign_id, user_id))
+        if role_str is None:
+            return None
+        return CampaignMember(
+            campaign_id=campaign_id,
+            user_id=user_id,
+            role=CampaignMemberRole(role_str),
+            added_at=datetime.utcnow(),
+        )
+
     async def add_member(
         self,
         campaign_id: str,
@@ -79,6 +92,23 @@ class InMemoryCampaignStore:
             del self._members[key]
             return True
         return False
+
+    async def list_members(self, campaign_id: str) -> list[CampaignMember]:
+        """Return all members of *campaign_id*."""
+        return [
+            CampaignMember(
+                campaign_id=campaign_id,
+                user_id=uid,
+                role=CampaignMemberRole(role_str),
+                added_at=datetime.utcnow(),
+            )
+            for (cid, uid), role_str in self._members.items()
+            if cid == campaign_id
+        ]
+
+    async def get_user(self, user_id: str) -> Optional[User]:
+        """Return the User for *user_id*, or ``None`` if not found."""
+        return self._users.get(user_id)
 
     async def delete(self, campaign_id: str) -> bool:
         if campaign_id in self._campaigns:

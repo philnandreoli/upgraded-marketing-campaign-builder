@@ -16,8 +16,8 @@ from typing import Optional
 from sqlalchemy import delete as sa_delete, select
 
 from backend.models.campaign import Campaign, CampaignBrief
-from backend.models.user import CampaignMemberRole
-from backend.services.database import CampaignMemberRow, CampaignRow, async_session
+from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole
+from backend.services.database import CampaignMemberRow, CampaignRow, UserRow, async_session
 
 
 class CampaignStore:
@@ -131,6 +131,19 @@ class CampaignStore:
                 return None
             return CampaignMemberRole(row.role)
 
+    async def get_member(self, campaign_id: str, user_id: str) -> Optional[CampaignMember]:
+        """Return the full CampaignMember for *user_id* in *campaign_id*, or ``None`` if not a member."""
+        async with async_session() as session:
+            row = await session.get(CampaignMemberRow, (campaign_id, user_id))
+            if row is None:
+                return None
+            return CampaignMember(
+                campaign_id=row.campaign_id,
+                user_id=row.user_id,
+                role=CampaignMemberRole(row.role),
+                added_at=row.added_at,
+            )
+
     async def add_member(
         self,
         campaign_id: str,
@@ -169,6 +182,39 @@ class CampaignStore:
             )
             await session.commit()
             return result.rowcount > 0
+
+    async def list_members(self, campaign_id: str) -> list[CampaignMember]:
+        """Return all members of *campaign_id*."""
+        async with async_session() as session:
+            result = await session.execute(
+                select(CampaignMemberRow).where(CampaignMemberRow.campaign_id == campaign_id)
+            )
+            rows = result.scalars().all()
+            return [
+                CampaignMember(
+                    campaign_id=row.campaign_id,
+                    user_id=row.user_id,
+                    role=CampaignMemberRole(row.role),
+                    added_at=row.added_at,
+                )
+                for row in rows
+            ]
+
+    async def get_user(self, user_id: str) -> Optional[User]:
+        """Return the User for *user_id*, or ``None`` if not found."""
+        async with async_session() as session:
+            row = await session.get(UserRow, user_id)
+            if row is None:
+                return None
+            return User(
+                id=row.id,
+                email=row.email,
+                display_name=row.display_name,
+                role=UserRole(row.role),
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+                is_active=row.is_active,
+            )
 
     async def delete(self, campaign_id: str) -> bool:
         async with async_session() as session:
