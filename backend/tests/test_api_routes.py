@@ -644,3 +644,232 @@ class TestRBACRoutes:
         with _as_user(_OTHER_USER) as c:
             r = c.get(f"/api/campaigns/{campaign.id}")
             assert r.status_code == 404
+
+
+# ---- Member management endpoints ----
+
+class TestCampaignMembers:
+    """Tests for GET/POST/PATCH/DELETE /api/campaigns/{id}/members."""
+
+    def _setup_campaign(self, store):
+        """Helper: insert a campaign owned by _TEST_USER and return it."""
+        from backend.models.user import User
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Team", goal="Collaborate"),
+            owner_id=_TEST_USER.id,
+        )
+        store._campaigns[campaign.id] = campaign
+        store._members[(campaign.id, _TEST_USER.id)] = "owner"
+        # Register users so get_user works
+        store._users[_TEST_USER.id] = _TEST_USER
+        store._users[_OTHER_USER.id] = _OTHER_USER
+        return campaign
+
+    # ---- GET /members ----
+
+    def test_list_members_returns_owner(self, _isolated_store):
+        """GET /members returns the campaign owner."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.get(f"/api/campaigns/{campaign.id}/members")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["user_id"] == _TEST_USER.id
+        assert data[0]["role"] == "owner"
+
+    def test_list_members_campaign_not_found(self, client):
+        r = client.get("/api/campaigns/nonexistent/members")
+        assert r.status_code == 404
+
+    def test_list_members_requires_read_access(self, _isolated_store):
+        """A non-member gets 404 when listing members."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_OTHER_USER) as c:
+            r = c.get(f"/api/campaigns/{campaign.id}/members")
+        assert r.status_code == 404
+
+    # ---- POST /members ----
+
+    def test_add_member_success(self, _isolated_store):
+        """Owner can add an editor member."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+                "user_id": _OTHER_USER.id,
+                "role": "editor",
+            })
+        assert r.status_code == 201
+        data = r.json()
+        assert data["user_id"] == _OTHER_USER.id
+        assert data["role"] == "editor"
+        assert data["campaign_id"] == campaign.id
+
+    def test_add_member_default_role_is_viewer(self, _isolated_store):
+        """POST /members without role defaults to viewer."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+                "user_id": _OTHER_USER.id,
+            })
+        assert r.status_code == 201
+        assert r.json()["role"] == "viewer"
+
+    def test_add_member_rejects_owner_role(self, _isolated_store):
+        """POST /members with role=owner is rejected with 422."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+                "user_id": _OTHER_USER.id,
+                "role": "owner",
+            })
+        assert r.status_code == 422
+
+    def test_add_member_user_not_found(self, _isolated_store):
+        """POST /members with unknown user_id returns 404."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+                "user_id": "nonexistent-user",
+                "role": "editor",
+            })
+        assert r.status_code == 404
+
+    def test_add_member_inactive_user_returns_404(self, _isolated_store):
+        """POST /members with an inactive user returns 404."""
+        from backend.models.user import User
+        campaign = self._setup_campaign(_isolated_store)
+        inactive = User(
+            id="inactive-user",
+            email="inactive@example.com",
+            display_name="Inactive",
+            role=UserRole.CAMPAIGN_BUILDER,
+            is_active=False,
+        )
+        _isolated_store._users[inactive.id] = inactive
+        with _as_user(_TEST_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+                "user_id": inactive.id,
+                "role": "viewer",
+            })
+        assert r.status_code == 404
+
+    def test_add_member_editor_cannot_manage_members(self, _isolated_store):
+        """An editor member cannot add other members (requires MANAGE_MEMBERS)."""
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
+        third = User(id="third-user", email="third@example.com", display_name="Third", role=UserRole.CAMPAIGN_BUILDER)
+        _isolated_store._users[third.id] = third
+        with _as_user(_OTHER_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+                "user_id": third.id,
+                "role": "viewer",
+            })
+        assert r.status_code == 403
+
+    def test_add_member_campaign_not_found(self, _isolated_store):
+        """POST /members on nonexistent campaign returns 404."""
+        _isolated_store._users[_TEST_USER.id] = _TEST_USER
+        with _as_user(_TEST_USER) as c:
+            r = c.post("/api/campaigns/nonexistent/members", json={
+                "user_id": _OTHER_USER.id,
+                "role": "editor",
+            })
+        assert r.status_code == 404
+
+    # ---- PATCH /members/{user_id} ----
+
+    def test_patch_member_role_success(self, _isolated_store):
+        """Owner can change an editor to viewer."""
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
+        with _as_user(_TEST_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
+                "role": "viewer",
+            })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["role"] == "viewer"
+        assert data["user_id"] == _OTHER_USER.id
+
+    def test_patch_member_role_rejects_owner(self, _isolated_store):
+        """PATCH /members/{id} with role=owner is rejected with 422."""
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
+        with _as_user(_TEST_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
+                "role": "owner",
+            })
+        assert r.status_code == 422
+
+    def test_patch_member_not_found(self, _isolated_store):
+        """PATCH /members/{id} for non-member returns 404."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
+                "role": "editor",
+            })
+        assert r.status_code == 404
+
+    def test_patch_member_user_not_in_system(self, _isolated_store):
+        """PATCH /members/{id} with unknown user_id returns 404."""
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, "unknown-user")] = "editor"
+        with _as_user(_TEST_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/members/unknown-user", json={
+                "role": "viewer",
+            })
+        assert r.status_code == 404
+
+    # ---- DELETE /members/{user_id} ----
+
+    def test_delete_member_success(self, _isolated_store):
+        """Owner can remove an editor member."""
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
+        with _as_user(_TEST_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
+        assert r.status_code == 204
+        assert (campaign.id, _OTHER_USER.id) not in _isolated_store._members
+
+    def test_delete_last_owner_returns_409(self, _isolated_store):
+        """Cannot remove the last owner of a campaign."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_TEST_USER.id}")
+        assert r.status_code == 409
+
+    def test_delete_member_not_found(self, _isolated_store):
+        """DELETE /members/{id} for non-member returns 404."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
+        assert r.status_code == 404
+
+    def test_delete_member_editor_cannot_manage_members(self, _isolated_store):
+        """An editor cannot remove members."""
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
+        third = User(id="third-user", email="third@example.com", display_name="Third", role=UserRole.CAMPAIGN_BUILDER)
+        _isolated_store._members[(campaign.id, third.id)] = "viewer"
+        with _as_user(_OTHER_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}/members/{third.id}")
+        assert r.status_code == 403
+
+    def test_delete_non_last_owner_succeeds(self, _isolated_store):
+        """Can remove one owner when another owner still exists."""
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "owner"
+        with _as_user(_TEST_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
+        assert r.status_code == 204
+
+    def test_admin_can_manage_members_without_membership(self, _isolated_store):
+        """Admin can add members to any campaign without being a member."""
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_ADMIN_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+                "user_id": _OTHER_USER.id,
+                "role": "editor",
+            })
+        assert r.status_code == 201
