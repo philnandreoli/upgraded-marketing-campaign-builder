@@ -161,6 +161,20 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    return await validate_token(token, db)
+
+
+async def validate_token(token: str, db: AsyncSession) -> User:
+    """Validate a raw JWT token string and return the authenticated User.
+
+    Shared by both HTTP endpoints (via *get_current_user*) and WebSocket
+    endpoints that supply the token as a query parameter.
+
+    Raises HTTPException 401 if the token is invalid/expired and 503 if the
+    OIDC provider is unreachable.
+    """
+    settings = get_settings()
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
