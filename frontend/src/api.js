@@ -126,6 +126,46 @@ export async function submitReviewClarification() {
   throw new Error("submitReviewClarification is deprecated.");
 }
 
+// ---------------------------------------------------------------------------
+// Admin API
+// ---------------------------------------------------------------------------
+
+export async function listUsers(search = "") {
+  const params = search ? `?search=${encodeURIComponent(search)}` : "";
+  const res = await fetch(`${API_BASE}/api/admin/users${params}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`List users failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateUserRole(userId, role) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${encodeURIComponent(userId)}/role`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ role }),
+  });
+  if (!res.ok) throw new Error(`Update role failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deactivateUser(userId) {
+  const res = await fetch(`${API_BASE}/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok && res.status !== 204)
+    throw new Error(`Deactivate user failed: ${res.status}`);
+}
+
+export async function listAllCampaigns() {
+  const res = await fetch(`${API_BASE}/api/admin/campaigns`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`List all campaigns failed: ${res.status}`);
+  return res.json();
+}
+
 export function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {
