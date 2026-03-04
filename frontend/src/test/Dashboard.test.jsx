@@ -8,7 +8,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { vi, beforeEach, afterEach, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect } from 'vitest';
 import Dashboard from '../pages/Dashboard';
 import { UserProvider } from '../UserContext';
 
@@ -46,7 +46,7 @@ function makeMeResponse({ isViewer = false, isAdmin = false, userId = 'user-1' }
 async function renderDashboard({ isViewer = false, isAdmin = false, userId = 'user-1' } = {}, campaigns = []) {
   api.getMe.mockResolvedValue(makeMeResponse({ isViewer, isAdmin, userId }));
   api.listCampaigns.mockResolvedValue(campaigns);
-  api.deleteCampaign = vi.fn().mockResolvedValue(undefined);
+  api.deleteCampaign.mockResolvedValue(undefined);
 
   render(
     <MemoryRouter>
