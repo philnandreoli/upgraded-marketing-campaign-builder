@@ -56,6 +56,13 @@ class InMemoryCampaignStore:
             if uid == user_id and cid in self._campaigns
         ]
 
+    async def get_member_role(self, campaign_id: str, user_id: str) -> Optional[CampaignMemberRole]:
+        """Return the membership role for *user_id* in *campaign_id*, or ``None`` if not a member."""
+        role_str = self._members.get((campaign_id, user_id))
+        if role_str is None:
+            return None
+        return CampaignMemberRole(role_str)
+
     async def add_member(
         self,
         campaign_id: str,
