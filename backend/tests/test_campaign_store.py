@@ -87,6 +87,71 @@ class TestCampaignStoreUnit:
         await store.delete(c.id)
         assert len(await store.list_all()) == 0
 
+    # ------------------------------------------------------------------
+    # Membership tests
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_create_with_owner_adds_membership(self, store, brief):
+        c = await store.create(brief, owner_id="user-1")
+        accessible = await store.list_accessible("user-1")
+        assert any(camp.id == c.id for camp in accessible)
+
+    @pytest.mark.asyncio
+    async def test_create_without_owner_no_membership(self, store, brief):
+        c = await store.create(brief)
+        accessible = await store.list_accessible("user-1")
+        assert not any(camp.id == c.id for camp in accessible)
+
+    @pytest.mark.asyncio
+    async def test_list_accessible_only_returns_members_campaigns(self, store, brief):
+        c1 = await store.create(brief, owner_id="user-1")
+        c2 = await store.create(brief, owner_id="user-2")
+        accessible = await store.list_accessible("user-1")
+        ids = [c.id for c in accessible]
+        assert c1.id in ids
+        assert c2.id not in ids
+
+    @pytest.mark.asyncio
+    async def test_list_accessible_admin_sees_all(self, store, brief):
+        await store.create(brief, owner_id="user-1")
+        await store.create(brief, owner_id="user-2")
+        accessible = await store.list_accessible("admin-user", is_admin=True)
+        assert len(accessible) == 2
+
+    @pytest.mark.asyncio
+    async def test_add_member_grants_access(self, store, brief):
+        from backend.models.user import CampaignMemberRole
+        c = await store.create(brief, owner_id="user-1")
+        await store.add_member(c.id, "user-2", CampaignMemberRole.EDITOR)
+        accessible = await store.list_accessible("user-2")
+        assert any(camp.id == c.id for camp in accessible)
+
+    @pytest.mark.asyncio
+    async def test_remove_member_revokes_access(self, store, brief):
+        from backend.models.user import CampaignMemberRole
+        c = await store.create(brief, owner_id="user-1")
+        await store.add_member(c.id, "user-2", CampaignMemberRole.VIEWER)
+        removed = await store.remove_member(c.id, "user-2")
+        assert removed is True
+        accessible = await store.list_accessible("user-2")
+        assert not any(camp.id == c.id for camp in accessible)
+
+    @pytest.mark.asyncio
+    async def test_remove_member_nonexistent(self, store, brief):
+        c = await store.create(brief, owner_id="user-1")
+        assert await store.remove_member(c.id, "no-such-user") is False
+
+    @pytest.mark.asyncio
+    async def test_delete_removes_memberships(self, store, brief):
+        from backend.models.user import CampaignMemberRole
+        c = await store.create(brief, owner_id="user-1")
+        await store.add_member(c.id, "user-2", CampaignMemberRole.VIEWER)
+        await store.delete(c.id)
+        # After deletion, neither user should see the campaign
+        assert await store.list_accessible("user-1") == []
+        assert await store.list_accessible("user-2") == []
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — real PostgreSQL store (skipped when DB unavailable)

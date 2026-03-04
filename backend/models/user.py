@@ -23,6 +23,14 @@ class UserRole(str, Enum):
     VIEWER = "viewer"
 
 
+class CampaignMemberRole(str, Enum):
+    """Per-campaign roles that define a user's access within a specific campaign."""
+
+    OWNER = "owner"
+    EDITOR = "editor"
+    VIEWER = "viewer"
+
+
 # ---------------------------------------------------------------------------
 # User model
 # ---------------------------------------------------------------------------
@@ -37,3 +45,16 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     is_active: bool = Field(default=True, description="Whether the user account is active.")
+
+
+# ---------------------------------------------------------------------------
+# Campaign membership model
+# ---------------------------------------------------------------------------
+
+class CampaignMember(BaseModel):
+    """Associates a user with a campaign and defines their per-campaign role."""
+
+    campaign_id: str = Field(description="ID of the campaign.")
+    user_id: str = Field(description="ID of the user.")
+    role: CampaignMemberRole = Field(description="Per-campaign role for this user.")
+    added_at: datetime = Field(default_factory=datetime.utcnow, description="When the membership was created.")

@@ -10,7 +10,7 @@ import os
 
 from typing import AsyncGenerator
 
-from sqlalchemy import Boolean, Column, DateTime, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -57,6 +57,17 @@ class UserRow(Base):
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+
+
+class CampaignMemberRow(Base):
+    """Join table: associates users with campaigns and records a per-campaign role."""
+
+    __tablename__ = "campaign_members"
+
+    campaign_id = Column(String, ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role = Column(String, nullable=False)   # "owner", "editor", "viewer"
+    added_at = Column(DateTime, nullable=False)
 
 
 # ---------------------------------------------------------------------------

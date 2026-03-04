@@ -22,7 +22,7 @@ from fastapi.responses import Response
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
-from backend.models.user import User
+from backend.models.user import User, UserRole
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.api.websocket import manager as ws_manager
@@ -103,7 +103,7 @@ async def list_campaigns(
     """Return campaigns visible to the current user (summary view)."""
     store = get_campaign_store()
     if user is not None:
-        campaigns = await store.list_by_owner(user.id)
+        campaigns = await store.list_accessible(user.id, is_admin=(user.role == UserRole.ADMIN))
     else:
         campaigns = await store.list_all()
     return [
