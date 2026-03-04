@@ -157,7 +157,8 @@ class TestCreateCampaign:
             "goal": "Grow enterprise",
             "budget": 50000,
             "currency": "EUR",
-            "timeline": "3 months",
+            "start_date": "2026-04-01",
+            "end_date": "2026-06-30",
             "additional_context": "Focus on EMEA",
         })
         assert r.status_code == 201

@@ -44,7 +44,8 @@ class TestCampaignBrief:
             goal="Growth",
             budget=50000,
             currency="EUR",
-            timeline="3 months",
+            start_date="2026-04-01",
+            end_date="2026-06-30",
             additional_context="EMEA focus",
         )
         assert b.budget == 50000
@@ -97,6 +98,49 @@ class TestCampaignBrief:
                 goal="Sell more",
                 social_media_platforms=["tiktok"],
             )
+
+    def test_start_end_date_valid(self):
+        b = CampaignBrief(
+            product_or_service="Widget",
+            goal="Sell more",
+            start_date="2026-04-01",
+            end_date="2026-06-30",
+        )
+        from datetime import date
+        assert b.start_date == date(2026, 4, 1)
+        assert b.end_date == date(2026, 6, 30)
+
+    def test_start_end_date_same_day_valid(self):
+        b = CampaignBrief(
+            product_or_service="Widget",
+            goal="Sell more",
+            start_date="2026-04-01",
+            end_date="2026-04-01",
+        )
+        assert b.start_date == b.end_date
+
+    def test_end_date_before_start_date_raises(self):
+        with pytest.raises(ValidationError):
+            CampaignBrief(
+                product_or_service="Widget",
+                goal="Sell more",
+                start_date="2026-06-30",
+                end_date="2026-04-01",
+            )
+
+    def test_dates_optional(self):
+        b = CampaignBrief(product_or_service="Widget", goal="Sell more")
+        assert b.start_date is None
+        assert b.end_date is None
+
+    def test_only_start_date_no_validation_error(self):
+        b = CampaignBrief(
+            product_or_service="Widget",
+            goal="Sell more",
+            start_date="2026-04-01",
+        )
+        assert b.start_date is not None
+        assert b.end_date is None
 
 
 # ---- Campaign ----

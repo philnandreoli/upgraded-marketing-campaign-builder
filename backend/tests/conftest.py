@@ -65,7 +65,8 @@ def sample_brief():
         goal="Increase enterprise signups by 30% in Q2",
         budget=50000.0,
         currency="USD",
-        timeline="3 months",
+        start_date="2026-04-01",
+        end_date="2026-06-30",
         additional_context="Focus on mid-market companies (50-500 employees)",
     )
 

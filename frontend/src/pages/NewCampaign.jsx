@@ -29,7 +29,8 @@ export default function NewCampaign() {
     goal: "",
     budget: "",
     currency: "USD",
-    timeline: "",
+    start_date: "",
+    end_date: "",
     additional_context: "",
   });
   const [selectedChannels, setSelectedChannels] = useState([]);
@@ -67,6 +68,10 @@ export default function NewCampaign() {
     e.preventDefault();
     if (selectedChannels.includes("social_media") && selectedPlatforms.length === 0) {
       setError("Please select at least one social media platform.");
+      return;
+    }
+    if (form.start_date && form.end_date && form.end_date < form.start_date) {
+      setError("End date must be on or after the start date.");
       return;
     }
     setLoading(true);
@@ -136,13 +141,24 @@ export default function NewCampaign() {
           </div>
         </div>
 
-        <div className="form-group">
-          <label>Timeline</label>
-          <input
-            placeholder="e.g. 3 months, April–June 2026"
-            value={form.timeline}
-            onChange={set("timeline")}
-          />
+        <div className="form-row">
+          <div className="form-group">
+            <label>Start Date</label>
+            <input
+              type="date"
+              value={form.start_date}
+              onChange={set("start_date")}
+            />
+          </div>
+          <div className="form-group">
+            <label>End Date</label>
+            <input
+              type="date"
+              min={form.start_date || undefined}
+              value={form.end_date}
+              onChange={set("end_date")}
+            />
+          </div>
         </div>
 
         <div className="form-group">

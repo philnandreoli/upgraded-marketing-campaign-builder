@@ -83,8 +83,8 @@ Always provide actionable suggestions even if approving."""
         parts.append(f"**Goal:** {brief.get('goal', 'N/A')}")
         if brief.get("budget"):
             parts.append(f"**Budget:** {brief.get('currency', 'USD')} {brief['budget']:,.2f}")
-        if brief.get("timeline"):
-            parts.append(f"**Timeline:** {brief['timeline']}")
+        if brief.get("start_date") and brief.get("end_date"):
+            parts.append(f"**Timeline:** {brief['start_date']} to {brief['end_date']}")
 
         # Strategy
         if strategy:
