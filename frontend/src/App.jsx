@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate } from "react-router-dom";
 import {
   AuthenticatedTemplate,
   UnauthenticatedTemplate,
@@ -10,12 +10,19 @@ import CampaignDetail from "./pages/CampaignDetail.jsx";
 import useWebSocket from "./hooks/useWebSocket.js";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import { loginRequest } from "./authConfig.js";
+import { UserProvider, useUser } from "./UserContext.jsx";
 
 /**
  * When VITE_AZURE_CLIENT_ID is set we enforce authentication;
  * otherwise the app runs in open / local-dev mode.
  */
 const authEnabled = !!import.meta.env.VITE_AZURE_CLIENT_ID;
+
+/** Route guard: redirects viewers to Dashboard when they try to access builder-only routes. */
+function RequireBuilder({ children }) {
+  const { isViewer } = useUser();
+  return isViewer ? <Navigate to="/" replace /> : children;
+}
 
 function LoginPage() {
   const { instance } = useMsal();
@@ -49,6 +56,7 @@ function AuthenticatedApp() {
   const { events, connected } = useWebSocket(null);
   const { instance, accounts } = useMsal();
   const activeAccount = accounts[0];
+  const { isAdmin, isViewer } = useUser();
 
   return (
     <div className="app-shell">
@@ -60,7 +68,8 @@ function AuthenticatedApp() {
           <NavLink to="/" end>
             Dashboard
           </NavLink>
-          <NavLink to="/new">+ New Campaign</NavLink>
+          {!isViewer && <NavLink to="/new">+ New Campaign</NavLink>}
+          {isAdmin && <NavLink to="/admin">Admin</NavLink>}
           <ThemeToggle />
           <span style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
             <span
@@ -88,7 +97,7 @@ function AuthenticatedApp() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={<Dashboard events={events} />} />
-          <Route path="/new" element={<NewCampaign />} />
+          <Route path="/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
           <Route path="/campaign/:id" element={<CampaignDetail />} />
         </Routes>
       </main>
@@ -99,13 +108,19 @@ function AuthenticatedApp() {
 export default function App() {
   // When auth is not configured, render the app without any gate
   if (!authEnabled) {
-    return <AuthenticatedApp />;
+    return (
+      <UserProvider>
+        <AuthenticatedApp />
+      </UserProvider>
+    );
   }
 
   return (
     <>
       <AuthenticatedTemplate>
-        <AuthenticatedApp />
+        <UserProvider>
+          <AuthenticatedApp />
+        </UserProvider>
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
         <LoginPage />

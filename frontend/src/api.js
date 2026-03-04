@@ -49,6 +49,14 @@ async function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export async function getMe() {
+  const res = await fetch(`${API_BASE}/api/me`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Get profile failed: ${res.status}`);
+  return res.json();
+}
+
 export async function createCampaign(brief) {
   const res = await fetch(`${API_BASE}/api/campaigns`, {
     method: "POST",
