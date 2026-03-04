@@ -1,0 +1,440 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  addCampaignMember,
+  listCampaignMembers,
+  listUsers,
+  removeCampaignMember,
+  updateCampaignMemberRole,
+} from "../api";
+
+const CAMPAIGN_ROLES = ["editor", "viewer"];
+const SPINNER_SIZE = 14;
+const DROPDOWN_CLOSE_DELAY = 150;
+
+// ---------------------------------------------------------------------------
+// Role selector — inline dropdown that PATCHes the member role on change
+// ---------------------------------------------------------------------------
+function MemberRoleSelect({ campaignId, userId, currentRole, onUpdated }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleChange = async (e) => {
+    const newRole = e.target.value;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await updateCampaignMemberRole(campaignId, userId, newRole);
+      onUpdated(updated);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+      <select
+        value={currentRole}
+        onChange={handleChange}
+        disabled={saving}
+        style={{
+          padding: "0.3rem 0.5rem",
+          fontSize: "0.8rem",
+          background: "var(--color-surface-2)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius)",
+          color: "var(--color-text)",
+        }}
+      >
+        {CAMPAIGN_ROLES.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+      </select>
+      {saving && <span className="spinner" style={{ width: SPINNER_SIZE, height: SPINNER_SIZE }} />}
+      {error && (
+        <span style={{ fontSize: "0.75rem", color: "var(--color-danger)" }} title={error}>
+          ⚠
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Add-member form — user search autocomplete + role selector
+// ---------------------------------------------------------------------------
+function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [role, setRole] = useState("viewer");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState(null);
+  const debounceRef = useRef(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const doSearch = useCallback(async (term) => {
+    if (!term.trim()) {
+      setResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      const users = await listUsers(term);
+      setResults(users.filter((u) => u.is_active && !existingUserIds.includes(u.id)));
+      setShowDropdown(true);
+    } catch (err) {
+      setSearchError(err.message);
+      setResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [existingUserIds]);
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    setSelectedUser(null);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => doSearch(val), 300);
+  };
+
+  const handleSelectUser = (user) => {
+    setSelectedUser(user);
+    setSearch(user.display_name || user.email || user.id);
+    setShowDropdown(false);
+    setResults([]);
+  };
+
+  const handleAdd = async () => {
+    if (!selectedUser) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      const member = await addCampaignMember(campaignId, selectedUser.id, role);
+      onAdded(member, selectedUser);
+      setSearch("");
+      setSelectedUser(null);
+      setRole("viewer");
+    } catch (err) {
+      setAddError(err.message);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--color-border)" }}>
+      <h3 style={{ marginBottom: "0.6rem" }}>Add Member</h3>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+        {/* User search */}
+        <div style={{ position: "relative", flex: "1 1 200px" }}>
+          <input
+            type="search"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={handleSearchChange}
+            onFocus={() => results.length > 0 && setShowDropdown(true)}
+            onBlur={() => setTimeout(() => setShowDropdown(false), DROPDOWN_CLOSE_DELAY)}
+            style={{ width: "100%", padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}
+          />
+          {searchLoading && (
+            <span
+              className="spinner"
+              style={{ position: "absolute", right: "0.5rem", top: "50%", transform: "translateY(-50%)", width: SPINNER_SIZE, height: SPINNER_SIZE }}
+            />
+          )}
+          {showDropdown && results.length > 0 && (
+            <ul
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 100,
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)",
+                marginTop: "0.2rem",
+                listStyle: "none",
+                maxHeight: 200,
+                overflowY: "auto",
+                boxShadow: "var(--shadow)",
+              }}
+            >
+              {results.map((u) => (
+                <li
+                  key={u.id}
+                  onMouseDown={() => handleSelectUser(u)}
+                  style={{
+                    padding: "0.5rem 0.75rem",
+                    cursor: "pointer",
+                    fontSize: "0.875rem",
+                    borderBottom: "1px solid var(--color-border)",
+                  }}
+                >
+                  <span style={{ fontWeight: 500 }}>{u.display_name || "—"}</span>
+                  {u.email && (
+                    <span style={{ color: "var(--color-text-muted)", marginLeft: "0.4rem" }}>
+                      {u.email}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {showDropdown && !searchLoading && results.length === 0 && search.trim() && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 100,
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)",
+                marginTop: "0.2rem",
+                padding: "0.5rem 0.75rem",
+                fontSize: "0.875rem",
+                color: "var(--color-text-muted)",
+                boxShadow: "var(--shadow)",
+              }}
+            >
+              No users found.
+            </div>
+          )}
+        </div>
+
+        {/* Role selector */}
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          style={{
+            padding: "0.5rem 0.75rem",
+            fontSize: "0.875rem",
+            background: "var(--color-surface-2)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius)",
+            color: "var(--color-text)",
+          }}
+        >
+          {CAMPAIGN_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+
+        {/* Add button */}
+        <button
+          className="btn btn-primary"
+          onClick={handleAdd}
+          disabled={!selectedUser || adding}
+          style={{ padding: "0.5rem 1rem", fontSize: "0.875rem" }}
+        >
+          {adding ? <><span className="spinner" style={{ width: SPINNER_SIZE, height: SPINNER_SIZE }} /> Adding…</> : "Add"}
+        </button>
+      </div>
+
+      {searchError && (
+        <p style={{ color: "var(--color-danger)", fontSize: "0.8rem", marginTop: "0.4rem" }}>
+          Search failed: {searchError}
+        </p>
+      )}
+      {addError && (
+        <p style={{ color: "var(--color-danger)", fontSize: "0.8rem", marginTop: "0.4rem" }}>
+          {addError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TeamMembersSection — main exported component
+// ---------------------------------------------------------------------------
+export default function TeamMembersSection({ campaignId, canManage }) {
+  const [members, setMembers] = useState([]);
+  const [userMap, setUserMap] = useState({}); // userId -> { display_name, email }
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [removeError, setRemoveError] = useState(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const data = await listCampaignMembers(campaignId);
+      setMembers(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [campaignId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // When canManage, try to fetch user display info via the admin API
+  useEffect(() => {
+    if (!canManage) return;
+    listUsers("")
+      .then((users) => {
+        const map = {};
+        users.forEach((u) => { map[u.id] = { display_name: u.display_name, email: u.email }; });
+        setUserMap(map);
+      })
+      .catch(() => {
+        // Non-admin owners can't call the admin API — fall back gracefully
+      });
+  }, [canManage]);
+
+  const handleRoleUpdated = (updated) => {
+    setMembers((prev) =>
+      prev.map((m) => (m.user_id === updated.user_id ? { ...m, role: updated.role } : m))
+    );
+  };
+
+  const handleRemove = async (userId) => {
+    if (!confirm("Remove this member from the campaign?")) return;
+    setRemoveError(null);
+    try {
+      await removeCampaignMember(campaignId, userId);
+      setMembers((prev) => prev.filter((m) => m.user_id !== userId));
+    } catch (err) {
+      setRemoveError(err.message);
+    }
+  };
+
+  const handleMemberAdded = (member, user) => {
+    setMembers((prev) => {
+      const exists = prev.find((m) => m.user_id === member.user_id);
+      if (exists) return prev.map((m) => (m.user_id === member.user_id ? { ...m, role: member.role } : m));
+      return [...prev, member];
+    });
+    if (user) {
+      setUserMap((prev) => ({ ...prev, [user.id]: { display_name: user.display_name, email: user.email } }));
+    }
+  };
+
+  const getUserLabel = (userId) => {
+    const info = userMap[userId];
+    if (!info) return userId;
+    return info.display_name || info.email || userId;
+  };
+
+  const getUserEmail = (userId) => userMap[userId]?.email ?? null;
+
+  const existingUserIds = members.map((m) => m.user_id);
+
+  return (
+    <div className="card">
+      <h2>👥 Team Members</h2>
+
+      {loading ? (
+        <div className="loading"><span className="spinner" /> Loading members…</div>
+      ) : error ? (
+        <p style={{ color: "var(--color-danger)", fontSize: "0.875rem" }}>Error: {error}</p>
+      ) : members.length === 0 ? (
+        <p style={{ color: "var(--color-text-muted)", fontSize: "0.875rem" }}>No members found.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+                {["Name", "Email", "Campaign Role", ...(canManage ? ["Actions"] : [])].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      textAlign: "left",
+                      padding: "0.5rem 0.75rem",
+                      color: "var(--color-text-muted)",
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((m) => (
+                <tr key={m.user_id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <td style={{ padding: "0.6rem 0.75rem", fontWeight: 500 }}>
+                    {getUserLabel(m.user_id)}
+                  </td>
+                  <td style={{ padding: "0.6rem 0.75rem", color: "var(--color-text-muted)" }}>
+                    {getUserEmail(m.user_id) ?? "—"}
+                  </td>
+                  <td style={{ padding: "0.6rem 0.75rem" }}>
+                    {canManage && m.role !== "owner" ? (
+                      <MemberRoleSelect
+                        campaignId={campaignId}
+                        userId={m.user_id}
+                        currentRole={m.role}
+                        onUpdated={handleRoleUpdated}
+                      />
+                    ) : (
+                      <span
+                        className="badge"
+                        style={{
+                          background: m.role === "owner" ? "rgba(99,102,241,0.15)" : "rgba(148,163,184,0.15)",
+                          color: m.role === "owner" ? "var(--color-primary-hover)" : "var(--color-text-muted)",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        {m.role}
+                      </span>
+                    )}
+                  </td>
+                  {canManage && (
+                    <td style={{ padding: "0.6rem 0.75rem" }}>
+                      {m.role !== "owner" && (
+                        <button
+                          className="btn btn-outline"
+                          style={{
+                            padding: "0.25rem 0.6rem",
+                            fontSize: "0.75rem",
+                            borderColor: "var(--color-danger)",
+                            color: "var(--color-danger)",
+                          }}
+                          onClick={() => handleRemove(m.user_id)}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {removeError && (
+        <p style={{ color: "var(--color-danger)", fontSize: "0.8rem", marginTop: "0.5rem" }}>
+          {removeError}
+        </p>
+      )}
+
+      {canManage && (
+        <AddMemberForm
+          campaignId={campaignId}
+          existingUserIds={existingUserIds}
+          onAdded={handleMemberAdded}
+        />
+      )}
+    </div>
+  );
+}

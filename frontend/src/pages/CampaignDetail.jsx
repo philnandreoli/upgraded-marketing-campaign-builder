@@ -9,6 +9,7 @@ import AnalyticsSection from "../components/AnalyticsSection.jsx";
 import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
 import EventLog from "../components/EventLog.jsx";
+import TeamMembersSection from "../components/TeamMembersSection.jsx";
 import { useUser } from "../UserContext";
 
 const TERMINAL_STATES = ["approved", "rejected", "content_approval"];
@@ -39,7 +40,10 @@ export default function CampaignDetail() {
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
   const { events } = useWebSocket(id);
-  const { isViewer } = useUser();
+  const { isViewer, isAdmin, user } = useUser();
+
+  // canManage: admins always can; campaign owners can too
+  const canManage = isAdmin || (campaign?.owner_id != null && user?.id === campaign.owner_id);
 
   const handleViewMode = (mode) => {
     setViewMode(mode);
@@ -327,6 +331,8 @@ export default function CampaignDetail() {
 
         </div>
       </div>
+
+      <TeamMembersSection campaignId={id} canManage={canManage} />
 
       {viewMode === "split" ? (
         <div className="detail-split-layout">
