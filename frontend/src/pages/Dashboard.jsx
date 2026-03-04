@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
+import { useUser } from "../UserContext";
 
 export default function Dashboard({ events }) {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { isViewer, isAdmin, user } = useUser();
 
   const load = async () => {
     setLoading(true);
@@ -44,9 +46,11 @@ export default function Dashboard({ events }) {
     return (
       <div className="empty-state">
         <p>No campaigns yet.</p>
-        <Link to="/new" className="btn btn-primary">
-          + Create your first campaign
-        </Link>
+        {!isViewer && (
+          <Link to="/new" className="btn btn-primary">
+            + Create your first campaign
+          </Link>
+        )}
       </div>
     );
   }
@@ -55,9 +59,11 @@ export default function Dashboard({ events }) {
     <div>
       <div className="section-header">
         <h2>Campaigns</h2>
-        <Link to="/new" className="btn btn-primary">
-          + New Campaign
-        </Link>
+        {!isViewer && (
+          <Link to="/new" className="btn btn-primary">
+            + New Campaign
+          </Link>
+        )}
       </div>
 
       {campaigns.map((c) => (
@@ -72,9 +78,11 @@ export default function Dashboard({ events }) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <span className={`badge badge-${c.status}`}>{c.status.replace(/_/g, " ")}</span>
-            <button className="btn btn-outline" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }} onClick={() => handleDelete(c.id)}>
-              Delete
-            </button>
+            {(isAdmin || (!isViewer && c.owner_id === user?.id)) && (
+              <button className="btn btn-outline" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }} onClick={() => handleDelete(c.id)}>
+                Delete
+              </button>
+            )}
           </div>
         </div>
       ))}

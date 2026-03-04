@@ -2,6 +2,7 @@
 Campaign REST API routes.
 
 Endpoints:
+  GET    /api/me                       — Return the current user's profile and role flags
   POST   /api/campaigns               — Create a campaign from a brief and start the pipeline
   GET    /api/campaigns                — List all campaigns
   GET    /api/campaigns/{id}           — Get a single campaign
@@ -126,8 +127,49 @@ class CampaignMemberResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Me response model
+# ---------------------------------------------------------------------------
+
+class MeResponse(BaseModel):
+    id: str
+    email: Optional[str]
+    display_name: Optional[str]
+    role: str
+    is_admin: bool
+    can_build: bool
+    is_viewer: bool
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+@router.get("/me", response_model=MeResponse)
+async def get_me(
+    user: Optional[User] = Depends(get_current_user),
+) -> MeResponse:
+    """Return the current user's profile and role flags (lightweight, no DB joins)."""
+    if user is None:
+        # Auth disabled — return a default builder profile for local development.
+        return MeResponse(
+            id="local",
+            email=None,
+            display_name="Local Dev",
+            role=UserRole.CAMPAIGN_BUILDER.value,
+            is_admin=False,
+            can_build=True,
+            is_viewer=False,
+        )
+    return MeResponse(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        role=user.role.value,
+        is_admin=user.role == UserRole.ADMIN,
+        can_build=user.role != UserRole.VIEWER,
+        is_viewer=user.role == UserRole.VIEWER,
+    )
+
 
 @router.post("/campaigns", status_code=201)
 async def create_campaign(
@@ -179,6 +221,7 @@ async def list_campaigns(
             "status": c.status.value,
             "product_or_service": c.brief.product_or_service,
             "goal": c.brief.goal,
+            "owner_id": c.owner_id,
             "created_at": c.created_at.isoformat(),
             "updated_at": c.updated_at.isoformat(),
         }

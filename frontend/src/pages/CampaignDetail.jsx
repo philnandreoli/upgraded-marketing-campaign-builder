@@ -9,6 +9,7 @@ import AnalyticsSection from "../components/AnalyticsSection.jsx";
 import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
 import EventLog from "../components/EventLog.jsx";
+import { useUser } from "../UserContext";
 
 const TERMINAL_STATES = ["approved", "rejected", "content_approval"];
 const PAUSE_STATES = ["clarification", "content_approval"];  // pipeline paused but will resume
@@ -38,6 +39,7 @@ export default function CampaignDetail() {
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
   const { events } = useWebSocket(id);
+  const { isViewer } = useUser();
 
   const handleViewMode = (mode) => {
     setViewMode(mode);
@@ -182,6 +184,7 @@ export default function CampaignDetail() {
             campaignId={campaign.id}
             status={campaign.status}
             onSubmitted={load}
+            readOnly={isViewer}
           />
         );
       case "strategy":
@@ -223,7 +226,7 @@ export default function CampaignDetail() {
             data={campaign.content}
             error={errors.content}
             socialPlatforms={campaign.brief?.social_media_platforms || []}
-            isApprovalMode={true}
+            isApprovalMode={!isViewer}
             campaignId={campaign.id}
             onApprovalSubmitted={load}
             status={campaign.status}
@@ -300,6 +303,11 @@ export default function CampaignDetail() {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          {isViewer && (
+            <span className="badge" style={{ background: "rgba(148,163,184,0.2)", color: "var(--color-text-muted)", fontSize: "0.75rem" }}>
+              👁 Read-only
+            </span>
+          )}
           <div className="view-toggle" role="group" aria-label="Layout view">
             <button
               className={`view-toggle-btn${viewMode === "focus" ? " active" : ""}`}

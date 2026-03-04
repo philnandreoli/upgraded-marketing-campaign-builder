@@ -7,6 +7,7 @@ export default function ClarificationSection({
   campaignId,
   status,
   onSubmitted,
+  readOnly = false,
 }) {
   const [answers, setAnswers] = useState({});
 
@@ -15,7 +16,7 @@ export default function ClarificationSection({
     (answers[id] || "").trim() || (savedAnswers && savedAnswers[id]) || "";
   const [submitting, setSubmitting] = useState(false);
 
-  const isWaiting = status === "clarification";
+  const isWaiting = status === "clarification" && !readOnly;
 
   const setAnswer = (id) => (e) =>
     setAnswers((prev) => ({ ...prev, [id]: e.target.value }));

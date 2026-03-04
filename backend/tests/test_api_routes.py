@@ -86,6 +86,58 @@ class TestHealthCheck:
         assert "version" in data
 
 
+# ---- GET /api/me ----
+
+class TestGetMe:
+    def test_me_returns_local_dev_when_auth_disabled(self, client):
+        """When auth is disabled (user is None), returns a local dev profile."""
+        r = client.get("/api/me")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["id"] == "local"
+        assert data["role"] == "campaign_builder"
+        assert data["is_admin"] is False
+        assert data["can_build"] is True
+        assert data["is_viewer"] is False
+
+    def test_me_returns_user_profile_for_campaign_builder(self, authed_client):
+        """Returns the authenticated user's profile for a campaign_builder."""
+        r = authed_client.get("/api/me")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["id"] == _TEST_USER.id
+        assert data["email"] == _TEST_USER.email
+        assert data["display_name"] == _TEST_USER.display_name
+        assert data["role"] == "campaign_builder"
+        assert data["is_admin"] is False
+        assert data["can_build"] is True
+        assert data["is_viewer"] is False
+
+    def test_me_returns_admin_flags_for_admin(self, _isolated_store):
+        """Returns is_admin=True for an admin user."""
+        admin = User(id="admin-001", email="admin@example.com", display_name="Admin", role=UserRole.ADMIN)
+        with _as_user(admin) as c:
+            r = c.get("/api/me")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["role"] == "admin"
+            assert data["is_admin"] is True
+            assert data["can_build"] is True
+            assert data["is_viewer"] is False
+
+    def test_me_returns_viewer_flags_for_viewer(self, _isolated_store):
+        """Returns is_viewer=True for a viewer user."""
+        viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", role=UserRole.VIEWER)
+        with _as_user(viewer) as c:
+            r = c.get("/api/me")
+            assert r.status_code == 200
+            data = r.json()
+            assert data["role"] == "viewer"
+            assert data["is_admin"] is False
+            assert data["can_build"] is False
+            assert data["is_viewer"] is True
+
+
 # ---- POST /api/campaigns ----
 
 class TestCreateCampaign:
