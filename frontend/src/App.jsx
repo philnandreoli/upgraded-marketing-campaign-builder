@@ -7,6 +7,7 @@ import {
 import Dashboard from "./pages/Dashboard.jsx";
 import NewCampaign from "./pages/NewCampaign.jsx";
 import CampaignDetail from "./pages/CampaignDetail.jsx";
+import Admin from "./pages/Admin.jsx";
 import useWebSocket from "./hooks/useWebSocket.js";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import { loginRequest } from "./authConfig.js";
@@ -22,6 +23,12 @@ const authEnabled = !!import.meta.env.VITE_AZURE_CLIENT_ID;
 function RequireBuilder({ children }) {
   const { isViewer } = useUser();
   return isViewer ? <Navigate to="/" replace /> : children;
+}
+
+/** Route guard: redirects non-admins to Dashboard. */
+function RequireAdmin({ children }) {
+  const { isAdmin } = useUser();
+  return isAdmin ? children : <Navigate to="/" replace />;
 }
 
 function LoginPage() {
@@ -99,6 +106,7 @@ function AuthenticatedApp() {
           <Route path="/" element={<Dashboard events={events} />} />
           <Route path="/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
           <Route path="/campaign/:id" element={<CampaignDetail />} />
+          <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
         </Routes>
       </main>
     </div>
