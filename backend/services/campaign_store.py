@@ -10,12 +10,14 @@ simply ``await`` these methods.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import delete as sa_delete, select
 
 from backend.models.campaign import Campaign, CampaignBrief
-from backend.services.database import CampaignRow, async_session
+from backend.models.user import CampaignMemberRole
+from backend.services.database import CampaignMemberRow, CampaignRow, async_session
 
 
 class CampaignStore:
@@ -26,7 +28,11 @@ class CampaignStore:
     # ------------------------------------------------------------------
 
     async def create(self, brief: CampaignBrief, owner_id: Optional[str] = None) -> Campaign:
-        """Create a new campaign from a brief and persist it."""
+        """Create a new campaign from a brief and persist it.
+
+        When *owner_id* is provided, the creating user is automatically added
+        as an *owner* member in the campaign_members table.
+        """
         campaign = Campaign(brief=brief, owner_id=owner_id)
         row = CampaignRow(
             id=campaign.id,
@@ -38,6 +44,14 @@ class CampaignStore:
         )
         async with async_session() as session:
             session.add(row)
+            if owner_id is not None:
+                member_row = CampaignMemberRow(
+                    campaign_id=campaign.id,
+                    user_id=owner_id,
+                    role=CampaignMemberRole.OWNER.value,
+                    added_at=datetime.utcnow(),
+                )
+                session.add(member_row)
             await session.commit()
         return campaign
 
@@ -87,6 +101,66 @@ class CampaignStore:
             )
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows]
+
+    async def list_accessible(self, user_id: str, is_admin: bool = False) -> list[Campaign]:
+        """Return all campaigns accessible to *user_id*.
+
+        Admins see every campaign.  Other users see only campaigns where they
+        appear in the campaign_members table (any role).
+        """
+        async with async_session() as session:
+            if is_admin:
+                result = await session.execute(
+                    select(CampaignRow).order_by(CampaignRow.created_at.desc())
+                )
+            else:
+                result = await session.execute(
+                    select(CampaignRow)
+                    .join(CampaignMemberRow, CampaignRow.id == CampaignMemberRow.campaign_id)
+                    .where(CampaignMemberRow.user_id == user_id)
+                    .order_by(CampaignRow.created_at.desc())
+                )
+            rows = result.scalars().all()
+            return [Campaign.model_validate_json(r.data) for r in rows]
+
+    async def add_member(
+        self,
+        campaign_id: str,
+        user_id: str,
+        role: CampaignMemberRole = CampaignMemberRole.VIEWER,
+    ) -> None:
+        """Add *user_id* to *campaign_id* with the given per-campaign *role*.
+
+        If the user is already a member the existing row is updated.
+        """
+        async with async_session() as session:
+            existing = await session.get(CampaignMemberRow, (campaign_id, user_id))
+            if existing is not None:
+                existing.role = role.value
+            else:
+                member_row = CampaignMemberRow(
+                    campaign_id=campaign_id,
+                    user_id=user_id,
+                    role=role.value,
+                    added_at=datetime.utcnow(),
+                )
+                session.add(member_row)
+            await session.commit()
+
+    async def remove_member(self, campaign_id: str, user_id: str) -> bool:
+        """Remove *user_id* from *campaign_id*.
+
+        Returns ``True`` if a row was deleted, ``False`` if not found.
+        """
+        async with async_session() as session:
+            result = await session.execute(
+                sa_delete(CampaignMemberRow).where(
+                    CampaignMemberRow.campaign_id == campaign_id,
+                    CampaignMemberRow.user_id == user_id,
+                )
+            )
+            await session.commit()
+            return result.rowcount > 0
 
     async def delete(self, campaign_id: str) -> bool:
         async with async_session() as session:

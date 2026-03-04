@@ -180,18 +180,18 @@ class TestListCampaigns:
     def test_list_scoped_to_owner(self, _isolated_store):
         """Each authenticated user only sees their own campaigns."""
         # Directly insert campaigns with different owners (no async needed)
-        _isolated_store._campaigns.update({
-            c.id: c for c in [
-                Campaign(
-                    brief=CampaignBrief(product_or_service="My Campaign", goal="Mine"),
-                    owner_id=_TEST_USER.id,
-                ),
-                Campaign(
-                    brief=CampaignBrief(product_or_service="Their Campaign", goal="Theirs"),
-                    owner_id=_OTHER_USER.id,
-                ),
-            ]
-        })
+        my_campaign = Campaign(
+            brief=CampaignBrief(product_or_service="My Campaign", goal="Mine"),
+            owner_id=_TEST_USER.id,
+        )
+        their_campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Their Campaign", goal="Theirs"),
+            owner_id=_OTHER_USER.id,
+        )
+        _isolated_store._campaigns.update({my_campaign.id: my_campaign, their_campaign.id: their_campaign})
+        # Also add corresponding membership entries so list_accessible works correctly
+        _isolated_store._members[(my_campaign.id, _TEST_USER.id)] = "owner"
+        _isolated_store._members[(their_campaign.id, _OTHER_USER.id)] = "owner"
 
         with _as_user(_TEST_USER) as c:
             items = c.get("/api/campaigns").json()
