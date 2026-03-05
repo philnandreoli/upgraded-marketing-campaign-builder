@@ -607,6 +607,9 @@ a:hover { color: var(--color-primary-hover); }
 .piece-edit-textarea:focus {
   outline: none; border-color: var(--color-primary);
 }
+.piece-edit-textarea-locked {
+  opacity: 0.65; cursor: default; resize: none;
+}
 
 .piece-notes {
   width: 100%; padding: 0.5rem 0.75rem; margin-top: 0.5rem;

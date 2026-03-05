@@ -8,6 +8,10 @@ const PLATFORM_LABELS = {
   linkedin: "LinkedIn",
 };
 
+// Stable no-op used as onChange for readOnly textareas to satisfy React's
+// controlled-component contract without recreating a function on every render.
+const noop = () => {};
+
 function detectSocialPlatform(piece, index, socialPlatforms = [], socialPostIndexMap = []) {
   const normalized = `${piece?.notes || ""} ${piece?.content || ""}`.toLowerCase();
 
@@ -211,16 +215,19 @@ export default function ContentSection({
                     <div className="piece-platform">📱 Platform: {socialPlatformLabel}</div>
                   )}
 
-                  {/* Show editable textarea in approval mode for pending pieces not yet locally approved */}
-                  {isApprovalMode && isPending && !effectiveApproved ? (
+                  {/* Content body: editable textarea for pending pieces, readOnly textarea
+                      when approved (locally or server-confirmed) so content stays
+                      clearly visible while locked, plain div outside approval mode. */}
+                  {isApprovalMode ? (
                     <textarea
-                      className="piece-edit-textarea"
+                      className={`piece-edit-textarea${(!isPending || effectiveApproved) ? " piece-edit-textarea-locked" : ""}`}
                       value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
-                      onChange={(e) => setEdit(i, e.target.value)}
+                      onChange={isPending && !effectiveApproved ? (e) => setEdit(i, e.target.value) : noop}
+                      readOnly={!isPending || effectiveApproved}
                     />
                   ) : (
                     <div className="piece-body">
-                      {editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
+                      {piece.human_edited_content || piece.content}
                     </div>
                   )}
 
