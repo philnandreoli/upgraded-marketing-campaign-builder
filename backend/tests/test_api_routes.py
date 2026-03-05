@@ -416,6 +416,100 @@ class TestSubmitContentApproval:
             assert r.status_code == 404
 
 
+# ---- PATCH /api/campaigns/{id}/content/{piece_index}/decision ----
+
+class TestUpdatePieceDecision:
+    def _approval_campaign(self, _isolated_store, *, approval_status=ContentApprovalStatus.PENDING, owner_id=None):
+        """Helper: create a campaign in content_approval status with one piece."""
+        piece = ContentPiece(
+            content_type="headline",
+            content="Buy now!",
+            approval_status=approval_status,
+        )
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="DecisionCo", goal="Test"),
+            owner_id=owner_id,
+            content=CampaignContent(pieces=[piece]),
+        )
+        campaign.status = CampaignStatus.CONTENT_APPROVAL
+        _isolated_store._campaigns[campaign.id] = campaign
+        return campaign
+
+    def test_approve_piece(self, client, _isolated_store):
+        """Successfully approve a pending piece."""
+        campaign = self._approval_campaign(_isolated_store)
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/decision",
+            json={"approved": True},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["approval_status"] == "approved"
+        saved = _isolated_store._campaigns[campaign.id]
+        assert saved.content.pieces[0].approval_status == ContentApprovalStatus.APPROVED
+
+    def test_reject_piece(self, client, _isolated_store):
+        """Successfully reject a pending piece."""
+        campaign = self._approval_campaign(_isolated_store)
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/decision",
+            json={"approved": False, "notes": "Needs work"},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["approval_status"] == "rejected"
+        saved = _isolated_store._campaigns[campaign.id]
+        assert saved.content.pieces[0].approval_status == ContentApprovalStatus.REJECTED
+        assert saved.content.pieces[0].human_notes == "Needs work"
+
+    def test_approve_piece_with_edited_content(self, client, _isolated_store):
+        """Approve a piece with edited content persists the edit."""
+        campaign = self._approval_campaign(_isolated_store)
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/decision",
+            json={"approved": True, "edited_content": "Buy now — limited offer!"},
+        )
+        assert r.status_code == 200
+        saved = _isolated_store._campaigns[campaign.id]
+        assert saved.content.pieces[0].human_edited_content == "Buy now — limited offer!"
+
+    def test_decision_not_found_campaign(self, client):
+        """Returns 404 when the campaign does not exist."""
+        r = client.patch("/api/campaigns/nonexistent/content/0/decision", json={"approved": True})
+        assert r.status_code == 404
+
+    def test_decision_piece_out_of_range(self, client, _isolated_store):
+        """Returns 404 when the piece index is out of range."""
+        campaign = self._approval_campaign(_isolated_store)
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/99/decision",
+            json={"approved": True},
+        )
+        assert r.status_code == 404
+
+    def test_decision_wrong_campaign_status(self, client, _isolated_store):
+        """Returns 409 when the campaign is not in content_approval status."""
+        campaign = self._approval_campaign(_isolated_store)
+        campaign.status = CampaignStatus.APPROVED
+        _isolated_store._campaigns[campaign.id] = campaign
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/decision",
+            json={"approved": True},
+        )
+        assert r.status_code == 409
+
+    def test_cannot_reject_already_approved_piece(self, client, _isolated_store):
+        """Returns 409 when trying to reject an already-approved piece."""
+        campaign = self._approval_campaign(
+            _isolated_store, approval_status=ContentApprovalStatus.APPROVED
+        )
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/decision",
+            json={"approved": False},
+        )
+        assert r.status_code == 409
+
+
 # ---- PATCH /api/campaigns/{id}/content/{piece_index}/notes ----
 
 class TestUpdatePieceNotes:

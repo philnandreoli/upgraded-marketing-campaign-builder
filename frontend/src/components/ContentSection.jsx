@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { submitContentApproval, updatePieceNotes } from "../api";
+import { submitContentApproval, updatePieceNotes, updatePieceDecision } from "../api";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -42,7 +42,8 @@ export default function ContentSection({
   const [notes, setNotes] = useState({});           // { [index]: noteText }
   const [decisions, setDecisions] = useState({});   // { [index]: "approved" | "rejected" }
   const [submitting, setSubmitting] = useState(false);
-  const [savingNotes, setSavingNotes] = useState({});  // { [index]: boolean }
+  const [savingNotes, setSavingNotes] = useState({});    // { [index]: boolean }
+  const [savingDecision, setSavingDecision] = useState({}); // { [index]: boolean }
 
   const visiblePieces = data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
@@ -52,13 +53,12 @@ export default function ContentSection({
   const setNote = (idx, text) => setNotes((prev) => ({ ...prev, [idx]: text }));
   const setDecision = (idx, dec) => setDecisions((prev) => ({ ...prev, [idx]: dec }));
 
-  const pendingPieces = visiblePieces.filter(
-    (p) => !p.approval_status || p.approval_status === "pending"
-  );
-  const allDecided = pendingPieces.length > 0 && pendingPieces.every((_, i) => {
-    const realIdx = visiblePieces.indexOf(pendingPieces[i]);
-    return decisions[realIdx] === "approved" || decisions[realIdx] === "rejected";
+  const pendingPieces = visiblePieces.filter((piece, i) => {
+    const effApproved = piece.approval_status === "approved" || decisions[i] === "approved";
+    const effRejected = piece.approval_status === "rejected" || decisions[i] === "rejected";
+    return !effApproved && !effRejected;
   });
+  const allDecided = visiblePieces.length > 0 && pendingPieces.length === 0;
 
   const handleSubmitApprovals = async () => {
     setSubmitting(true);
@@ -107,6 +107,24 @@ export default function ContentSection({
       alert("Failed to save notes: " + err.message);
     } finally {
       setSavingNotes((prev) => ({ ...prev, [pieceIndex]: false }));
+    }
+  };
+
+  const handleDecision = async (pieceIndex, approved) => {
+    setSavingDecision((prev) => ({ ...prev, [pieceIndex]: true }));
+    try {
+      const editedContent = editing[pieceIndex] !== undefined ? editing[pieceIndex] : null;
+      await updatePieceDecision(campaignId, pieceIndex, {
+        approved,
+        editedContent,
+        notes: notes[pieceIndex] || "",
+      });
+      // Mirror the persisted decision in local state so the UI updates immediately
+      setDecisions((prev) => ({ ...prev, [pieceIndex]: approved ? "approved" : "rejected" }));
+    } catch (err) {
+      alert("Failed to save decision: " + err.message);
+    } finally {
+      setSavingDecision((prev) => ({ ...prev, [pieceIndex]: false }));
     }
   };
 
@@ -299,15 +317,17 @@ export default function ContentSection({
                       <div style={{ display: "flex", gap: "0.5rem" }}>
                         <button
                           className={`btn btn-sm ${currentDecision === "approved" ? "btn-success" : "btn-outline"}`}
-                          onClick={() => setDecision(i, "approved")}
+                          disabled={savingDecision[i]}
+                          onClick={() => handleDecision(i, true)}
                         >
-                          ✅ Approve
+                          {savingDecision[i] ? "Saving…" : "✅ Approve"}
                         </button>
                         <button
                           className={`btn btn-sm ${currentDecision === "rejected" ? "btn-danger" : "btn-outline"}`}
-                          onClick={() => setDecision(i, "rejected")}
+                          disabled={savingDecision[i]}
+                          onClick={() => handleDecision(i, false)}
                         >
-                          ❌ Reject
+                          {savingDecision[i] ? "Saving…" : "❌ Reject"}
                         </button>
                       </div>
                     </div>
