@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
+from backend.models.campaign import Campaign, CampaignBrief, CampaignContent, CampaignStatus, ContentApprovalStatus, ContentPiece
 from backend.models.user import User, UserRole
 from backend.services.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
@@ -416,7 +416,99 @@ class TestSubmitContentApproval:
             assert r.status_code == 404
 
 
-# ---- POST /api/campaigns/{id}/clarify ----
+# ---- PATCH /api/campaigns/{id}/content/{piece_index}/notes ----
+
+class TestUpdatePieceNotes:
+    def _campaign_with_approved_piece(self, _isolated_store, *, owner_id=None):
+        """Helper: create a campaign with one approved content piece."""
+        piece = ContentPiece(
+            content_type="headline",
+            content="Buy now!",
+            approval_status=ContentApprovalStatus.APPROVED,
+        )
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="NotesCo", goal="Test"),
+            owner_id=owner_id,
+            content=CampaignContent(pieces=[piece]),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        return campaign
+
+    def test_update_notes_on_approved_piece(self, client, _isolated_store):
+        """Successfully update human_notes on an approved piece."""
+        campaign = self._campaign_with_approved_piece(_isolated_store)
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/notes",
+            json={"notes": "Ship it!"},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["message"] == "Notes updated"
+        assert data["campaign_id"] == campaign.id
+        # Verify the note was persisted
+        updated = _isolated_store._campaigns[campaign.id]
+        assert updated.content.pieces[0].human_notes == "Ship it!"
+
+    def test_update_notes_not_found_campaign(self, client):
+        """Returns 404 when the campaign does not exist."""
+        r = client.patch("/api/campaigns/nonexistent/content/0/notes", json={"notes": "x"})
+        assert r.status_code == 404
+
+    def test_update_notes_piece_out_of_range(self, client, _isolated_store):
+        """Returns 404 when the piece index is out of range."""
+        campaign = self._campaign_with_approved_piece(_isolated_store)
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/99/notes",
+            json={"notes": "oops"},
+        )
+        assert r.status_code == 404
+
+    def test_update_notes_pending_piece_returns_409(self, client, _isolated_store):
+        """Returns 409 when the piece is not yet approved."""
+        piece = ContentPiece(
+            content_type="headline",
+            content="Draft text",
+            approval_status=ContentApprovalStatus.PENDING,
+        )
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="NotesCo", goal="Test"),
+            content=CampaignContent(pieces=[piece]),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/notes",
+            json={"notes": "too early"},
+        )
+        assert r.status_code == 409
+
+    def test_update_notes_no_content(self, client, _isolated_store):
+        """Returns 404 when campaign has no content at all."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Empty", goal="Test"),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        r = client.patch(
+            f"/api/campaigns/{campaign.id}/content/0/notes",
+            json={"notes": "nothing here"},
+        )
+        assert r.status_code == 404
+
+    def test_update_notes_other_user_returns_404(self, _isolated_store):
+        """A user cannot update notes for another user's campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Priv", goal="Test"),
+            owner_id=_TEST_USER.id,
+            content=CampaignContent(pieces=[
+                ContentPiece(content_type="cta", content="Click!", approval_status=ContentApprovalStatus.APPROVED),
+            ]),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        with _as_user(_OTHER_USER) as c:
+            r = c.patch(
+                f"/api/campaigns/{campaign.id}/content/0/notes",
+                json={"notes": "sneaky"},
+            )
+            assert r.status_code == 404
 
 class TestSubmitClarification:
     def test_clarify_not_found(self, client):

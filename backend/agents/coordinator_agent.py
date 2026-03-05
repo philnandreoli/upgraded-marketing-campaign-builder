@@ -459,6 +459,10 @@ class CoordinatorAgent:
                     idx = piece_approval.piece_index
                     if 0 <= idx < len(campaign.content.pieces):
                         piece = campaign.content.pieces[idx]
+                        # Once a piece is approved its content is immutable — skip any
+                        # attempt to modify content or human_edited_content.
+                        if piece.approval_status == ContentApprovalStatus.APPROVED:
+                            continue
                         if piece_approval.approved:
                             piece.approval_status = ContentApprovalStatus.APPROVED
                             if piece_approval.edited_content is not None:

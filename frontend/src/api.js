@@ -118,6 +118,19 @@ export async function submitContentApproval(campaignId, pieces, rejectCampaign =
   return res.json();
 }
 
+export async function updatePieceNotes(campaignId, pieceIndex, notes) {
+  const res = await fetch(
+    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/notes`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ notes }),
+    }
+  );
+  if (!res.ok) throw new Error(`Update notes failed: ${res.status}`);
+  return res.json();
+}
+
 export async function submitClarification(campaignId, answers) {
   const res = await fetch(`${API_BASE}/api/campaigns/${campaignId}/clarify`, {
     method: "POST",

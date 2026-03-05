@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { submitContentApproval } from "../api";
+import { submitContentApproval, updatePieceNotes } from "../api";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -38,6 +38,7 @@ export default function ContentSection({
   const [notes, setNotes] = useState({});           // { [index]: noteText }
   const [decisions, setDecisions] = useState({});   // { [index]: "approved" | "rejected" }
   const [submitting, setSubmitting] = useState(false);
+  const [savingNotes, setSavingNotes] = useState({});  // { [index]: boolean }
 
   const visiblePieces = data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
@@ -91,6 +92,17 @@ export default function ContentSection({
       alert("Failed to reject campaign: " + err.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSaveNotes = async (pieceIndex) => {
+    setSavingNotes((prev) => ({ ...prev, [pieceIndex]: true }));
+    try {
+      await updatePieceNotes(campaignId, pieceIndex, notes[pieceIndex] || "");
+    } catch (err) {
+      alert("Failed to save notes: " + err.message);
+    } finally {
+      setSavingNotes((prev) => ({ ...prev, [pieceIndex]: false }));
     }
   };
 
@@ -186,7 +198,7 @@ export default function ContentSection({
                     </div>
                     {isApprovalMode && (
                       <span className={`badge badge-${isAlreadyApproved ? "approved" : isAlreadyRejected ? "rejected" : "pending"}`}>
-                        {isAlreadyApproved ? "✅ Approved" : isAlreadyRejected ? "❌ Rejected" : "⏳ Pending"}
+                        {isAlreadyApproved ? "🔒 Approved" : isAlreadyRejected ? "❌ Rejected" : "⏳ Pending"}
                       </span>
                     )}
                   </div>
@@ -214,10 +226,43 @@ export default function ContentSection({
                     </p>
                   )}
 
-                  {piece.human_notes && (
-                    <p style={{ fontSize: "0.75rem", color: "var(--color-warning)", marginTop: "0.25rem" }}>
-                      📝 Reviewer: {piece.human_notes}
-                    </p>
+                  {/* For approved pieces: show editable notes field wired to PATCH endpoint */}
+                  {isApprovalMode && isAlreadyApproved ? (
+                    <div style={{ marginTop: "0.75rem" }}>
+                      <div style={{ marginBottom: "0.25rem", fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+                        📝 Reviewer notes
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <input
+                          type="text"
+                          placeholder="Add post-approval notes…"
+                          value={notes[i] !== undefined ? notes[i] : (piece.human_notes || "")}
+                          onChange={(e) => setNote(i, e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: "0.3rem 0.5rem",
+                            fontSize: "0.8rem",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: "var(--radius)",
+                            background: "var(--color-bg)",
+                            color: "var(--color-text)",
+                          }}
+                        />
+                        <button
+                          className="btn btn-sm btn-outline"
+                          disabled={savingNotes[i]}
+                          onClick={() => handleSaveNotes(i)}
+                        >
+                          {savingNotes[i] ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    piece.human_notes && (
+                      <p style={{ fontSize: "0.75rem", color: "var(--color-warning)", marginTop: "0.25rem" }}>
+                        📝 Reviewer: {piece.human_notes}
+                      </p>
+                    )
                   )}
 
                   {/* Per-piece approval buttons */}
