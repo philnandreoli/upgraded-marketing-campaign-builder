@@ -24,7 +24,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.agents.coordinator_agent import CoordinatorAgent
-from backend.models.campaign import Campaign, CampaignBrief
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
 from backend.models.user import CampaignMemberRole, User, UserRole, roles_to_db
 from backend.services.auth import get_current_user
@@ -282,6 +282,12 @@ async def submit_clarification(
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.WRITE, store)
+
+    if campaign.status != CampaignStatus.CLARIFICATION:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Campaign is not awaiting clarification (current status: {campaign.status.value})",
+        )
 
     response.campaign_id = campaign_id
 

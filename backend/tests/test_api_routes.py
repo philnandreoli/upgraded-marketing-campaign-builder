@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.models.campaign import Campaign, CampaignBrief
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import User, UserRole
 from backend.services.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
@@ -412,6 +412,73 @@ class TestSubmitContentApproval:
                 "campaign_id": campaign.id,
                 "pieces": [],
                 "reject_campaign": False,
+            })
+            assert r.status_code == 404
+
+
+# ---- POST /api/campaigns/{id}/clarify ----
+
+class TestSubmitClarification:
+    def test_clarify_not_found(self, client):
+        """Returns 404 when the campaign does not exist."""
+        r = client.post("/api/campaigns/nonexistent-id/clarify", json={
+            "campaign_id": "nonexistent-id",
+            "answers": {"q1": "answer"},
+        })
+        assert r.status_code == 404
+
+    def test_clarify_wrong_status_returns_409(self, client, _isolated_store):
+        """Returns 409 when the campaign is not in 'clarification' status."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Test", goal="Test"),
+        )
+        # Campaign starts in DRAFT status — not CLARIFICATION
+        _isolated_store._campaigns[campaign.id] = campaign
+
+        r = client.post(f"/api/campaigns/{campaign.id}/clarify", json={
+            "campaign_id": campaign.id,
+            "answers": {"q1": "answer"},
+        })
+        assert r.status_code == 409
+        assert "clarification" in r.json()["detail"].lower()
+
+    def test_clarify_valid(self, client, _isolated_store):
+        """Accepts clarification answers when campaign is in 'clarification' status."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Test", goal="Test"),
+        )
+        campaign.advance_status(CampaignStatus.CLARIFICATION)
+        _isolated_store._campaigns[campaign.id] = campaign
+
+        with patch("backend.api.campaigns._get_coordinator") as mock_coord_fn:
+            mock_coord = MagicMock()
+            mock_coord.submit_clarification = AsyncMock()
+            mock_coord_fn.return_value = mock_coord
+
+            r = client.post(f"/api/campaigns/{campaign.id}/clarify", json={
+                "campaign_id": campaign.id,
+                "answers": {"q1": "B2B tech companies"},
+            })
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["campaign_id"] == campaign.id
+        assert "submitted" in data["message"].lower()
+
+    def test_clarify_other_user_returns_404(self, _isolated_store):
+        """A user cannot submit clarification for another user's campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Priv", goal="Test"),
+            owner_id=_TEST_USER.id,
+        )
+        campaign.advance_status(CampaignStatus.CLARIFICATION)
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+
+        with _as_user(_OTHER_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/clarify", json={
+                "campaign_id": campaign.id,
+                "answers": {"q1": "answer"},
             })
             assert r.status_code == 404
 
