@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createCampaign } from "../api";
+import DatePicker from "../components/DatePicker";
 
 const CHANNEL_OPTIONS = [
   { value: "email", label: "Email" },
@@ -144,18 +145,16 @@ export default function NewCampaign() {
         <div className="form-row">
           <div className="form-group">
             <label>Start Date</label>
-            <input
-              type="date"
+            <DatePicker
               value={form.start_date}
               onChange={set("start_date")}
             />
           </div>
           <div className="form-group">
             <label>End Date</label>
-            <input
-              type="date"
-              min={form.start_date || undefined}
+            <DatePicker
               value={form.end_date}
+              min={form.start_date || undefined}
               onChange={set("end_date")}
             />
           </div>
