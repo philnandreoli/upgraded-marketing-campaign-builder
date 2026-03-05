@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
-from backend.models.messages import ContentApprovalResponse, ContentPieceApproval
+from backend.models.messages import ClarificationResponse, ContentApprovalResponse, ContentPieceApproval
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
@@ -397,3 +397,156 @@ class TestStatusTransitions:
         assert "analytics_setup" in statuses_seen
         assert "review" in statuses_seen
         assert "content_revision" in statuses_seen
+
+
+# Clarification response that requests follow-up questions
+CLARIFICATION_WITH_QUESTIONS_RESPONSE = json.dumps({
+    "needs_clarification": True,
+    "context_summary": "Need more info about target audience",
+    "questions": [
+        {"id": "q1", "question": "Who is your primary target audience?"},
+    ],
+})
+
+
+class TestCoordinatorClarificationResume:
+    @pytest.mark.asyncio
+    async def test_run_clarification_skips_wait_when_answers_already_present(
+        self, store, brief, events_log, mock_on_event
+    ):
+        """If clarification_answers are already populated, the pipeline should skip
+        the future-based wait and continue immediately without blocking."""
+        campaign = await store.create(brief)
+        # Pre-populate answers as if the user had already submitted them
+        campaign.clarification_answers = {"q1": "Our audience is B2B tech companies"}
+        await store.update(campaign)
+
+        # Responses: clarification asks questions, then the normal pipeline stages
+        responses = [
+            CLARIFICATION_WITH_QUESTIONS_RESPONSE,
+            STRATEGY_RESPONSE,
+            CONTENT_RESPONSE,
+            CHANNEL_RESPONSE,
+            ANALYTICS_RESPONSE,
+            REVIEW_RESPONSE,
+            CONTENT_REVISION_RESPONSE,
+        ]
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=responses)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event)
+
+            # Schedule auto-approval for the content gate
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        # Pipeline should have completed successfully without hanging
+        assert result.status == CampaignStatus.APPROVED
+        assert result.strategy is not None
+
+        event_names = [e["event"] for e in events_log]
+        assert "clarification_completed" in event_names
+        # clarification_requested should NOT have been emitted (answers already present)
+        assert "clarification_requested" not in event_names
+
+    @pytest.mark.asyncio
+    async def test_submit_clarification_relaunches_pipeline_when_no_future(
+        self, store, brief, events_log, mock_on_event
+    ):
+        """When no pending future exists (user navigated away and returned),
+        submit_clarification should persist the answers and re-launch the pipeline."""
+        campaign = await store.create(brief)
+        # Simulate a campaign stuck in clarification status with questions set
+        campaign.clarification_questions = [{"id": "q1", "question": "Target audience?"}]
+        campaign.advance_status(CampaignStatus.CLARIFICATION)
+        await store.update(campaign)
+
+        # Responses for the re-launched pipeline (clarification skipped because
+        # answers are now present, then normal stages)
+        responses = [
+            CLARIFICATION_WITH_QUESTIONS_RESPONSE,
+            STRATEGY_RESPONSE,
+            CONTENT_RESPONSE,
+            CHANNEL_RESPONSE,
+            ANALYTICS_RESPONSE,
+            REVIEW_RESPONSE,
+            CONTENT_REVISION_RESPONSE,
+        ]
+
+        pipeline_completed = asyncio.Event()
+        result_holder = []
+
+        async def _tracking_event(event, data):
+            events_log.append({"event": event, **data})
+            if event == "pipeline_completed":
+                pipeline_completed.set()
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=responses)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=_tracking_event)
+
+            # Schedule auto-approval for the content gate
+            async def _auto_approve():
+                await asyncio.sleep(0.5)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+
+            # Submit clarification with no active pipeline future — should re-launch
+            await coordinator.submit_clarification(
+                ClarificationResponse(
+                    campaign_id=campaign.id,
+                    answers={"q1": "B2B tech companies"},
+                )
+            )
+
+            # Wait for the re-launched pipeline to finish
+            await asyncio.wait_for(pipeline_completed.wait(), timeout=5.0)
+            await approve_task
+
+        # Answers should be persisted
+        updated = await store.get(campaign.id)
+        assert updated.clarification_answers == {"q1": "B2B tech companies"}
+
+        # Pipeline should have completed
+        event_names = [e["event"] for e in events_log]
+        assert "pipeline_completed" in event_names
+
+    @pytest.mark.asyncio
+    async def test_submit_clarification_no_op_when_campaign_not_found(self, store):
+        """submit_clarification should not crash when the campaign does not exist."""
+        coordinator = CoordinatorAgent(store=store)
+        # Should complete without raising any exception
+        await coordinator.submit_clarification(
+            ClarificationResponse(
+                campaign_id="nonexistent-id",
+                answers={"q1": "Answer"},
+            )
+        )

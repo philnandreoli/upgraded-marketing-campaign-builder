@@ -200,10 +200,21 @@ class CoordinatorAgent:
             future.set_result(response)
             logger.info("Clarification received for campaign %s", response.campaign_id)
         else:
-            logger.warning(
-                "No pending clarification for campaign %s",
+            # No active pipeline — persist answers and restart the pipeline
+            logger.info(
+                "No pending clarification future for campaign %s; persisting answers and re-launching pipeline",
                 response.campaign_id,
             )
+            campaign = await self._store.get(response.campaign_id)
+            if campaign is None:
+                logger.warning(
+                    "Cannot resume clarification: campaign %s not found",
+                    response.campaign_id,
+                )
+                return
+            campaign.clarification_answers = response.answers
+            await self._store.update(campaign)
+            asyncio.create_task(self.run_pipeline(campaign))
 
     async def submit_content_approval(self, response: ContentApprovalResponse) -> None:
         """Called by the API layer when the human submits per-piece content approvals."""
@@ -606,6 +617,20 @@ class CoordinatorAgent:
         campaign.clarification_questions = questions
         campaign.advance_status(CampaignStatus.CLARIFICATION)
         await self._store.update(campaign)
+
+        # If answers were already submitted (e.g. user returned after navigating
+        # away, or the pipeline was re-launched after a server restart), skip
+        # the future-based wait and continue immediately.
+        if campaign.clarification_answers:
+            logger.info(
+                "Clarification answers already present for campaign %s — skipping wait",
+                campaign.id,
+            )
+            await self._emit("clarification_completed", {
+                "campaign_id": campaign.id,
+                "answers": campaign.clarification_answers,
+            })
+            return campaign
 
         request = ClarificationRequest(
             campaign_id=campaign.id,
