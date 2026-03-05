@@ -12,7 +12,7 @@ import EventLog from "../components/EventLog.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import { useUser } from "../UserContext";
 
-const TERMINAL_STATES = ["approved", "rejected", "content_approval"];
+const TERMINAL_STATES = ["approved", "rejected"];
 const PAUSE_STATES = ["clarification", "content_approval"];  // pipeline paused but will resume
 
 // Pipeline stages in order — each maps to a tab key and campaign data field

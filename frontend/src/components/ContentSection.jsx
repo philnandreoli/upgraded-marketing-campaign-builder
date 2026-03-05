@@ -175,9 +175,13 @@ export default function ContentSection({
               const isAlreadyRejected = approvalStatus === "rejected";
               const currentDecision = decisions[i];
 
-              const borderColor = isAlreadyApproved || currentDecision === "approved"
+              // Reflect local staging decisions in visual state even before final submit
+              const effectiveApproved = isAlreadyApproved || currentDecision === "approved";
+              const effectiveRejected = isAlreadyRejected || currentDecision === "rejected";
+
+              const borderColor = effectiveApproved
                 ? "var(--color-success)"
-                : isAlreadyRejected || currentDecision === "rejected"
+                : effectiveRejected
                   ? "var(--color-danger)"
                   : "var(--color-border)";
 
@@ -197,8 +201,8 @@ export default function ContentSection({
                       )}
                     </div>
                     {isApprovalMode && (
-                      <span className={`badge badge-${isAlreadyApproved ? "approved" : isAlreadyRejected ? "rejected" : "pending"}`}>
-                        {isAlreadyApproved ? "🔒 Approved" : isAlreadyRejected ? "❌ Rejected" : "⏳ Pending"}
+                      <span className={`badge badge-${effectiveApproved ? "approved" : effectiveRejected ? "rejected" : "pending"}`}>
+                        {effectiveApproved ? "🔒 Approved" : effectiveRejected ? "❌ Rejected" : "⏳ Pending"}
                       </span>
                     )}
                   </div>
@@ -207,8 +211,8 @@ export default function ContentSection({
                     <div className="piece-platform">📱 Platform: {socialPlatformLabel}</div>
                   )}
 
-                  {/* Show editable textarea in approval mode for pending pieces */}
-                  {isApprovalMode && isPending ? (
+                  {/* Show editable textarea in approval mode for pending pieces not yet locally approved */}
+                  {isApprovalMode && isPending && !effectiveApproved ? (
                     <textarea
                       className="piece-edit-textarea"
                       value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
@@ -216,7 +220,7 @@ export default function ContentSection({
                     />
                   ) : (
                     <div className="piece-body">
-                      {piece.human_edited_content || piece.content}
+                      {editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
                     </div>
                   )}
 
