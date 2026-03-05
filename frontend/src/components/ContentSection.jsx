@@ -51,7 +51,6 @@ export default function ContentSection({
 
   const setEdit = (idx, text) => setEditing((prev) => ({ ...prev, [idx]: text }));
   const setNote = (idx, text) => setNotes((prev) => ({ ...prev, [idx]: text }));
-  const setDecision = (idx, dec) => setDecisions((prev) => ({ ...prev, [idx]: dec }));
 
   const pendingPieces = visiblePieces.filter((piece, i) => {
     const effApproved = piece.approval_status === "approved" || decisions[i] === "approved";
