@@ -59,6 +59,13 @@ EventCallback = Callable[[str, dict[str, Any]], Coroutine[Any, Any, None]]
 # Maximum number of per-piece revision cycles before forcing completion
 MAX_CONTENT_REVISION_CYCLES = 3
 
+# Maximum seconds to wait for _content_approval_gate to persist per-piece decisions
+# before the submit_content_approval API handler returns.  10 s is well above the
+# expected DB-write latency (<100 ms typical) while keeping the API responsive on
+# heavily loaded systems.  On timeout the handler returns anyway and the frontend
+# will pick up the saved state on the next poll cycle.
+_APPROVAL_SAVE_TIMEOUT_SECONDS = 10
+
 
 class CoordinatorAgent:
     """Orchestrates the marketing campaign pipeline."""
@@ -85,6 +92,10 @@ class CoordinatorAgent:
 
         # Holds pending content-approval futures keyed by campaign_id
         self._pending_content_approvals: dict[str, asyncio.Future[ContentApprovalResponse]] = {}
+
+        # Resolved by _content_approval_gate after it persists per-piece decisions so
+        # submit_content_approval can await the save before returning the API response.
+        self._content_approval_saved: dict[str, asyncio.Future[None]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -220,13 +231,41 @@ class CoordinatorAgent:
         """Called by the API layer when the human submits per-piece content approvals."""
         future = self._pending_content_approvals.get(response.campaign_id)
         if future and not future.done():
+            # Register a save-completion signal before resuming the gate so the gate
+            # can resolve it after _store.update().  The API handler then awaits that
+            # signal, guaranteeing the DB is updated before the frontend re-fetches.
+            loop = asyncio.get_running_loop()
+            saved_future: asyncio.Future[None] = loop.create_future()
+            self._content_approval_saved[response.campaign_id] = saved_future
+
             future.set_result(response)
             logger.info("Content approval received for campaign %s", response.campaign_id)
+
+            # Wait for the gate to persist decisions (with a generous timeout so a
+            # slow DB write doesn't block forever, but the frontend still re-fetches
+            # fresh data in the common case).
+            try:
+                await asyncio.wait_for(asyncio.shield(saved_future), timeout=_APPROVAL_SAVE_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Content approval save timed out for campaign %s",
+                    response.campaign_id,
+                )
+            finally:
+                # Remove the entry so any late call to _resolve_approval_saved (after
+                # timeout) will get None from .get() and harmlessly skip set_result.
+                self._content_approval_saved.pop(response.campaign_id, None)
         else:
             logger.warning(
                 "No pending content approval for campaign %s",
                 response.campaign_id,
             )
+
+    def _resolve_approval_saved(self, campaign_id: str) -> None:
+        """Signal to submit_content_approval that per-piece decisions have been persisted."""
+        saved = self._content_approval_saved.get(campaign_id)
+        if saved and not saved.done():
+            saved.set_result(None)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -446,6 +485,8 @@ class CoordinatorAgent:
             if human_response.reject_campaign:
                 campaign.advance_status(CampaignStatus.REJECTED)
                 await self._store.update(campaign)
+                # Signal the API handler that decisions have been persisted
+                self._resolve_approval_saved(campaign.id)
                 await self._emit("content_approval_completed", {
                     "campaign_id": campaign.id,
                     "approved": False,
@@ -459,6 +500,10 @@ class CoordinatorAgent:
                     idx = piece_approval.piece_index
                     if 0 <= idx < len(campaign.content.pieces):
                         piece = campaign.content.pieces[idx]
+                        # Once a piece is approved its content is immutable — skip any
+                        # attempt to modify content or human_edited_content.
+                        if piece.approval_status == ContentApprovalStatus.APPROVED:
+                            continue
                         if piece_approval.approved:
                             piece.approval_status = ContentApprovalStatus.APPROVED
                             if piece_approval.edited_content is not None:
@@ -472,6 +517,9 @@ class CoordinatorAgent:
                                 piece.human_edited_content = piece_approval.edited_content
 
                 await self._store.update(campaign)
+
+            # Signal the API handler that per-piece decisions have been persisted
+            self._resolve_approval_saved(campaign.id)
 
             # Check if all pieces are approved
             all_approved = all(

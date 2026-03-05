@@ -8,7 +8,9 @@ Endpoints:
   GET    /api/campaigns/{id}           — Get a single campaign
   DELETE /api/campaigns/{id}           — Delete a campaign
   POST   /api/campaigns/{id}/clarify   — Submit answers to strategy clarification questions
-  POST   /api/campaigns/{id}/content-approve — Submit per-piece content approval decisions
+  PATCH  /api/campaigns/{id}/content/{piece_index}/decision — Immediately persist a per-piece approval/rejection
+  POST   /api/campaigns/{id}/content-approve — Submit per-piece content approval decisions (finalize)
+  PATCH  /api/campaigns/{id}/content/{piece_index}/notes — Update human_notes on an approved piece
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.agents.coordinator_agent import CoordinatorAgent
-from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
 from backend.models.user import CampaignMemberRole, User, UserRole, roles_to_db
 from backend.services.auth import get_current_user
@@ -330,6 +332,115 @@ async def submit_content_approval(
     await coordinator.submit_content_approval(response)
 
     return {"message": "Content approval submitted", "campaign_id": campaign_id}
+
+
+class PieceDecisionRequest(BaseModel):
+    approved: bool
+    edited_content: Optional[str] = None
+    notes: str = ""
+
+
+@router.patch("/campaigns/{campaign_id}/content/{piece_index}/decision")
+async def update_piece_decision(
+    campaign_id: str,
+    piece_index: int,
+    body: PieceDecisionRequest,
+    user: Optional[User] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Immediately persist an approve/reject decision for a single content piece.
+
+    Saves the decision to the store straight away so the status survives a page
+    refresh without requiring the user to first click "Submit Decisions".  The
+    campaign status remains ``content_approval`` until the full batch
+    ``/content-approve`` call finalises everything with the coordinator.
+
+    Returns 404 if the campaign or piece does not exist, 409 if the campaign is
+    not in ``content_approval`` status, or if an attempt is made to reject an
+    already-approved piece (approved content is immutable).
+    """
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.WRITE, store)
+
+    if campaign.status != CampaignStatus.CONTENT_APPROVAL:
+        raise HTTPException(
+            status_code=409,
+            detail="Campaign is not in content_approval status",
+        )
+
+    if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
+        raise HTTPException(status_code=404, detail="Content piece not found")
+
+    piece = campaign.content.pieces[piece_index]
+
+    # Approved pieces are immutable — cannot be un-approved via this endpoint.
+    if piece.approval_status == ContentApprovalStatus.APPROVED and not body.approved:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot reject an already-approved piece",
+        )
+
+    if body.approved:
+        piece.approval_status = ContentApprovalStatus.APPROVED
+        if body.edited_content is not None:
+            piece.human_edited_content = body.edited_content
+        if body.notes:
+            piece.human_notes = body.notes
+    else:
+        piece.approval_status = ContentApprovalStatus.REJECTED
+        piece.human_notes = body.notes
+        if body.edited_content is not None:
+            piece.human_edited_content = body.edited_content
+
+    await store.update(campaign)
+
+    return {
+        "message": "Piece decision saved",
+        "campaign_id": campaign_id,
+        "piece_index": piece_index,
+        "approval_status": piece.approval_status,
+    }
+
+
+class UpdatePieceNotesRequest(BaseModel):
+    notes: str
+
+
+@router.patch("/campaigns/{campaign_id}/content/{piece_index}/notes")
+async def update_piece_notes(
+    campaign_id: str,
+    piece_index: int,
+    body: UpdatePieceNotesRequest,
+    user: Optional[User] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Update human_notes on an already-approved content piece.
+
+    Approved content is immutable — only the reviewer notes field may be
+    changed via this endpoint.  Returns 404 if the campaign or piece does not
+    exist and 409 if the piece has not yet been approved.
+    """
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.WRITE, store)
+
+    if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
+        raise HTTPException(status_code=404, detail="Content piece not found")
+
+    piece = campaign.content.pieces[piece_index]
+    if piece.approval_status != ContentApprovalStatus.APPROVED:
+        raise HTTPException(
+            status_code=409,
+            detail="Notes can only be updated on approved content pieces",
+        )
+
+    piece.human_notes = body.notes
+    await store.update(campaign)
+
+    return {"message": "Notes updated", "campaign_id": campaign_id, "piece_index": piece_index}
 
 
 # ---------------------------------------------------------------------------

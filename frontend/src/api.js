@@ -118,6 +118,35 @@ export async function submitContentApproval(campaignId, pieces, rejectCampaign =
   return res.json();
 }
 
+export async function updatePieceNotes(campaignId, pieceIndex, notes) {
+  const res = await fetch(
+    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/notes`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ notes }),
+    }
+  );
+  if (!res.ok) throw new Error(`Update notes failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updatePieceDecision(campaignId, pieceIndex, { approved, editedContent = null, notes = "" }) {
+  const res = await fetch(
+    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/decision`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ approved, edited_content: editedContent, notes }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Update decision failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function submitClarification(campaignId, answers) {
   const res = await fetch(`${API_BASE}/api/campaigns/${campaignId}/clarify`, {
     method: "POST",

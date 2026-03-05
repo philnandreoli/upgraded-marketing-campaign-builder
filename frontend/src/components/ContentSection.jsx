@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { submitContentApproval } from "../api";
+import { submitContentApproval, updatePieceNotes, updatePieceDecision } from "../api";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -7,6 +7,10 @@ const PLATFORM_LABELS = {
   x: "X",
   linkedin: "LinkedIn",
 };
+
+// Stable no-op used as onChange for readOnly textareas to satisfy React's
+// controlled-component contract without recreating a function on every render.
+const noop = () => {};
 
 function detectSocialPlatform(piece, index, socialPlatforms = [], socialPostIndexMap = []) {
   const normalized = `${piece?.notes || ""} ${piece?.content || ""}`.toLowerCase();
@@ -38,6 +42,8 @@ export default function ContentSection({
   const [notes, setNotes] = useState({});           // { [index]: noteText }
   const [decisions, setDecisions] = useState({});   // { [index]: "approved" | "rejected" }
   const [submitting, setSubmitting] = useState(false);
+  const [savingNotes, setSavingNotes] = useState({});    // { [index]: boolean }
+  const [savingDecision, setSavingDecision] = useState({}); // { [index]: boolean }
 
   const visiblePieces = data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
@@ -45,15 +51,13 @@ export default function ContentSection({
 
   const setEdit = (idx, text) => setEditing((prev) => ({ ...prev, [idx]: text }));
   const setNote = (idx, text) => setNotes((prev) => ({ ...prev, [idx]: text }));
-  const setDecision = (idx, dec) => setDecisions((prev) => ({ ...prev, [idx]: dec }));
 
-  const pendingPieces = visiblePieces.filter(
-    (p) => !p.approval_status || p.approval_status === "pending"
-  );
-  const allDecided = pendingPieces.length > 0 && pendingPieces.every((_, i) => {
-    const realIdx = visiblePieces.indexOf(pendingPieces[i]);
-    return decisions[realIdx] === "approved" || decisions[realIdx] === "rejected";
+  const pendingPieces = visiblePieces.filter((piece, i) => {
+    const effApproved = piece.approval_status === "approved" || decisions[i] === "approved";
+    const effRejected = piece.approval_status === "rejected" || decisions[i] === "rejected";
+    return !effApproved && !effRejected;
   });
+  const allDecided = visiblePieces.length > 0 && pendingPieces.length === 0;
 
   const handleSubmitApprovals = async () => {
     setSubmitting(true);
@@ -91,6 +95,35 @@ export default function ContentSection({
       alert("Failed to reject campaign: " + err.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSaveNotes = async (pieceIndex) => {
+    setSavingNotes((prev) => ({ ...prev, [pieceIndex]: true }));
+    try {
+      await updatePieceNotes(campaignId, pieceIndex, notes[pieceIndex] || "");
+    } catch (err) {
+      alert("Failed to save notes: " + err.message);
+    } finally {
+      setSavingNotes((prev) => ({ ...prev, [pieceIndex]: false }));
+    }
+  };
+
+  const handleDecision = async (pieceIndex, approved) => {
+    setSavingDecision((prev) => ({ ...prev, [pieceIndex]: true }));
+    try {
+      const editedContent = editing[pieceIndex] !== undefined ? editing[pieceIndex] : null;
+      await updatePieceDecision(campaignId, pieceIndex, {
+        approved,
+        editedContent,
+        notes: notes[pieceIndex] || "",
+      });
+      // Mirror the persisted decision in local state so the UI updates immediately
+      setDecisions((prev) => ({ ...prev, [pieceIndex]: approved ? "approved" : "rejected" }));
+    } catch (err) {
+      alert("Failed to save decision: " + err.message);
+    } finally {
+      setSavingDecision((prev) => ({ ...prev, [pieceIndex]: false }));
     }
   };
 
@@ -163,9 +196,13 @@ export default function ContentSection({
               const isAlreadyRejected = approvalStatus === "rejected";
               const currentDecision = decisions[i];
 
-              const borderColor = isAlreadyApproved || currentDecision === "approved"
+              // Reflect local staging decisions in visual state even before final submit
+              const effectiveApproved = isAlreadyApproved || currentDecision === "approved";
+              const effectiveRejected = isAlreadyRejected || currentDecision === "rejected";
+
+              const borderColor = effectiveApproved
                 ? "var(--color-success)"
-                : isAlreadyRejected || currentDecision === "rejected"
+                : effectiveRejected
                   ? "var(--color-danger)"
                   : "var(--color-border)";
 
@@ -185,8 +222,8 @@ export default function ContentSection({
                       )}
                     </div>
                     {isApprovalMode && (
-                      <span className={`badge badge-${isAlreadyApproved ? "approved" : isAlreadyRejected ? "rejected" : "pending"}`}>
-                        {isAlreadyApproved ? "✅ Approved" : isAlreadyRejected ? "❌ Rejected" : "⏳ Pending"}
+                      <span className={`badge badge-${effectiveApproved ? "approved" : effectiveRejected ? "rejected" : "pending"}`}>
+                        {effectiveApproved ? "🔒 Approved" : effectiveRejected ? "❌ Rejected" : "⏳ Pending"}
                       </span>
                     )}
                   </div>
@@ -195,12 +232,15 @@ export default function ContentSection({
                     <div className="piece-platform">📱 Platform: {socialPlatformLabel}</div>
                   )}
 
-                  {/* Show editable textarea in approval mode for pending pieces */}
-                  {isApprovalMode && isPending ? (
+                  {/* Content body: editable textarea for pending pieces, readOnly textarea
+                      when approved (locally or server-confirmed) so content stays
+                      clearly visible while locked, plain div outside approval mode. */}
+                  {isApprovalMode ? (
                     <textarea
-                      className="piece-edit-textarea"
+                      className={`piece-edit-textarea${(!isPending || effectiveApproved) ? " piece-edit-textarea-locked" : ""}`}
                       value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
-                      onChange={(e) => setEdit(i, e.target.value)}
+                      onChange={isPending && !effectiveApproved ? (e) => setEdit(i, e.target.value) : noop}
+                      readOnly={!isPending || effectiveApproved}
                     />
                   ) : (
                     <div className="piece-body">
@@ -214,10 +254,43 @@ export default function ContentSection({
                     </p>
                   )}
 
-                  {piece.human_notes && (
-                    <p style={{ fontSize: "0.75rem", color: "var(--color-warning)", marginTop: "0.25rem" }}>
-                      📝 Reviewer: {piece.human_notes}
-                    </p>
+                  {/* For approved pieces: show editable notes field wired to PATCH endpoint */}
+                  {isApprovalMode && isAlreadyApproved ? (
+                    <div style={{ marginTop: "0.75rem" }}>
+                      <div style={{ marginBottom: "0.25rem", fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+                        📝 Reviewer notes
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <input
+                          type="text"
+                          placeholder="Add post-approval notes…"
+                          value={notes[i] !== undefined ? notes[i] : (piece.human_notes || "")}
+                          onChange={(e) => setNote(i, e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: "0.3rem 0.5rem",
+                            fontSize: "0.8rem",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: "var(--radius)",
+                            background: "var(--color-bg)",
+                            color: "var(--color-text)",
+                          }}
+                        />
+                        <button
+                          className="btn btn-sm btn-outline"
+                          disabled={savingNotes[i]}
+                          onClick={() => handleSaveNotes(i)}
+                        >
+                          {savingNotes[i] ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    piece.human_notes && (
+                      <p style={{ fontSize: "0.75rem", color: "var(--color-warning)", marginTop: "0.25rem" }}>
+                        📝 Reviewer: {piece.human_notes}
+                      </p>
+                    )
                   )}
 
                   {/* Per-piece approval buttons */}
@@ -243,15 +316,17 @@ export default function ContentSection({
                       <div style={{ display: "flex", gap: "0.5rem" }}>
                         <button
                           className={`btn btn-sm ${currentDecision === "approved" ? "btn-success" : "btn-outline"}`}
-                          onClick={() => setDecision(i, "approved")}
+                          disabled={savingDecision[i]}
+                          onClick={() => handleDecision(i, true)}
                         >
-                          ✅ Approve
+                          {savingDecision[i] ? "Saving…" : "✅ Approve"}
                         </button>
                         <button
                           className={`btn btn-sm ${currentDecision === "rejected" ? "btn-danger" : "btn-outline"}`}
-                          onClick={() => setDecision(i, "rejected")}
+                          disabled={savingDecision[i]}
+                          onClick={() => handleDecision(i, false)}
                         >
-                          ❌ Reject
+                          {savingDecision[i] ? "Saving…" : "❌ Reject"}
                         </button>
                       </div>
                     </div>
