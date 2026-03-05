@@ -17,6 +17,22 @@ from backend.services.tracing import setup_tracing
 from backend.services.agent_registry import register_agents
 
 # ------------------------------------------------------------------
+# Logging — must be configured first so all subsequent log calls
+# (including setup_tracing / register_agents) use the right format.
+# force=True is required because uvicorn configures the root logger
+# via dictConfig before importing the app module, which causes
+# basicConfig() to silently no-op without it.
+# ------------------------------------------------------------------
+
+settings = get_settings()
+
+logging.basicConfig(
+    level=getattr(logging, settings.app.log_level.upper(), logging.INFO),
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    force=True,
+)
+
+# ------------------------------------------------------------------
 # Tracing — must be initialised before any LLM client is created
 # ------------------------------------------------------------------
 setup_tracing()
@@ -25,17 +41,6 @@ setup_tracing()
 # Foundry Agent Operations — register agents (idempotent / reuse)
 # ------------------------------------------------------------------
 register_agents()
-
-# ------------------------------------------------------------------
-# App factory
-# ------------------------------------------------------------------
-
-settings = get_settings()
-
-logging.basicConfig(
-    level=getattr(logging, settings.app.log_level.upper(), logging.INFO),
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-)
 
 app = FastAPI(
     title="Marketing Campaign Builder",
