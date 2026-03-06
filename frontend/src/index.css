@@ -2,6 +2,24 @@
 /* Global styles — Marketing Campaign Builder                         */
 /* ------------------------------------------------------------------ */
 
+/* Table of Contents
+ * 1. Variables & Themes
+ * 2. Reset & Base
+ * 3. Layout (app-shell, grid, split)
+ * 4. Cards & Surfaces
+ * 5. Buttons
+ * 6. Forms
+ * 7. DatePicker
+ * 8. Badges
+ * 9. Pipeline Tabs
+ * 10. Content Grid & Approval
+ * 11. Channel Bars
+ * 12. Clarification Section
+ * 13. Review Section
+ * 14. Team Members
+ * 15. Utilities & Misc
+ */
+
 :root,
 [data-theme="dark"] {
   --color-bg: #0C0F1A;
@@ -34,6 +52,20 @@
   --text-xl: 1.35rem;
   --text-2xl: 1.75rem;
   --text-3xl: 2.25rem;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-7: 1.75rem;   /* 28px */
+  --space-8: 2rem;      /* 32px */
+  --space-9: 2.25rem;   /* 36px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-11: 2.75rem;  /* 44px */
+  --space-12: 3rem;     /* 48px */
 }
 
 [data-theme="light"] {
@@ -255,8 +287,8 @@ a:hover { color: var(--color-primary-hover); }
   font-weight: 700; color: var(--color-primary-hover);
   box-shadow: inset 0 0 0 1.5px var(--color-primary);
 }
-.datepicker-day--selected {
-  background: var(--color-primary) !important; color: #fff !important; font-weight: 600;
+.datepicker-dropdown .datepicker-day--selected {
+  background: var(--color-primary); color: #fff; font-weight: 600;
 }
 .datepicker-day--outside {
   color: var(--color-text-dim); opacity: 0.35; cursor: default; pointer-events: none;
@@ -279,7 +311,7 @@ a:hover { color: var(--color-primary-hover); }
 .datepicker-footer-btn--primary { color: var(--color-primary-hover); font-weight: 600; }
 .datepicker-footer-btn--primary:hover { background: rgba(13,148,136,0.15); color: var(--color-primary-hover); }
 /* Badges */
-.badge { display: inline-block; padding: 0.2rem 0.6rem; font-size: 0.75rem; font-weight: 600; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; }
+.badge { display: inline-block; padding: 0.2rem 0.6rem; font-size: var(--text-xs); font-weight: 600; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; }
 .badge-draft { background: var(--color-surface-2); color: var(--color-text-dim); }
 .badge-strategy, .badge-content, .badge-channel_planning, .badge-analytics_setup, .badge-review, .badge-review_clarification {
   background: rgba(13,148,136,0.15); color: var(--color-primary-hover);
@@ -288,6 +320,7 @@ a:hover { color: var(--color-primary-hover); }
 .badge-approved { background: rgba(34,197,94,0.15); color: var(--color-success); }
 .badge-rejected { background: rgba(239,68,68,0.15); color: var(--color-danger); }
 .badge-manual_review_required { background: rgba(245,158,11,0.15); color: var(--color-warning); }
+.badge-pending  { background: rgba(245,158,11,0.15); color: var(--color-warning); }
 
 /* Pipeline progress tabs (unified progress + navigation) */
 .pipeline-tabs {
@@ -328,7 +361,7 @@ a:hover { color: var(--color-primary-hover); }
 .stage-error-icon { font-size: 1.5rem; flex-shrink: 0; }
 .stage-error-message p { margin: 0; font-size: 0.9rem; }
 .stage-error-message p + p { margin-top: 0.35rem; }
-.stage-error-detail { color: var(--color-text-muted); font-size: 0.82rem !important; }
+.stage-error-message .stage-error-detail { color: var(--color-text-muted); font-size: 0.82rem; }
 
 /* Event log */
 .event-log {
@@ -396,9 +429,9 @@ a:hover { color: var(--color-primary-hover); }
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
 }
-.platform-chip {
-  font-size: 0.78rem !important;
-  padding: 0.3rem 0.7rem !important;
+.platform-sub-picker .channel-chip {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
 }
 
 /* Theme toggle */
@@ -885,14 +918,6 @@ a:hover { color: var(--color-primary-hover); }
 }
 .piece-header h4 { margin: 0; font-size: 0.95rem; }
 
-.badge {
-  font-size: 0.72rem; padding: 0.2rem 0.6rem; border-radius: 999px;
-  font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
-}
-.badge-approved { background: rgba(34,197,94,0.15); color: var(--color-success); }
-.badge-rejected { background: rgba(239,68,68,0.15); color: var(--color-danger); }
-.badge-pending  { background: rgba(245,158,11,0.15); color: var(--color-warning); }
-
 .piece-edit-textarea {
   width: 100%; min-height: 150px; padding: 0.75rem;
   background: var(--color-surface-2); color: var(--color-text);
@@ -941,14 +966,6 @@ a:hover { color: var(--color-primary-hover); }
   display: flex; gap: 1rem; margin-top: 1.5rem; justify-content: flex-end;
   align-items: center;
 }
-
-.btn-outline {
-  padding: 0.5rem 1.2rem; font-size: 0.85rem; border-radius: var(--radius);
-  border: 1px solid var(--color-danger); color: var(--color-danger);
-  background: transparent; cursor: pointer; font-weight: 500;
-  transition: background 0.15s;
-}
-.btn-outline:hover { background: rgba(239,68,68,0.1); }
 
 .content-readonly-text {
   white-space: pre-wrap; font-size: 0.88rem; line-height: 1.6;
@@ -1205,9 +1222,9 @@ a:hover { color: var(--color-primary-hover); }
 .compact-add-role:focus {
   border-color: var(--color-primary);
 }
-.compact-add-btn {
-  padding: 0.35rem 0.75rem !important;
-  font-size: 0.78rem !important;
+.compact-add-actions .btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
 }
 
 /* ------------------------------------------------------------------ */
