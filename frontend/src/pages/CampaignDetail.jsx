@@ -288,6 +288,7 @@ export default function CampaignDetail() {
       </nav>
       <div className="section-header">
         <div>
+          <h1 className="page-title">{campaign.brief.product_or_service}</h1>
           {viewMode === "focus" && (
             <>
               <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>

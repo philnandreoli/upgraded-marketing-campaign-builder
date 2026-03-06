@@ -97,7 +97,7 @@ export default function NewCampaign() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: "1rem" }}>Create New Campaign</h2>
+      <h2 className="page-title">Create New Campaign</h2>
 
       <form onSubmit={handleSubmit} className="card" style={{ maxWidth: 640 }}>
         <div className="form-group">
