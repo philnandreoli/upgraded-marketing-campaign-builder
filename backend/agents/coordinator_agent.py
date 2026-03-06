@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Coroutine, Optional
 
 from backend.agents.base_agent import BaseAgent
@@ -61,6 +61,7 @@ from backend.services.workflow_checkpoint_store import (
     WorkflowCheckpointStore,
     get_workflow_checkpoint_store,
 )
+from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ MAX_CONTENT_REVISION_CYCLES = 3
 
 ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
     CampaignStatus.DRAFT: {CampaignStatus.CLARIFICATION, CampaignStatus.STRATEGY},
-    CampaignStatus.CLARIFICATION: {CampaignStatus.STRATEGY},
+    CampaignStatus.CLARIFICATION: {CampaignStatus.STRATEGY, CampaignStatus.MANUAL_REVIEW_REQUIRED},
     CampaignStatus.STRATEGY: {CampaignStatus.CONTENT},
     CampaignStatus.CONTENT: {CampaignStatus.CHANNEL_PLANNING},
     CampaignStatus.CHANNEL_PLANNING: {CampaignStatus.ANALYTICS_SETUP},
@@ -93,6 +94,13 @@ ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
 # heavily loaded systems.  On timeout the handler returns anyway and the frontend
 # will pick up the saved state on the next poll cycle.
 _APPROVAL_SAVE_TIMEOUT_SECONDS = 10
+
+# Seconds to wait for human input (clarification / content approval) before
+# transitioning the campaign to MANUAL_REVIEW_REQUIRED.  Derived from
+# PIPELINE_IDLE_TIMEOUT_DAYS (default 30 days) in AgentSettings.
+_PIPELINE_IDLE_TIMEOUT_SECONDS: float = (
+    get_settings().agent.pipeline_idle_timeout_days * 86_400
+)
 
 
 def _transform_review_output(output: dict) -> ReviewFeedback:
@@ -117,9 +125,18 @@ class CoordinatorAgent:
         store: CampaignStore | None = None,
         on_event: EventCallback | None = None,
         checkpoint_store: WorkflowCheckpointStore | None = None,
+        idle_timeout_seconds: float | None = None,
     ) -> None:
         self._store = store or get_campaign_store()
         self._checkpoint_store = checkpoint_store or get_workflow_checkpoint_store()
+
+        # Seconds to wait for human input before escalating to MANUAL_REVIEW_REQUIRED.
+        # Defaults to the module-level constant (derived from PIPELINE_IDLE_TIMEOUT_DAYS).
+        self._idle_timeout_seconds: float = (
+            idle_timeout_seconds
+            if idle_timeout_seconds is not None
+            else _PIPELINE_IDLE_TIMEOUT_SECONDS
+        )
 
         # Sub-agents
         self._strategy = StrategyAgent()
@@ -197,6 +214,18 @@ class CoordinatorAgent:
             campaign = await self._run_clarification(campaign, campaign_data)
             campaign_data = campaign.model_dump(mode="json")
 
+            # If clarification timed out the campaign is already in a terminal state
+            if campaign.status == CampaignStatus.MANUAL_REVIEW_REQUIRED:
+                logger.info(
+                    "Pipeline halted after clarification timeout for campaign %s",
+                    campaign.id,
+                )
+                await self._emit("pipeline_completed", {
+                    "campaign_id": campaign.id,
+                    "status": campaign.status.value,
+                })
+                return campaign
+
         # Run pipeline stages with idempotency checks to skip completed stages
         campaign = await self._run_pipeline_stages(campaign, campaign_data, skip_completed=True)
 
@@ -234,6 +263,19 @@ class CoordinatorAgent:
         # 0 — Clarification gate (multi-turn strategy intake)
         campaign = await self._run_clarification(campaign, campaign_data)
         campaign_data = campaign.model_dump(mode="json")
+
+        # If clarification timed out the campaign is already in a terminal state —
+        # skip the remaining stages and return immediately.
+        if campaign.status == CampaignStatus.MANUAL_REVIEW_REQUIRED:
+            logger.info(
+                "Pipeline halted after clarification timeout for campaign %s",
+                campaign.id,
+            )
+            await self._emit("pipeline_completed", {
+                "campaign_id": campaign.id,
+                "status": campaign.status.value,
+            })
+            return campaign
 
         # Run the main pipeline stages
         campaign = await self._run_pipeline_stages(campaign, campaign_data)
@@ -718,10 +760,30 @@ class CoordinatorAgent:
             loop = asyncio.get_running_loop()
             future: asyncio.Future[ContentApprovalResponse] = loop.create_future()
             self._pending_content_approvals[campaign.id] = future
-            await self._save_checkpoint(campaign, "content_approval", wait_type=WorkflowWaitType.CONTENT_APPROVAL)
+            wait_started_at = datetime.utcnow()
+            expires_at = wait_started_at + timedelta(seconds=self._idle_timeout_seconds)
+            await self._save_checkpoint(
+                campaign, "content_approval",
+                wait_type=WorkflowWaitType.CONTENT_APPROVAL,
+                wait_started_at=wait_started_at,
+                expires_at=expires_at,
+            )
 
             try:
-                human_response = await future
+                human_response = await asyncio.wait_for(future, timeout=self._idle_timeout_seconds)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Content approval wait timed out for campaign %s — escalating to MANUAL_REVIEW_REQUIRED",
+                    campaign.id,
+                )
+                self._transition(campaign, CampaignStatus.MANUAL_REVIEW_REQUIRED)
+                await self._store.update(campaign)
+                await self._emit("wait_timeout", {
+                    "campaign_id": campaign.id,
+                    "wait_type": WorkflowWaitType.CONTENT_APPROVAL,
+                    "stage": "content_approval",
+                })
+                return campaign
             finally:
                 self._pending_content_approvals.pop(campaign.id, None)
 
@@ -875,6 +937,8 @@ class CoordinatorAgent:
         campaign: Campaign,
         stage: str,
         wait_type: WorkflowWaitType | None = None,
+        wait_started_at: datetime | None = None,
+        expires_at: datetime | None = None,
     ) -> None:
         """Persist a workflow checkpoint for the given stage.
 
@@ -887,6 +951,8 @@ class CoordinatorAgent:
                 current_stage=stage,
                 wait_type=wait_type,
                 revision_cycle=campaign.content_revision_count,
+                wait_started_at=wait_started_at,
+                expires_at=expires_at,
                 created_at=now,
                 updated_at=now,
             )
@@ -969,10 +1035,30 @@ class CoordinatorAgent:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[ClarificationResponse] = loop.create_future()
         self._pending_clarifications[campaign.id] = future
-        await self._save_checkpoint(campaign, "clarification", wait_type=WorkflowWaitType.CLARIFICATION)
+        wait_started_at = datetime.utcnow()
+        expires_at = wait_started_at + timedelta(seconds=self._idle_timeout_seconds)
+        await self._save_checkpoint(
+            campaign, "clarification",
+            wait_type=WorkflowWaitType.CLARIFICATION,
+            wait_started_at=wait_started_at,
+            expires_at=expires_at,
+        )
 
         try:
-            user_response = await future
+            user_response = await asyncio.wait_for(future, timeout=self._idle_timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Clarification wait timed out for campaign %s — escalating to MANUAL_REVIEW_REQUIRED",
+                campaign.id,
+            )
+            self._transition(campaign, CampaignStatus.MANUAL_REVIEW_REQUIRED)
+            await self._store.update(campaign)
+            await self._emit("wait_timeout", {
+                "campaign_id": campaign.id,
+                "wait_type": WorkflowWaitType.CLARIFICATION,
+                "stage": "clarification",
+            })
+            return campaign
         finally:
             self._pending_clarifications.pop(campaign.id, None)
 

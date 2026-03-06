@@ -31,5 +31,7 @@ class WorkflowCheckpoint(BaseModel):
     revision_cycle: int = 0
     resume_token: Optional[str] = None
     context: dict[str, Any] = Field(default_factory=dict)
+    wait_started_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

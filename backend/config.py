@@ -25,6 +25,14 @@ class AgentSettings(BaseSettings):
     max_retries: int = Field(default=3, alias="AGENT_MAX_RETRIES")
     temperature: float = Field(default=0.7, alias="AGENT_TEMPERATURE")
     max_tokens: int = Field(default=4096, alias="AGENT_MAX_TOKENS")
+    pipeline_idle_timeout_days: int = Field(
+        default=30,
+        alias="PIPELINE_IDLE_TIMEOUT_DAYS",
+        description=(
+            "Days to wait for human input (clarification / content approval) before "
+            "transitioning the campaign to MANUAL_REVIEW_REQUIRED. Default: 30 days."
+        ),
+    )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

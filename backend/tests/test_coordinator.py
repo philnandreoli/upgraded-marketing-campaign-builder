@@ -1030,8 +1030,190 @@ class TestCoordinatorCheckpoints:
 
 
 # ---------------------------------------------------------------------------
-# Resume pipeline tests
+# Timeout tests
 # ---------------------------------------------------------------------------
+
+class TestCoordinatorWaitTimeouts:
+    """Verify that timed-out human wait states escalate to MANUAL_REVIEW_REQUIRED."""
+
+    @pytest.mark.asyncio
+    async def test_clarification_timeout_escalates_to_manual_review(self, store, mock_on_event):
+        """When clarification is never answered, the pipeline must transition to
+        MANUAL_REVIEW_REQUIRED after the idle timeout elapses."""
+        brief = CampaignBrief(
+            product_or_service="TestProd",
+            goal="Test goal",
+            budget=1000,
+            currency="USD",
+            start_date="2026-01-01",
+            end_date="2026-03-31",
+        )
+        campaign = await store.create(brief)
+
+        clarification_needed = json.dumps({
+            "needs_clarification": True,
+            "context_summary": "Need more info",
+            "questions": [{"text": "What is your target market?", "id": "q1"}],
+        })
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(return_value=clarification_needed)
+            mock_get_llm.return_value = mock_llm
+
+            # Use a very short timeout so the test runs fast
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                idle_timeout_seconds=0.05,
+            )
+
+            # Do NOT submit clarification — let it time out
+            result = await coordinator.run_pipeline(campaign)
+
+        assert result.status == CampaignStatus.MANUAL_REVIEW_REQUIRED
+
+    @pytest.mark.asyncio
+    async def test_clarification_timeout_emits_wait_timeout_event(self, store, events_log, mock_on_event):
+        """A wait_timeout event must be emitted when the clarification gate times out."""
+        brief = CampaignBrief(
+            product_or_service="TestProd",
+            goal="Test goal",
+            budget=1000,
+            currency="USD",
+            start_date="2026-01-01",
+            end_date="2026-03-31",
+        )
+        campaign = await store.create(brief)
+
+        clarification_needed = json.dumps({
+            "needs_clarification": True,
+            "context_summary": "Need more info",
+            "questions": [{"text": "What is your target market?", "id": "q1"}],
+        })
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(return_value=clarification_needed)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                idle_timeout_seconds=0.05,
+            )
+
+            await coordinator.run_pipeline(campaign)
+
+        timeout_events = [e for e in events_log if e["event"] == "wait_timeout"]
+        assert timeout_events, "Expected a wait_timeout event"
+        assert timeout_events[0]["campaign_id"] == campaign.id
+        assert timeout_events[0]["stage"] == "clarification"
+
+    @pytest.mark.asyncio
+    async def test_content_approval_timeout_escalates_to_manual_review(self, store, mock_on_event):
+        """When content approval is never submitted, the pipeline must transition to
+        MANUAL_REVIEW_REQUIRED after the idle timeout elapses."""
+        campaign = await store.create(
+            CampaignBrief(
+                product_or_service="CloudSync — cloud storage for teams",
+                goal="Increase enterprise signups by 30% in Q2",
+                budget=50000,
+                currency="USD",
+                start_date="2026-04-01",
+                end_date="2026-06-30",
+            )
+        )
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            # Use a very short timeout so the test runs fast
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                idle_timeout_seconds=0.05,
+            )
+
+            # Do NOT submit content approval — let it time out
+            result = await coordinator.run_pipeline(campaign)
+
+        assert result.status == CampaignStatus.MANUAL_REVIEW_REQUIRED
+
+    @pytest.mark.asyncio
+    async def test_content_approval_timeout_emits_wait_timeout_event(self, store, events_log, mock_on_event):
+        """A wait_timeout event must be emitted when the content-approval gate times out."""
+        campaign = await store.create(
+            CampaignBrief(
+                product_or_service="CloudSync — cloud storage for teams",
+                goal="Increase enterprise signups by 30% in Q2",
+                budget=50000,
+                currency="USD",
+                start_date="2026-04-01",
+                end_date="2026-06-30",
+            )
+        )
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                idle_timeout_seconds=0.05,
+            )
+
+            await coordinator.run_pipeline(campaign)
+
+        timeout_events = [e for e in events_log if e["event"] == "wait_timeout"]
+        assert timeout_events, "Expected a wait_timeout event"
+        assert timeout_events[0]["campaign_id"] == campaign.id
+        assert timeout_events[0]["stage"] == "content_approval"
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_stores_expiry_on_wait_entry(self, store, mock_on_event):
+        """Checkpoints saved at wait entry must carry wait_started_at and expires_at."""
+        campaign = await store.create(
+            CampaignBrief(
+                product_or_service="CloudSync",
+                goal="Increase signups",
+                budget=50000,
+                currency="USD",
+                start_date="2026-04-01",
+                end_date="2026-06-30",
+            )
+        )
+        checkpoint_store = _InMemoryCheckpointStore()
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+                idle_timeout_seconds=0.05,
+            )
+
+            # Don't approve — let the content-approval gate time out so we can
+            # inspect the checkpoint saved at wait entry.
+            await coordinator.run_pipeline(campaign)
+
+        wait_checkpoints = [
+            cp for cp in checkpoint_store.calls
+            if cp.wait_type == WorkflowWaitType.CONTENT_APPROVAL
+        ]
+        assert wait_checkpoints, "Expected a checkpoint with CONTENT_APPROVAL wait_type"
+        cp = wait_checkpoints[0]
+        assert cp.wait_started_at is not None, "wait_started_at must be set on wait entry"
+        assert cp.expires_at is not None, "expires_at must be set on wait entry"
+        assert cp.expires_at > cp.wait_started_at, "expires_at must be after wait_started_at"
 
 class TestCoordinatorResume:
     """Verify resume_pipeline idempotency and checkpoint-based recovery."""
