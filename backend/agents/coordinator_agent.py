@@ -155,6 +155,8 @@ class CoordinatorAgent:
             model_cls=CampaignStrategy,
         )
         campaign_data = campaign.model_dump(mode="json")
+        if "strategy" in campaign.stage_errors:
+            return campaign
 
         # 2 — Content
         campaign = await self._run_stage(
@@ -166,6 +168,8 @@ class CoordinatorAgent:
             model_cls=CampaignContent,
         )
         campaign_data = campaign.model_dump(mode="json")
+        if "content" in campaign.stage_errors:
+            return campaign
 
         # 3 — Channel Planning
         campaign = await self._run_stage(
@@ -177,6 +181,8 @@ class CoordinatorAgent:
             model_cls=ChannelPlan,
         )
         campaign_data = campaign.model_dump(mode="json")
+        if "channel_plan" in campaign.stage_errors:
+            return campaign
 
         # 4 — Analytics
         campaign = await self._run_stage(
@@ -188,10 +194,14 @@ class CoordinatorAgent:
             model_cls=AnalyticsPlan,
         )
         campaign_data = campaign.model_dump(mode="json")
+        if "analytics_plan" in campaign.stage_errors:
+            return campaign
 
         # 5 — Review / QA
         campaign = await self._run_review(campaign, campaign_data)
         campaign_data = campaign.model_dump(mode="json")
+        if "review" in campaign.stage_errors:
+            return campaign
 
         # 6 — Content Revision (automatic: feed review feedback to content creator)
         if campaign.review and campaign.content:
