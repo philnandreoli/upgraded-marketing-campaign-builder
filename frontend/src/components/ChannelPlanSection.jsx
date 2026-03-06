@@ -1,3 +1,10 @@
+/** Format a dollar amount given total budget, channel %, and platform % */
+function platformBudget(totalBudget, channelPct, platformPct, currency) {
+  if (!totalBudget || totalBudget <= 0) return null;
+  const amount = (totalBudget * channelPct / 100) * (platformPct / 100);
+  return `${currency || "USD"} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
 export default function ChannelPlanSection({ data, error }) {
   if (!data && error) {
     return (
@@ -37,15 +44,40 @@ export default function ChannelPlanSection({ data, error }) {
       {data.recommendations?.length > 0 && (
         <div style={{ marginBottom: "1rem" }}>
           {data.recommendations.map((rec, i) => (
-            <div key={i} className="channel-bar">
-              <span className="bar-label">{rec.channel.replace(/_/g, " ")}</span>
-              <div className="bar-track">
-                <div
-                  className="bar-fill"
-                  style={{ width: `${Math.min(rec.budget_pct, 100)}%` }}
-                />
+            <div key={i}>
+              <div className="channel-bar">
+                <span className="bar-label">{rec.channel.replace(/_/g, " ")}</span>
+                <div className="bar-track">
+                  <div
+                    className="bar-fill"
+                    style={{ width: `${Math.min(rec.budget_pct, 100)}%` }}
+                  />
+                </div>
+                <span className="bar-value">{rec.budget_pct}%</span>
               </div>
-              <span className="bar-value">{rec.budget_pct}%</span>
+              {rec.platform_breakdown?.length > 0 && (
+                <div style={{ marginLeft: "1rem", marginBottom: "0.25rem" }}>
+                  {rec.platform_breakdown.map((pb, j) => {
+                    const dollarAmt = platformBudget(data.total_budget, rec.budget_pct, pb.budget_pct, data.currency);
+                    return (
+                      <div key={j} className="channel-bar" style={{ marginTop: "0.2rem" }}>
+                        <span className="bar-label" style={{ fontSize: "0.78rem", textTransform: "capitalize", color: "var(--color-text-muted)" }}>
+                          ↳ {pb.platform}
+                        </span>
+                        <div className="bar-track" style={{ height: "0.5rem" }}>
+                          <div
+                            className="bar-fill"
+                            style={{ width: `${Math.min(pb.budget_pct, 100)}%`, opacity: 0.75 }}
+                          />
+                        </div>
+                        <span className="bar-value" style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
+                          {pb.budget_pct}%{dollarAmt ? ` · ${dollarAmt}` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -74,6 +106,36 @@ export default function ChannelPlanSection({ data, error }) {
                 </li>
               ))}
             </ul>
+          )}
+          {rec.platform_breakdown?.length > 0 && (
+            <div style={{ marginTop: "0.5rem" }}>
+              {rec.platform_breakdown.map((pb, j) => (
+                <div key={j} style={{ marginBottom: "0.5rem", paddingLeft: "0.5rem", borderLeft: "2px solid var(--color-border-subtle, var(--color-border))" }}>
+                  <strong style={{ fontSize: "0.8rem", textTransform: "capitalize" }}>
+                    {pb.platform}
+                    {data.total_budget > 0 && (
+                      <span style={{ fontWeight: "normal", color: "var(--color-text-muted)", marginLeft: "0.4rem" }}>
+                        ({pb.budget_pct}% · {platformBudget(data.total_budget, rec.budget_pct, pb.budget_pct, data.currency)})
+                      </span>
+                    )}
+                  </strong>
+                  {pb.timing && (
+                    <p style={{ fontSize: "0.78rem", color: "var(--color-text-dim)" }}>
+                      ⏰ {pb.timing}
+                    </p>
+                  )}
+                  {pb.tactics?.length > 0 && (
+                    <ul style={{ marginLeft: "1.25rem" }}>
+                      {pb.tactics.map((t, k) => (
+                        <li key={k} style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
+                          {t}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       ))}

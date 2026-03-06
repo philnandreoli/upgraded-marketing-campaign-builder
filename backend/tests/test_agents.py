@@ -56,6 +56,13 @@ SAMPLE_BRIEF_WITH_CHANNELS = {
     "selected_channels": ["email", "paid_ads", "seo"],
 }
 
+# Variant with social media channel and specific platforms
+SAMPLE_BRIEF_WITH_SOCIAL_PLATFORMS = {
+    **SAMPLE_BRIEF,
+    "selected_channels": ["social_media"],
+    "social_media_platforms": ["instagram", "facebook", "linkedin"],
+}
+
 SAMPLE_CAMPAIGN_DATA = {
     "brief": SAMPLE_BRIEF,
     "strategy": {
@@ -97,6 +104,11 @@ SAMPLE_CAMPAIGN_DATA = {
 SAMPLE_CAMPAIGN_DATA_WITH_CHANNELS = {
     **SAMPLE_CAMPAIGN_DATA,
     "brief": SAMPLE_BRIEF_WITH_CHANNELS,
+}
+
+SAMPLE_CAMPAIGN_DATA_WITH_SOCIAL_PLATFORMS = {
+    **SAMPLE_CAMPAIGN_DATA,
+    "brief": SAMPLE_BRIEF_WITH_SOCIAL_PLATFORMS,
 }
 
 
@@ -440,6 +452,65 @@ class TestChannelPlannerAgent:
         task = _make_task(AgentType.CHANNEL_PLANNER)
         prompt = agent.build_user_prompt(task, SAMPLE_CAMPAIGN_DATA)
         assert "Selected Channels" not in prompt
+
+    def test_prompt_includes_platform_breakdown_instruction(self, mock_llm):
+        agent = ChannelPlannerAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CHANNEL_PLANNER)
+        prompt = agent.build_user_prompt(task, SAMPLE_CAMPAIGN_DATA_WITH_SOCIAL_PLATFORMS)
+        assert "Social Media Platforms" in prompt
+        assert "platform_breakdown" in prompt
+        assert "instagram" in prompt
+
+    def test_parse_response_preserves_platform_breakdown(self, mock_llm):
+        agent = ChannelPlannerAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CHANNEL_PLANNER)
+        raw = json.dumps({
+            "total_budget": 50000,
+            "currency": "USD",
+            "recommendations": [
+                {
+                    "channel": "social_media",
+                    "budget_pct": 100,
+                    "rationale": "High engagement",
+                    "platform_breakdown": [
+                        {"platform": "Instagram", "budget_pct": 50.0, "tactics": ["Reels ads"]},
+                        {"platform": "facebook", "budget_pct": 30.0, "tactics": ["Video ads"]},
+                        {"platform": "linkedin", "budget_pct": 20.0, "tactics": ["Sponsored content"]},
+                    ],
+                }
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        breakdown = result["recommendations"][0]["platform_breakdown"]
+        assert len(breakdown) == 3
+        # Platform names should be lowercased
+        assert breakdown[0]["platform"] == "instagram"
+        assert breakdown[1]["platform"] == "facebook"
+        assert breakdown[2]["platform"] == "linkedin"
+        assert breakdown[0]["budget_pct"] == 50.0
+        assert breakdown[0]["tactics"] == ["Reels ads"]
+
+    def test_parse_response_removes_empty_platform_breakdown(self, mock_llm):
+        agent = ChannelPlannerAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CHANNEL_PLANNER)
+        raw = json.dumps({
+            "total_budget": 50000,
+            "currency": "USD",
+            "recommendations": [
+                {"channel": "email", "budget_pct": 40, "platform_breakdown": []},
+                {"channel": "social_media", "budget_pct": 60, "platform_breakdown": None},
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        # Empty list should be removed
+        assert "platform_breakdown" not in result["recommendations"][0]
+        # None should be removed
+        assert "platform_breakdown" not in result["recommendations"][1]
+
+    def test_system_prompt_includes_platform_breakdown_schema(self, mock_llm):
+        agent = ChannelPlannerAgent(llm_service=mock_llm)
+        prompt = agent.system_prompt()
+        assert "platform_breakdown" in prompt
 
 
 # ---- Analytics Agent ----

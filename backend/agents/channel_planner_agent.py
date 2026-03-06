@@ -31,7 +31,15 @@ You MUST respond with a valid JSON object using exactly this schema:
       "rationale": "Why this channel is recommended",
       "budget_pct": 25.0,
       "timing": "Launch week 1-2, then bi-weekly",
-      "tactics": ["tactic 1", "tactic 2"]
+      "tactics": ["tactic 1", "tactic 2"],
+      "platform_breakdown": [
+        {
+          "platform": "instagram",
+          "budget_pct": 45.0,
+          "tactics": ["Reels + Stories vertical video ads", "Influencer story takeovers"],
+          "timing": "Daily posts, 3x Stories per week"
+        }
+      ]
     }
   ],
   "timeline_summary": "Overall campaign timeline description"
@@ -44,7 +52,12 @@ Guidelines:
 - Consider the target audience's media consumption habits.
 - Include specific tactics (e.g. "LinkedIn sponsored InMail" not just "social_media").
 - Provide a realistic timeline with phases (launch, sustain, optimise).
-- If budget is not specified, recommend a range and allocate percentages."""
+- If budget is not specified, recommend a range and allocate percentages.
+- The `platform_breakdown` field is ONLY used for the `social_media` channel when specific platforms are provided.
+  When platform_breakdown is present, each entry's budget_pct represents the percentage of the social_media
+  channel's budget allocated to that platform (not the total campaign budget), and all platform budget_pct
+  values must sum to 100. Only include platforms that the user explicitly selected.
+  Omit platform_breakdown for all other channels."""
 
     def build_user_prompt(self, task: AgentTask, campaign_data: dict[str, Any]) -> str:
         brief = campaign_data.get("brief", {})
@@ -82,7 +95,14 @@ Guidelines:
         if platforms:
             platform_labels = [p.replace("_", " ").title() for p in platforms]
             parts.append(f"\n**Social Media Platforms:** {', '.join(platform_labels)}")
-            parts.append("IMPORTANT: When planning the social_media channel, focus ONLY on the platforms listed above. Tailor tactics, timing, and budget sub-allocation to these specific platforms.")
+            parts.append(
+                "IMPORTANT: When planning the social_media channel, focus ONLY on the platforms listed above. "
+                "Tailor tactics, timing, and budget sub-allocation to these specific platforms. "
+                f"You MUST include a `platform_breakdown` array on the social_media recommendation with exactly "
+                f"{len(platforms)} entries — one for each platform listed ({', '.join(platforms)}). "
+                "Each entry must have: platform (lowercase), budget_pct (percentage of the social_media channel budget, "
+                "all entries must sum to 100), tactics (list of platform-specific tactics), and optionally timing."
+            )
 
         if task.instruction:
             parts.append(f"\n**Additional Instructions:** {task.instruction}")
@@ -93,4 +113,28 @@ Guidelines:
         data = self._safe_json_parse(raw)
         if "recommendations" not in data:
             data["recommendations"] = []
+        # Normalize platform_breakdown on each recommendation
+        for rec in data.get("recommendations", []):
+            breakdown = rec.get("platform_breakdown")
+            if breakdown is None:
+                # Remove explicit null values
+                rec.pop("platform_breakdown", None)
+            elif not isinstance(breakdown, list) or len(breakdown) == 0:
+                # Remove empty or malformed breakdown
+                rec.pop("platform_breakdown", None)
+            else:
+                # Ensure each platform entry has required fields
+                cleaned = []
+                for entry in breakdown:
+                    if isinstance(entry, dict) and entry.get("platform"):
+                        cleaned.append({
+                            "platform": str(entry["platform"]).lower(),
+                            "budget_pct": float(entry.get("budget_pct", 0.0)),
+                            "tactics": list(entry.get("tactics", [])),
+                            "timing": entry.get("timing") or "",
+                        })
+                if cleaned:
+                    rec["platform_breakdown"] = cleaned
+                else:
+                    rec.pop("platform_breakdown", None)
         return data
