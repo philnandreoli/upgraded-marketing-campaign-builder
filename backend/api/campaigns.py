@@ -1,18 +1,17 @@
 """
-Campaign REST API routes.
+Campaign REST API — CRUD and user-profile routes.
 
 Endpoints:
-  GET    /api/me                       — Return the current user's profile and role flags
-  POST   /api/campaigns               — Create a campaign from a brief and start the pipeline
-  GET    /api/campaigns                — List all campaigns
-  GET    /api/campaigns/{id}           — Get a single campaign
-  DELETE /api/campaigns/{id}           — Delete a campaign
-  POST   /api/campaigns/{id}/clarify   — Submit answers to strategy clarification questions
-  PATCH  /api/campaigns/{id}/content/{piece_index}/decision — Immediately persist a per-piece approval/rejection
-  POST   /api/campaigns/{id}/content-approve — Submit per-piece content approval decisions (finalize)
-  PATCH  /api/campaigns/{id}/content/{piece_index}/notes — Update human_notes on an approved piece
-  POST   /api/campaigns/{id}/resume    — Resume a pipeline that was interrupted (server restart, timeout, etc.)
-  POST   /api/campaigns/{id}/retry     — Retry the current failed stage of a campaign
+  GET    /api/me                  — Return the current user's profile and role flags
+  POST   /api/campaigns           — Create a campaign from a brief and start the pipeline
+  GET    /api/campaigns           — List all campaigns
+  GET    /api/campaigns/{id}      — Get a single campaign
+  DELETE /api/campaigns/{id}      — Delete a campaign
+
+Workflow command routes live in campaign_workflow.py.
+Member management routes live in campaign_members.py.
+Shared RBAC helpers (Action, _authorize, get_campaign_for_read/write) and Pydantic
+DTOs are defined here and imported by the other two routers.
 """
 
 from __future__ import annotations
@@ -29,11 +28,10 @@ from pydantic import BaseModel
 
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
-from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
-from backend.models.user import CampaignMemberRole, User, UserRole, roles_to_db
+from backend.models.user import CampaignMemberRole, User, UserRole
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
-from backend.services.campaign_workflow_service import CampaignWorkflowService, WorkflowConflictError, get_workflow_service
+from backend.services.campaign_workflow_service import get_workflow_service
 from backend.api.websocket import manager as ws_manager
 
 logger = logging.getLogger(__name__)
@@ -210,6 +208,20 @@ class MeResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Workflow request models (defined here; imported by campaign_workflow.py)
+# ---------------------------------------------------------------------------
+
+class PieceDecisionRequest(BaseModel):
+    approved: bool
+    edited_content: Optional[str] = None
+    notes: str = ""
+
+
+class UpdatePieceNotesRequest(BaseModel):
+    notes: str
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -325,278 +337,4 @@ async def delete_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.DELETE, store)
     await store.delete(campaign_id)
-    return Response(status_code=204)
-
-
-@router.post("/campaigns/{campaign_id}/clarify", response_model=WorkflowActionResponse)
-async def submit_clarification(
-    response: ClarificationResponse,
-    campaign: Campaign = Depends(get_campaign_for_write),
-) -> WorkflowActionResponse:
-    """Submit answers to strategy clarification questions."""
-    workflow = get_workflow_service(_get_coordinator())
-    try:
-        await workflow.submit_clarification(campaign.id, response)
-    except WorkflowConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    return WorkflowActionResponse(message="Clarification submitted", campaign_id=campaign.id)
-
-
-@router.post("/campaigns/{campaign_id}/review-clarify")
-async def submit_review_clarification(
-    campaign_id: str, response: ClarificationResponse
-) -> dict[str, str]:
-    """Legacy endpoint — review clarification is no longer used."""
-    raise HTTPException(status_code=410, detail="Review clarification is no longer supported. Use /content-approve instead.")
-
-
-@router.post("/campaigns/{campaign_id}/review")
-async def submit_review(campaign_id: str, response: HumanReviewResponse) -> dict[str, str]:
-    """Legacy endpoint — whole-campaign review is no longer used."""
-    raise HTTPException(status_code=410, detail="Whole-campaign review is no longer supported. Use /content-approve instead.")
-
-
-@router.post("/campaigns/{campaign_id}/content-approve", response_model=WorkflowActionResponse)
-async def submit_content_approval(
-    response: ContentApprovalResponse,
-    campaign: Campaign = Depends(get_campaign_for_write),
-) -> WorkflowActionResponse:
-    """Submit per-piece content approval decisions."""
-    workflow = get_workflow_service(_get_coordinator())
-    try:
-        await workflow.submit_content_approval(campaign.id, response)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    return WorkflowActionResponse(message="Content approval submitted", campaign_id=campaign.id)
-
-
-class PieceDecisionRequest(BaseModel):
-    approved: bool
-    edited_content: Optional[str] = None
-    notes: str = ""
-
-
-@router.patch("/campaigns/{campaign_id}/content/{piece_index}/decision", response_model=PieceDecisionResponse)
-async def update_piece_decision(
-    piece_index: int,
-    body: PieceDecisionRequest,
-    campaign: Campaign = Depends(get_campaign_for_write),
-) -> PieceDecisionResponse:
-    """Immediately persist an approve/reject decision for a single content piece.
-
-    Saves the decision to the store straight away so the status survives a page
-    refresh without requiring the user to first click "Submit Decisions".  The
-    campaign status remains ``content_approval`` until the full batch
-    ``/content-approve`` call finalises everything with the coordinator.
-
-    Returns 404 if the campaign or piece does not exist, 409 if the campaign is
-    not in ``content_approval`` status, or if an attempt is made to reject an
-    already-approved piece (approved content is immutable).
-    """
-    workflow = get_workflow_service(_get_coordinator())
-    try:
-        result = await workflow.update_piece_decision(
-            campaign.id, piece_index, body.approved, body.edited_content, body.notes
-        )
-        return PieceDecisionResponse(
-            campaign_id=result["campaign_id"],
-            piece_index=result["piece_index"],
-            approval_status=result["approval_status"].value,
-            message=result["message"],
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except WorkflowConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-
-
-class UpdatePieceNotesRequest(BaseModel):
-    notes: str
-
-
-@router.patch("/campaigns/{campaign_id}/content/{piece_index}/notes", response_model=PieceNotesResponse)
-async def update_piece_notes(
-    piece_index: int,
-    body: UpdatePieceNotesRequest,
-    campaign: Campaign = Depends(get_campaign_for_write),
-) -> PieceNotesResponse:
-    """Update human_notes on an already-approved content piece.
-
-    Approved content is immutable — only the reviewer notes field may be
-    changed via this endpoint.  Returns 404 if the campaign or piece does not
-    exist and 409 if the piece has not yet been approved.
-    """
-    workflow = get_workflow_service(_get_coordinator())
-    try:
-        result = await workflow.update_piece_notes(campaign.id, piece_index, body.notes)
-        return PieceNotesResponse(
-            campaign_id=result["campaign_id"],
-            piece_index=result["piece_index"],
-            message=result["message"],
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except WorkflowConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-
-
-@router.post("/campaigns/{campaign_id}/resume", response_model=WorkflowActionResponse)
-async def resume_campaign(
-    campaign_id: str,
-    background_tasks: BackgroundTasks,
-    user: Optional[User] = Depends(get_current_user),
-) -> WorkflowActionResponse:
-    """Resume a pipeline that was interrupted (server restart, timeout, etc.)."""
-    store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.WRITE, store)
-    workflow = get_workflow_service(_get_coordinator())
-    background_tasks.add_task(workflow.resume_pipeline, campaign_id)
-    return WorkflowActionResponse(message="Pipeline resume initiated", campaign_id=campaign_id)
-
-
-@router.post("/campaigns/{campaign_id}/retry", response_model=WorkflowActionResponse)
-async def retry_campaign(
-    campaign_id: str,
-    background_tasks: BackgroundTasks,
-    user: Optional[User] = Depends(get_current_user),
-) -> WorkflowActionResponse:
-    """Retry the current failed stage of a campaign."""
-    store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.WRITE, store)
-    workflow = get_workflow_service(_get_coordinator())
-    background_tasks.add_task(workflow.retry_current_stage, campaign_id)
-    return WorkflowActionResponse(message="Stage retry initiated", campaign_id=campaign_id)
-
-
-# ---------------------------------------------------------------------------
-# Member management routes
-# ---------------------------------------------------------------------------
-
-@router.get("/campaigns/{campaign_id}/members")
-async def list_campaign_members(
-    campaign: Campaign = Depends(get_campaign_for_read),
-) -> list[CampaignMemberResponse]:
-    """List all members of a campaign. Requires READ access."""
-    store = get_campaign_store()
-    members = await store.list_members(campaign.id)
-    return [
-        CampaignMemberResponse(
-            campaign_id=m.campaign_id,
-            user_id=m.user_id,
-            role=m.role.value,
-            added_at=m.added_at,
-        )
-        for m in members
-    ]
-
-
-@router.post("/campaigns/{campaign_id}/members", status_code=201)
-async def add_campaign_member(
-    campaign_id: str,
-    body: AddMemberRequest,
-    user: Optional[User] = Depends(get_current_user),
-) -> CampaignMemberResponse:
-    """Add a member to a campaign. Requires MANAGE_MEMBERS access (owner or admin)."""
-    store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store)
-
-    target_user = await store.get_user(body.user_id)
-    if target_user is None or not target_user.is_active:
-        raise HTTPException(status_code=404, detail="User not found or inactive")
-
-    role = CampaignMemberRole(body.role)
-    await store.add_member(campaign_id, body.user_id, role)
-
-    await ws_manager.broadcast({
-        "event": "member_added",
-        "campaign_id": campaign_id,
-        "user_id": body.user_id,
-        "role": body.role,
-    })
-
-    return CampaignMemberResponse(
-        campaign_id=campaign_id,
-        user_id=body.user_id,
-        role=body.role,
-        added_at=datetime.utcnow(),
-    )
-
-
-@router.patch("/campaigns/{campaign_id}/members/{target_user_id}")
-async def update_campaign_member_role(
-    campaign_id: str,
-    target_user_id: str,
-    body: UpdateMemberRoleRequest,
-    user: Optional[User] = Depends(get_current_user),
-) -> CampaignMemberResponse:
-    """Change a member's campaign role. Requires MANAGE_MEMBERS access."""
-    store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store)
-
-    target_user = await store.get_user(target_user_id)
-    if target_user is None or not target_user.is_active:
-        raise HTTPException(status_code=404, detail="User not found or inactive")
-
-    existing_member = await store.get_member(campaign_id, target_user_id)
-    if existing_member is None:
-        raise HTTPException(status_code=404, detail="Member not found")
-
-    role = CampaignMemberRole(body.role)
-    await store.add_member(campaign_id, target_user_id, role)
-
-    return CampaignMemberResponse(
-        campaign_id=campaign_id,
-        user_id=target_user_id,
-        role=body.role,
-        added_at=existing_member.added_at,
-    )
-
-
-@router.delete("/campaigns/{campaign_id}/members/{target_user_id}")
-async def remove_campaign_member(
-    campaign_id: str,
-    target_user_id: str,
-    user: Optional[User] = Depends(get_current_user),
-) -> Response:
-    """Remove a member from a campaign. Requires MANAGE_MEMBERS access.
-    Prevents removing the last owner."""
-    store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store)
-
-    members = await store.list_members(campaign_id)
-    member = next((m for m in members if m.user_id == target_user_id), None)
-    if member is None:
-        raise HTTPException(status_code=404, detail="Member not found")
-
-    owner_count = sum(1 for m in members if m.role == CampaignMemberRole.OWNER)
-    if member.role == CampaignMemberRole.OWNER and owner_count <= 1:
-        raise HTTPException(status_code=409, detail="Cannot remove the last owner")
-
-    await store.remove_member(campaign_id, target_user_id)
-
-    await ws_manager.broadcast({
-        "event": "member_removed",
-        "campaign_id": campaign_id,
-        "user_id": target_user_id,
-    })
-
     return Response(status_code=204)
