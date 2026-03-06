@@ -191,6 +191,12 @@ class CoordinatorAgent:
         # submit_content_approval can await the save before returning the API response.
         self._content_approval_saved: dict[str, asyncio.Future[None]] = {}
 
+        # Per-campaign locks that guard the check-then-set sequences in
+        # submit_clarification / submit_content_approval / _resolve_approval_saved
+        # against concurrent calls.
+        self._clarification_locks: dict[str, asyncio.Lock] = {}
+        self._approval_locks: dict[str, asyncio.Lock] = {}
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -568,11 +574,23 @@ class CoordinatorAgent:
 
     async def submit_clarification(self, response: ClarificationResponse) -> None:
         """Called by the API layer when the user answers clarifying questions."""
-        future = self._pending_clarifications.get(response.campaign_id)
-        if future and not future.done():
-            future.set_result(response)
-            logger.info("Clarification received for campaign %s", response.campaign_id)
-        else:
+        lock = self._clarification_locks.setdefault(response.campaign_id, asyncio.Lock())
+        async with lock:
+            future = self._pending_clarifications.get(response.campaign_id)
+            if future is not None:
+                if not future.done():
+                    future.set_result(response)
+                    logger.info("Clarification received for campaign %s", response.campaign_id)
+                else:
+                    # A concurrent call already resolved this future — do nothing.
+                    logger.info(
+                        "Clarification already handled for campaign %s (duplicate submission ignored)",
+                        response.campaign_id,
+                    )
+                # Lock is no longer needed once the future is resolved; remove it
+                # so the dict doesn't grow unbounded.
+                self._clarification_locks.pop(response.campaign_id, None)
+                return
             # No active pipeline — persist answers and restart the pipeline
             logger.info(
                 "No pending clarification future for campaign %s; persisting answers and re-launching pipeline",
@@ -584,28 +602,47 @@ class CoordinatorAgent:
                     "Cannot resume clarification: campaign %s not found",
                     response.campaign_id,
                 )
+                self._clarification_locks.pop(response.campaign_id, None)
                 return
             campaign.clarification_answers = response.answers
             await self._store.update(campaign)
             asyncio.create_task(self.run_pipeline(campaign))
+        # Remove after the re-launch path so any concurrent caller that queued
+        # on the same lock also exits cleanly before the entry disappears.
+        self._clarification_locks.pop(response.campaign_id, None)
 
     async def submit_content_approval(self, response: ContentApprovalResponse) -> None:
         """Called by the API layer when the human submits per-piece content approvals."""
-        future = self._pending_content_approvals.get(response.campaign_id)
-        if future and not future.done():
-            # Register a save-completion signal before resuming the gate so the gate
-            # can resolve it after _store.update().  The API handler then awaits that
-            # signal, guaranteeing the DB is updated before the frontend re-fetches.
-            loop = asyncio.get_running_loop()
-            saved_future: asyncio.Future[None] = loop.create_future()
-            self._content_approval_saved[response.campaign_id] = saved_future
+        lock = self._approval_locks.setdefault(response.campaign_id, asyncio.Lock())
+        saved_future: asyncio.Future[None] | None = None
+        no_pending = False
 
-            future.set_result(response)
-            logger.info("Content approval received for campaign %s", response.campaign_id)
+        async with lock:
+            future = self._pending_content_approvals.get(response.campaign_id)
+            if future is not None:
+                if not future.done():
+                    # Register a save-completion signal before resuming the gate so the gate
+                    # can resolve it after _store.update().  The API handler then awaits that
+                    # signal, guaranteeing the DB is updated before the frontend re-fetches.
+                    loop = asyncio.get_running_loop()
+                    saved_future = loop.create_future()
+                    self._content_approval_saved[response.campaign_id] = saved_future
 
-            # Wait for the gate to persist decisions (with a generous timeout so a
-            # slow DB write doesn't block forever, but the frontend still re-fetches
-            # fresh data in the common case).
+                    future.set_result(response)
+                    logger.info("Content approval received for campaign %s", response.campaign_id)
+                else:
+                    # A concurrent call already resolved this future — do nothing.
+                    logger.info(
+                        "Content approval already handled for campaign %s (duplicate submission ignored)",
+                        response.campaign_id,
+                    )
+            else:
+                no_pending = True
+
+        if saved_future is not None:
+            # Wait outside the lock so we don't hold it while the pipeline processes
+            # the approval — that would deadlock if _resolve_approval_saved also
+            # tried to acquire the lock.
             try:
                 await asyncio.wait_for(asyncio.shield(saved_future), timeout=_APPROVAL_SAVE_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
@@ -614,10 +651,13 @@ class CoordinatorAgent:
                     response.campaign_id,
                 )
             finally:
-                # Remove the entry so any late call to _resolve_approval_saved (after
+                # Remove the entries so any late call to _resolve_approval_saved (after
                 # timeout) will get None from .get() and harmlessly skip set_result.
+                # Also clean up the approval lock — a new one will be created for the
+                # next approval cycle so the dict does not grow unbounded.
                 self._content_approval_saved.pop(response.campaign_id, None)
-        else:
+                self._approval_locks.pop(response.campaign_id, None)
+        elif no_pending:
             logger.warning(
                 "No pending content approval for campaign %s",
                 response.campaign_id,
@@ -665,15 +705,18 @@ class CoordinatorAgent:
     def _transition(self, campaign: Campaign, new_status: CampaignStatus) -> None:
         """Validate and apply a status transition.
 
-        Logs a warning if the transition is not in ALLOWED_TRANSITIONS but
-        still applies it — warn-only for now (will become a hard error in 5.3).
+        Self-transitions (same → same) are silently allowed to support pipeline
+        resume and looping gates (e.g. re-entering CONTENT_APPROVAL after a
+        revision cycle).  Cross-state transitions that are not listed in
+        ALLOWED_TRANSITIONS raise ``ValueError``.
         """
-        allowed = ALLOWED_TRANSITIONS.get(campaign.status, set())
-        if new_status not in allowed:
-            logger.warning(
-                "Unexpected transition %s -> %s for campaign %s",
-                campaign.status.value, new_status.value, campaign.id,
-            )
+        if campaign.status != new_status:
+            allowed = ALLOWED_TRANSITIONS.get(campaign.status, set())
+            if new_status not in allowed:
+                raise ValueError(
+                    f"Invalid transition {campaign.status.value} -> {new_status.value} "
+                    f"for campaign {campaign.id}"
+                )
         campaign.advance_status(new_status)
 
     async def _run_stage(
