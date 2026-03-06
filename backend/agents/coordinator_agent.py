@@ -293,8 +293,7 @@ class CoordinatorAgent:
     ) -> Campaign:
         """Run a single agent stage and persist the result on the campaign."""
         campaign.advance_status(status_before)
-        await self._store.update(campaign)
-        await self._emit("stage_started", {
+        await self._persist_and_emit(campaign, "stage_started", {
             "campaign_id": campaign.id,
             "stage": status_before.value,
         })
@@ -316,8 +315,7 @@ class CoordinatorAgent:
                 result.error,
             )
             campaign.stage_errors[result_key] = result.error or "Unknown error"
-            await self._store.update(campaign)
-            await self._emit("stage_error", {
+            await self._persist_and_emit(campaign, "stage_error", {
                 "campaign_id": campaign.id,
                 "stage": status_before.value,
                 "error": result.error,
@@ -327,9 +325,7 @@ class CoordinatorAgent:
         # Hydrate the Pydantic model and attach to the campaign
         model_instance = model_cls.model_validate(result.output)
         setattr(campaign, result_key, model_instance)
-        await self._store.update(campaign)
-
-        await self._emit("stage_completed", {
+        await self._persist_and_emit(campaign, "stage_completed", {
             "campaign_id": campaign.id,
             "stage": status_before.value,
             "output": result.output,
@@ -343,8 +339,7 @@ class CoordinatorAgent:
     ) -> Campaign:
         """Run the Review/QA agent."""
         campaign.advance_status(CampaignStatus.REVIEW)
-        await self._store.update(campaign)
-        await self._emit("stage_started", {
+        await self._persist_and_emit(campaign, "stage_started", {
             "campaign_id": campaign.id,
             "stage": "review",
         })
@@ -360,8 +355,7 @@ class CoordinatorAgent:
 
         if not result.success:
             campaign.stage_errors["review"] = result.error or "Unknown error"
-            await self._store.update(campaign)
-            await self._emit("stage_error", {
+            await self._persist_and_emit(campaign, "stage_error", {
                 "campaign_id": campaign.id,
                 "stage": "review",
                 "error": result.error,
@@ -377,9 +371,7 @@ class CoordinatorAgent:
             brand_consistency_score=review_output.get("brand_consistency_score", 0.0),
         )
         campaign.review = review_feedback
-        await self._store.update(campaign)
-
-        await self._emit("stage_completed", {
+        await self._persist_and_emit(campaign, "stage_completed", {
             "campaign_id": campaign.id,
             "stage": "review",
             "output": review_output,
@@ -399,8 +391,7 @@ class CoordinatorAgent:
         """Automatically send review feedback back to the content creator
         to regenerate improved content."""
         campaign.advance_status(CampaignStatus.CONTENT_REVISION)
-        await self._store.update(campaign)
-        await self._emit("stage_started", {
+        await self._persist_and_emit(campaign, "stage_started", {
             "campaign_id": campaign.id,
             "stage": "content_revision",
         })
@@ -431,9 +422,7 @@ class CoordinatorAgent:
             revised_content = CampaignContent.model_validate(result_data)
             campaign.content = revised_content
             campaign.content_revision_count += 1
-            await self._store.update(campaign)
-
-            await self._emit("stage_completed", {
+            await self._persist_and_emit(campaign, "stage_completed", {
                 "campaign_id": campaign.id,
                 "stage": "content_revision",
                 "output": result_data,
@@ -441,8 +430,7 @@ class CoordinatorAgent:
         except Exception as exc:
             logger.exception("Content revision failed for campaign %s: %s", campaign.id, exc)
             campaign.stage_errors["content_revision"] = str(exc)
-            await self._store.update(campaign)
-            await self._emit("stage_error", {
+            await self._persist_and_emit(campaign, "stage_error", {
                 "campaign_id": campaign.id,
                 "stage": "content_revision",
                 "error": str(exc),
@@ -466,11 +454,9 @@ class CoordinatorAgent:
         """
         for cycle in range(MAX_CONTENT_REVISION_CYCLES + 1):
             campaign.advance_status(CampaignStatus.CONTENT_APPROVAL)
-            await self._store.update(campaign)
-
             # Emit content for human review
             content_data = campaign.content.model_dump(mode="json") if campaign.content else {}
-            await self._emit("content_approval_requested", {
+            await self._persist_and_emit(campaign, "content_approval_requested", {
                 "campaign_id": campaign.id,
                 "content": content_data,
                 "revision_cycle": cycle,
@@ -534,8 +520,7 @@ class CoordinatorAgent:
 
             if all_approved:
                 campaign.advance_status(CampaignStatus.APPROVED)
-                await self._store.update(campaign)
-                await self._emit("content_approval_completed", {
+                await self._persist_and_emit(campaign, "content_approval_completed", {
                     "campaign_id": campaign.id,
                     "approved": True,
                 })
@@ -563,8 +548,7 @@ class CoordinatorAgent:
             else:
                 # Max cycles reached — approve remaining as-is
                 campaign.advance_status(CampaignStatus.APPROVED)
-                await self._store.update(campaign)
-                await self._emit("content_approval_completed", {
+                await self._persist_and_emit(campaign, "content_approval_completed", {
                     "campaign_id": campaign.id,
                     "approved": True,
                     "note": "Max revision cycles reached",
@@ -629,6 +613,17 @@ class CoordinatorAgent:
                 await self._store.update(campaign)
 
         return campaign
+
+    async def _persist_and_emit(
+        self,
+        campaign: Campaign,
+        event_name: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist the campaign and optionally emit an event."""
+        await self._store.update(campaign)
+        if event_name:
+            await self._emit(event_name, payload or {"campaign_id": campaign.id})
 
     async def _emit(self, event: str, data: dict[str, Any]) -> None:
         """Fire an event callback if one is registered."""
@@ -703,9 +698,7 @@ class CoordinatorAgent:
 
         # Persist answers on the campaign
         campaign.clarification_answers = user_response.answers
-        await self._store.update(campaign)
-
-        await self._emit("clarification_completed", {
+        await self._persist_and_emit(campaign, "clarification_completed", {
             "campaign_id": campaign.id,
             "answers": user_response.answers,
         })
