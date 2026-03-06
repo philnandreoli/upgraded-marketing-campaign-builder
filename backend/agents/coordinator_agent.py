@@ -81,6 +81,16 @@ ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
 # will pick up the saved state on the next poll cycle.
 _APPROVAL_SAVE_TIMEOUT_SECONDS = 10
 
+
+def _transform_review_output(output: dict) -> ReviewFeedback:
+    """Convert the raw review-agent output dict into a ``ReviewFeedback`` model."""
+    return ReviewFeedback(
+        approved=output.get("approved", False),
+        issues=output.get("issues", []),
+        suggestions=output.get("suggestions", []),
+        brand_consistency_score=output.get("brand_consistency_score", 0.0),
+    )
+
 # When True (default), _run_pipeline_stages uses the declarative StageDefinition
 # loop.  Flip to False to fall back to the hand-coded sequence without a deploy.
 _USE_DECLARATIVE_PIPELINE = True
@@ -261,7 +271,14 @@ class CoordinatorAgent:
             return campaign
 
         # 5 — Review / QA
-        campaign = await self._run_review(campaign, campaign_data)
+        campaign = await self._run_stage(
+            agent=self._review,
+            campaign=campaign,
+            campaign_data=campaign_data,
+            status_before=CampaignStatus.REVIEW,
+            result_key="review",
+            result_transformer=_transform_review_output,
+        )
         campaign_data = campaign.model_dump(mode="json")
         if "review" in campaign.stage_errors:
             return campaign
@@ -340,7 +357,14 @@ class CoordinatorAgent:
     async def _run_review_stage(
         self, campaign: Campaign, campaign_data: dict[str, Any]
     ) -> StageExecutionResult:
-        campaign = await self._run_review(campaign, campaign_data)
+        campaign = await self._run_stage(
+            agent=self._review,
+            campaign=campaign,
+            campaign_data=campaign_data,
+            status_before=CampaignStatus.REVIEW,
+            result_key="review",
+            result_transformer=_transform_review_output,
+        )
         action = WorkflowAction.FAIL if "review" in campaign.stage_errors else WorkflowAction.CONTINUE
         return StageExecutionResult(action=action, campaign=campaign)
 
@@ -446,10 +470,17 @@ class CoordinatorAgent:
         campaign_data: dict[str, Any],
         status_before: CampaignStatus,
         result_key: str,
-        model_cls: type,
+        model_cls: type | None = None,
         extra_instruction: str = "",
+        result_transformer: Callable[[dict], Any] | None = None,
     ) -> Campaign:
-        """Run a single agent stage and persist the result on the campaign."""
+        """Run a single agent stage and persist the result on the campaign.
+
+        ``result_transformer``, when provided, is called with the raw output dict
+        and its return value is stored on the campaign.  This is used for stages
+        (e.g. review) whose output requires custom construction rather than a
+        plain ``model_cls.model_validate`` call.
+        """
         self._transition(campaign, status_before)
         await self._persist_and_emit(campaign, "stage_started", {
             "campaign_id": campaign.id,
@@ -480,61 +511,20 @@ class CoordinatorAgent:
             })
             return campaign
 
-        # Hydrate the Pydantic model and attach to the campaign
-        model_instance = model_cls.model_validate(result.output)
+        # Hydrate the model and attach to the campaign
+        if result_transformer is not None:
+            model_instance = result_transformer(result.output)
+        else:
+            assert model_cls is not None, (
+                "_run_stage: model_cls must be provided when result_transformer is not set"
+            )
+            model_instance = model_cls.model_validate(result.output)
         setattr(campaign, result_key, model_instance)
         await self._persist_and_emit(campaign, "stage_completed", {
             "campaign_id": campaign.id,
             "stage": status_before.value,
             "output": result.output,
         })
-        return campaign
-
-    async def _run_review(
-        self,
-        campaign: Campaign,
-        campaign_data: dict[str, Any],
-    ) -> Campaign:
-        """Run the Review/QA agent."""
-        self._transition(campaign, CampaignStatus.REVIEW)
-        await self._persist_and_emit(campaign, "stage_started", {
-            "campaign_id": campaign.id,
-            "stage": "review",
-        })
-
-        task = AgentTask(
-            task_id=str(uuid.uuid4()),
-            agent_type=AgentType.REVIEW_QA,
-            campaign_id=campaign.id,
-            instruction="",
-        )
-
-        result = await self._review.run(task, campaign_data)
-
-        if not result.success:
-            campaign.stage_errors["review"] = result.error or "Unknown error"
-            await self._persist_and_emit(campaign, "stage_error", {
-                "campaign_id": campaign.id,
-                "stage": "review",
-                "error": result.error,
-            })
-            return campaign
-
-        # Persist AI review
-        review_output = result.output
-        review_feedback = ReviewFeedback(
-            approved=review_output.get("approved", False),
-            issues=review_output.get("issues", []),
-            suggestions=review_output.get("suggestions", []),
-            brand_consistency_score=review_output.get("brand_consistency_score", 0.0),
-        )
-        campaign.review = review_feedback
-        await self._persist_and_emit(campaign, "stage_completed", {
-            "campaign_id": campaign.id,
-            "stage": "review",
-            "output": review_output,
-        })
-
         return campaign
 
     # ------------------------------------------------------------------
