@@ -82,8 +82,9 @@ export default function Toast({ events }) {
 
   // Clean up all pending timers on unmount
   useEffect(() => {
+    const timers = timersRef.current;
     return () => {
-      Object.values(timersRef.current).flat().forEach(clearTimeout);
+      Object.values(timers).flat().forEach(clearTimeout);
     };
   }, []);
 

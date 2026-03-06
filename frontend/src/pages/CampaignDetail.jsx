@@ -91,9 +91,10 @@ export default function CampaignDetail() {
   useEffect(() => {
     if (!status) return;
     if (prevStatusRef.current !== null && prevStatusRef.current !== status) {
-      setBadgePulse(true);
-      const t = setTimeout(() => setBadgePulse(false), 400);
-      return () => clearTimeout(t);
+      prevStatusRef.current = status;
+      const tOn = setTimeout(() => setBadgePulse(true), 0);
+      const tOff = setTimeout(() => setBadgePulse(false), 400);
+      return () => { clearTimeout(tOn); clearTimeout(tOff); };
     }
     prevStatusRef.current = status;
   }, [status]);
