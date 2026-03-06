@@ -43,11 +43,8 @@ from backend.models.messages import (
     AgentResult,
     AgentTask,
     AgentType,
-    ClarificationRequest,
     ClarificationResponse,
     ContentApprovalResponse,
-    HumanReviewRequest,
-    HumanReviewResponse,
 )
 from backend.services.campaign_store import CampaignStore, get_campaign_store
 
@@ -674,11 +671,6 @@ class CoordinatorAgent:
             })
             return campaign
 
-        request = ClarificationRequest(
-            campaign_id=campaign.id,
-            questions=[],  # raw dicts are in the campaign; typed model for event
-            context_summary=clarification.get("context_summary", ""),
-        )
         # Populate typed question objects for the event payload
         await self._emit("clarification_requested", {
             "campaign_id": campaign.id,
