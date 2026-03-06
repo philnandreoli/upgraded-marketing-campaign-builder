@@ -130,6 +130,44 @@ class CampaignMemberResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Campaign response DTOs
+# ---------------------------------------------------------------------------
+
+class CreateCampaignResponse(BaseModel):
+    id: str
+    status: str
+    message: str
+
+
+class WorkflowActionResponse(BaseModel):
+    campaign_id: str
+    message: str
+
+
+class PieceDecisionResponse(BaseModel):
+    campaign_id: str
+    piece_index: int
+    approval_status: str
+    message: str
+
+
+class PieceNotesResponse(BaseModel):
+    campaign_id: str
+    piece_index: int
+    message: str
+
+
+class CampaignSummary(BaseModel):
+    id: str
+    status: str
+    product_or_service: str
+    goal: str
+    owner_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+
+# ---------------------------------------------------------------------------
 # Me response model
 # ---------------------------------------------------------------------------
 
@@ -174,12 +212,12 @@ async def get_me(
     )
 
 
-@router.post("/campaigns", status_code=201)
+@router.post("/campaigns", status_code=201, response_model=CreateCampaignResponse)
 async def create_campaign(
     brief: CampaignBrief,
     background_tasks: BackgroundTasks,
     user: Optional[User] = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> CreateCampaignResponse:
     """Create a new campaign and kick off the agent pipeline in the background."""
     # When auth is enabled, only campaign_builder and admin may create campaigns.
     # When auth is disabled (user is None) all requests are allowed (dev mode).
@@ -199,11 +237,11 @@ async def create_campaign(
     # Run the pipeline in the background so the HTTP response returns immediately
     background_tasks.add_task(_run_pipeline, coordinator, campaign)
 
-    return {
-        "id": campaign.id,
-        "status": campaign.status.value,
-        "message": "Campaign created. Pipeline is running — connect to WebSocket for live updates.",
-    }
+    return CreateCampaignResponse(
+        id=campaign.id,
+        status=campaign.status.value,
+        message="Campaign created. Pipeline is running — connect to WebSocket for live updates.",
+    )
 
 
 async def _run_pipeline(coordinator: CoordinatorAgent, campaign: Campaign) -> None:
@@ -216,10 +254,10 @@ async def _run_pipeline(coordinator: CoordinatorAgent, campaign: Campaign) -> No
         logger.exception("Pipeline crashed for campaign %s: %s", campaign.id, exc)
 
 
-@router.get("/campaigns")
+@router.get("/campaigns", response_model=list[CampaignSummary])
 async def list_campaigns(
     user: Optional[User] = Depends(get_current_user),
-) -> list[dict[str, Any]]:
+) -> list[CampaignSummary]:
     """Return campaigns visible to the current user (summary view)."""
     store = get_campaign_store()
     if user is not None:
@@ -227,15 +265,15 @@ async def list_campaigns(
     else:
         campaigns = await store.list_all()
     return [
-        {
-            "id": c.id,
-            "status": c.status.value,
-            "product_or_service": c.brief.product_or_service,
-            "goal": c.brief.goal,
-            "owner_id": c.owner_id,
-            "created_at": c.created_at.isoformat(),
-            "updated_at": c.updated_at.isoformat(),
-        }
+        CampaignSummary(
+            id=c.id,
+            status=c.status.value,
+            product_or_service=c.brief.product_or_service,
+            goal=c.brief.goal,
+            owner_id=c.owner_id,
+            created_at=c.created_at.isoformat(),
+            updated_at=c.updated_at.isoformat(),
+        )
         for c in campaigns
     ]
 
@@ -268,12 +306,12 @@ async def delete_campaign(
     return Response(status_code=204)
 
 
-@router.post("/campaigns/{campaign_id}/clarify")
+@router.post("/campaigns/{campaign_id}/clarify", response_model=WorkflowActionResponse)
 async def submit_clarification(
     campaign_id: str,
     response: ClarificationResponse,
     user: Optional[User] = Depends(get_current_user),
-) -> dict[str, str]:
+) -> WorkflowActionResponse:
     """Submit answers to strategy clarification questions."""
     store = get_campaign_store()
     await _authorize(campaign_id, user, Action.WRITE, store)
@@ -286,7 +324,7 @@ async def submit_clarification(
     except ValueError:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    return {"message": "Clarification submitted", "campaign_id": campaign_id}
+    return WorkflowActionResponse(message="Clarification submitted", campaign_id=campaign_id)
 
 
 @router.post("/campaigns/{campaign_id}/review-clarify")
@@ -303,12 +341,12 @@ async def submit_review(campaign_id: str, response: HumanReviewResponse) -> dict
     raise HTTPException(status_code=410, detail="Whole-campaign review is no longer supported. Use /content-approve instead.")
 
 
-@router.post("/campaigns/{campaign_id}/content-approve")
+@router.post("/campaigns/{campaign_id}/content-approve", response_model=WorkflowActionResponse)
 async def submit_content_approval(
     campaign_id: str,
     response: ContentApprovalResponse,
     user: Optional[User] = Depends(get_current_user),
-) -> dict[str, str]:
+) -> WorkflowActionResponse:
     """Submit per-piece content approval decisions."""
     store = get_campaign_store()
     await _authorize(campaign_id, user, Action.WRITE, store)
@@ -319,7 +357,7 @@ async def submit_content_approval(
     except ValueError:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    return {"message": "Content approval submitted", "campaign_id": campaign_id}
+    return WorkflowActionResponse(message="Content approval submitted", campaign_id=campaign_id)
 
 
 class PieceDecisionRequest(BaseModel):
@@ -328,13 +366,13 @@ class PieceDecisionRequest(BaseModel):
     notes: str = ""
 
 
-@router.patch("/campaigns/{campaign_id}/content/{piece_index}/decision")
+@router.patch("/campaigns/{campaign_id}/content/{piece_index}/decision", response_model=PieceDecisionResponse)
 async def update_piece_decision(
     campaign_id: str,
     piece_index: int,
     body: PieceDecisionRequest,
     user: Optional[User] = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> PieceDecisionResponse:
     """Immediately persist an approve/reject decision for a single content piece.
 
     Saves the decision to the store straight away so the status survives a page
@@ -351,8 +389,14 @@ async def update_piece_decision(
 
     workflow = get_workflow_service(_get_coordinator())
     try:
-        return await workflow.update_piece_decision(
+        result = await workflow.update_piece_decision(
             campaign_id, piece_index, body.approved, body.edited_content, body.notes
+        )
+        return PieceDecisionResponse(
+            campaign_id=result["campaign_id"],
+            piece_index=result["piece_index"],
+            approval_status=result["approval_status"].value,
+            message=result["message"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -364,13 +408,13 @@ class UpdatePieceNotesRequest(BaseModel):
     notes: str
 
 
-@router.patch("/campaigns/{campaign_id}/content/{piece_index}/notes")
+@router.patch("/campaigns/{campaign_id}/content/{piece_index}/notes", response_model=PieceNotesResponse)
 async def update_piece_notes(
     campaign_id: str,
     piece_index: int,
     body: UpdatePieceNotesRequest,
     user: Optional[User] = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> PieceNotesResponse:
     """Update human_notes on an already-approved content piece.
 
     Approved content is immutable — only the reviewer notes field may be
@@ -382,7 +426,12 @@ async def update_piece_notes(
 
     workflow = get_workflow_service(_get_coordinator())
     try:
-        return await workflow.update_piece_notes(campaign_id, piece_index, body.notes)
+        result = await workflow.update_piece_notes(campaign_id, piece_index, body.notes)
+        return PieceNotesResponse(
+            campaign_id=result["campaign_id"],
+            piece_index=result["piece_index"],
+            message=result["message"],
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except WorkflowConflictError as exc:
