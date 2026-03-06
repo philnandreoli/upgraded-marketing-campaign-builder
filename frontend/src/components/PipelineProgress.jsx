@@ -14,8 +14,8 @@ const ORDER = STAGES.map((s) => s.key);
 export default function PipelineProgress({ status }) {
   const currentIdx = ORDER.indexOf(status);
 
-  // If approved/rejected show all as completed
-  const isTerminal = status === "approved" || status === "rejected";
+  // If approved/rejected/manual_review_required show all as completed
+  const isTerminal = status === "approved" || status === "rejected" || status === "manual_review_required";
 
   return (
     <div className="pipeline-steps">

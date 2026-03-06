@@ -12,7 +12,7 @@ import EventLog from "../components/EventLog.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import { useUser } from "../UserContext";
 
-const TERMINAL_STATES = ["approved", "rejected"];
+const TERMINAL_STATES = ["approved", "rejected", "manual_review_required"];
 const PAUSE_STATES = ["clarification", "content_approval"];  // pipeline paused but will resume
 
 // Pipeline stages in order — each maps to a tab key and campaign data field
@@ -88,7 +88,7 @@ export default function CampaignDetail() {
   const stageStates = useMemo(() => {
     if (!campaign) return {};
     const cs = campaign.status;
-    const isTerminal = cs === "approved" || cs === "rejected";
+    const isTerminal = TERMINAL_STATES.includes(cs);
     const currentIdx = STATUS_ORDER.indexOf(cs);
     const errors = campaign.stage_errors || {};
     const states = {};
@@ -119,11 +119,11 @@ export default function CampaignDetail() {
   const isPipelineRunning = useMemo(() => {
     if (!campaign) return false;
     const cs = campaign.status;
-    return cs !== "approved" && cs !== "rejected" && !PAUSE_STATES.includes(cs);
+    return !TERMINAL_STATES.includes(cs) && !PAUSE_STATES.includes(cs);
   }, [campaign]);
 
   // At approval stage, hide content & revision tabs (approval tab shows the content)
-  const isAtApproval = campaign?.status === "content_approval" || campaign?.status === "approved" || campaign?.status === "rejected";
+  const isAtApproval = campaign?.status === "content_approval" || campaign?.status === "approved" || campaign?.status === "rejected" || campaign?.status === "manual_review_required";
   const HIDDEN_AT_APPROVAL = ["content", "content_revision"];
 
   // Clickable tabs: completed stages + the currently active stage + event log
@@ -137,7 +137,7 @@ export default function CampaignDetail() {
         if (state === "completed" || state === "active" || state === "error") {
           // content_approval stage is only clickable when content_approval and has content data
           if (stage.key === "content_approval") {
-            if (campaign.status === "content_approval" || campaign.status === "approved" || campaign.status === "rejected") {
+            if (campaign.status === "content_approval" || campaign.status === "approved" || campaign.status === "rejected" || campaign.status === "manual_review_required") {
               t.push(stage.key);
             }
           // content_revision tab only visible when content_revision_count > 0 or currently in revision
@@ -176,6 +176,13 @@ export default function CampaignDetail() {
       </div>
     );
   }
+
+  const manualReviewBanner = campaign.status === "manual_review_required" ? (
+    <div className="manual-review-banner">
+      <span>⚠️</span>
+      <span>This campaign requires <strong>manual review</strong> before it can proceed. Please escalate to an administrator.</span>
+    </div>
+  ) : null;
 
   const renderTabContent = () => {
     const errors = campaign.stage_errors || {};
@@ -344,6 +351,7 @@ export default function CampaignDetail() {
                 <span>Pipeline is running — {campaign.status === "draft" ? "starting up…" : <><strong>{PIPELINE_STAGES.find(s => s.statusKey === campaign.status)?.label || campaign.status}</strong> in progress…</>}</span>
               </div>
             )}
+            {manualReviewBanner}
             <div className="detail-tab-content">{renderTabContent()}</div>
           </div>
 
@@ -411,6 +419,7 @@ export default function CampaignDetail() {
               <span>Pipeline is running — {campaign.status === "draft" ? "starting up…" : <><strong>{PIPELINE_STAGES.find(s => s.statusKey === campaign.status)?.label || campaign.status}</strong> in progress…</>}</span>
             </div>
           )}
+          {manualReviewBanner}
           {renderPipelineTabs()}
           <div className="detail-tab-content">{renderTabContent()}</div>
         </>

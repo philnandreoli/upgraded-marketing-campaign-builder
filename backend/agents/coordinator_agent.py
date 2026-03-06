@@ -69,6 +69,7 @@ ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
         CampaignStatus.APPROVED,
         CampaignStatus.REJECTED,
         CampaignStatus.CONTENT_REVISION,
+        CampaignStatus.MANUAL_REVIEW_REQUIRED,
     },
 }
 
