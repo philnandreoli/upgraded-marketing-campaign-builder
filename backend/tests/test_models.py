@@ -363,6 +363,21 @@ class TestContentApprovalMessages:
         assert resp.pieces == []
 
 
+class TestCampaignStatusEnum:
+    def test_manual_review_required_value(self):
+        assert CampaignStatus.MANUAL_REVIEW_REQUIRED.value == "manual_review_required"
+
+    def test_manual_review_required_serializes(self):
+        brief = CampaignBrief(product_or_service="X", goal="Y")
+        c = Campaign(brief=brief)
+        c.advance_status(CampaignStatus.MANUAL_REVIEW_REQUIRED)
+        assert c.status == CampaignStatus.MANUAL_REVIEW_REQUIRED
+        data = c.model_dump(mode="json")
+        assert data["status"] == "manual_review_required"
+        c2 = Campaign.model_validate(data)
+        assert c2.status == CampaignStatus.MANUAL_REVIEW_REQUIRED
+
+
 # ---- User model ----
 
 class TestUserRole:
