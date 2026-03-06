@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
+import { SkeletonCard } from "../components/Skeleton";
 
 const IN_PROGRESS_STATUSES = ["draft", "strategy", "content", "channel_planning", "analytics_setup", "review", "review_clarification", "content_revision", "clarification"];
 const AWAITING_APPROVAL_STATUSES = ["content_approval", "awaiting_approval"];
@@ -50,8 +51,10 @@ export default function Dashboard({ events }) {
 
   if (loading && campaigns.length === 0) {
     return (
-      <div className="loading">
-        <span className="spinner" /> Loading campaigns…
+      <div>
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }

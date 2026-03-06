@@ -373,8 +373,47 @@ a:hover { color: var(--color-primary-hover); }
 .spinner { width: 20px; height: 20px; border: 2px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 0.5rem; }
 
 /* ------------------------------------------------------------------ */
+/* Loading Skeletons                                                   */
+/* ------------------------------------------------------------------ */
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.skeleton-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.skeleton-line {
+  height: 0.85rem;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, var(--color-border) 50%, var(--color-surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  margin-bottom: 0.6rem;
+}
+.skeleton-line--title { width: 40%; height: 1rem; }
+.skeleton-line--text  { width: 80%; }
+.skeleton-line--short { width: 55%; margin-bottom: 0; }
+
+/* ------------------------------------------------------------------ */
 /* Motion & Micro-interactions                                         */
 /* ------------------------------------------------------------------ */
+
+/* Success banner — shown when a campaign reaches "approved" status */
+@keyframes success-pop {
+  0%   { transform: scale(0.92); opacity: 0; }
+  60%  { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+.campaign-banner--approved {
+  animation: success-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
 
 /* Card entrance animation (scoped to dashboard campaign list) */
 @keyframes card-enter {

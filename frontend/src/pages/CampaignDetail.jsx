@@ -12,6 +12,7 @@ import EventLog from "../components/EventLog.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import Toast from "../components/Toast.jsx";
 import { useUser } from "../UserContext";
+import { SkeletonCard } from "../components/Skeleton.jsx";
 
 const TERMINAL_STATES = ["approved", "rejected", "manual_review_required"];
 const PAUSE_STATES = ["clarification", "content_approval"];  // pipeline paused but will resume
@@ -194,8 +195,9 @@ export default function CampaignDetail() {
 
   if (!campaign) {
     return (
-      <div className="loading">
-        <span className="spinner" /> Loading campaign…
+      <div>
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }
