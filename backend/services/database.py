@@ -10,7 +10,7 @@ import os
 
 from typing import AsyncGenerator
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -68,6 +68,21 @@ class CampaignMemberRow(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     role = Column(String, nullable=False)   # "owner", "editor", "viewer"
     added_at = Column(DateTime, nullable=False)
+
+
+class WorkflowCheckpointRow(Base):
+    """One row per campaign storing the coordinator's durable workflow state."""
+
+    __tablename__ = "workflow_checkpoints"
+
+    campaign_id = Column(String, ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True)
+    current_stage = Column(String, nullable=False)
+    wait_type = Column(String, nullable=True)
+    revision_cycle = Column(Integer, nullable=False, default=0)
+    resume_token = Column(String, nullable=True)
+    context = Column(Text, nullable=False, default="{}")  # JSON text
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
 
 
 # ---------------------------------------------------------------------------
