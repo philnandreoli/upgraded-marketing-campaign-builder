@@ -10,7 +10,7 @@
  *    every stage as completed.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import PipelineProgress from '../components/PipelineProgress.jsx';
 
