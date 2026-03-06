@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from datetime import datetime
 from typing import Any, Callable, Coroutine, Optional
 
 from backend.agents.base_agent import BaseAgent
@@ -54,7 +55,12 @@ from backend.models.messages import (
     ClarificationResponse,
     ContentApprovalResponse,
 )
+from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
 from backend.services.campaign_store import CampaignStore, get_campaign_store
+from backend.services.workflow_checkpoint_store import (
+    WorkflowCheckpointStore,
+    get_workflow_checkpoint_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +116,10 @@ class CoordinatorAgent:
         self,
         store: CampaignStore | None = None,
         on_event: EventCallback | None = None,
+        checkpoint_store: WorkflowCheckpointStore | None = None,
     ) -> None:
         self._store = store or get_campaign_store()
+        self._checkpoint_store = checkpoint_store or get_workflow_checkpoint_store()
 
         # Sub-agents
         self._strategy = StrategyAgent()
@@ -489,6 +497,7 @@ class CoordinatorAgent:
         plain ``model_cls.model_validate`` call.
         """
         self._transition(campaign, status_before)
+        await self._save_checkpoint(campaign, status_before.value)
         await self._persist_and_emit(campaign, "stage_started", StageStartedEvent(
             campaign_id=campaign.id,
             stage=status_before.value,
@@ -546,6 +555,7 @@ class CoordinatorAgent:
         """Automatically send review feedback back to the content creator
         to regenerate improved content."""
         self._transition(campaign, CampaignStatus.CONTENT_REVISION)
+        await self._save_checkpoint(campaign, "content_revision")
         await self._persist_and_emit(campaign, "stage_started", StageStartedEvent(
             campaign_id=campaign.id,
             stage="content_revision",
@@ -621,11 +631,14 @@ class CoordinatorAgent:
             loop = asyncio.get_running_loop()
             future: asyncio.Future[ContentApprovalResponse] = loop.create_future()
             self._pending_content_approvals[campaign.id] = future
+            await self._save_checkpoint(campaign, "content_approval", wait_type=WorkflowWaitType.CONTENT_APPROVAL)
 
             try:
                 human_response = await future
             finally:
                 self._pending_content_approvals.pop(campaign.id, None)
+
+            await self._save_checkpoint(campaign, "content_approval")
 
             # Handle campaign-level rejection
             if human_response.reject_campaign:
@@ -770,6 +783,34 @@ class CoordinatorAgent:
 
         return campaign
 
+    async def _save_checkpoint(
+        self,
+        campaign: Campaign,
+        stage: str,
+        wait_type: WorkflowWaitType | None = None,
+    ) -> None:
+        """Persist a workflow checkpoint for the given stage.
+
+        Fail-safe: if the write fails the pipeline continues unchanged.
+        """
+        try:
+            now = datetime.utcnow()
+            checkpoint = WorkflowCheckpoint(
+                campaign_id=campaign.id,
+                current_stage=stage,
+                wait_type=wait_type,
+                revision_cycle=campaign.content_revision_count,
+                created_at=now,
+                updated_at=now,
+            )
+            await self._checkpoint_store.save_checkpoint(checkpoint)
+        except Exception:
+            logger.warning(
+                "Failed to save checkpoint for campaign %s, continuing",
+                campaign.id,
+                exc_info=True,
+            )
+
     async def _persist_and_emit(
         self,
         campaign: Campaign,
@@ -841,11 +882,14 @@ class CoordinatorAgent:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[ClarificationResponse] = loop.create_future()
         self._pending_clarifications[campaign.id] = future
+        await self._save_checkpoint(campaign, "clarification", wait_type=WorkflowWaitType.CLARIFICATION)
 
         try:
             user_response = await future
         finally:
             self._pending_clarifications.pop(campaign.id, None)
+
+        await self._save_checkpoint(campaign, "clarification")
 
         # Persist answers on the campaign
         campaign.clarification_answers = user_response.answers

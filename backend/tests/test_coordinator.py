@@ -12,11 +12,13 @@ Mocks all LLM calls so it runs fully offline. Verifies:
 import asyncio
 import json
 import pytest
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, ContentPieceApproval
+from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
@@ -755,3 +757,273 @@ class TestDeclarativePipelineConditions:
         for name in ("strategy", "content", "channel_planning", "analytics", "review"):
             stage = self._get_stage(coordinator, name)
             assert stage.condition(campaign), f"{name} stage condition should always be True"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for checkpoint tests
+# ---------------------------------------------------------------------------
+
+
+class _InMemoryCheckpointStore:
+    """Dict-backed checkpoint store for unit tests — no database required."""
+
+    def __init__(self) -> None:
+        self._checkpoints: dict[str, WorkflowCheckpoint] = {}
+        self.calls: list[WorkflowCheckpoint] = []  # ordered record of every save
+
+    async def save_checkpoint(self, checkpoint: WorkflowCheckpoint) -> None:
+        self._checkpoints[checkpoint.campaign_id] = checkpoint
+        self.calls.append(checkpoint)
+
+    async def get_checkpoint(self, campaign_id: str) -> Optional[WorkflowCheckpoint]:
+        return self._checkpoints.get(campaign_id)
+
+    async def delete_checkpoint(self, campaign_id: str) -> bool:
+        if campaign_id in self._checkpoints:
+            del self._checkpoints[campaign_id]
+            return True
+        return False
+
+
+class _FailingCheckpointStore:
+    """Always raises on save — used to verify fail-safe behaviour."""
+
+    async def save_checkpoint(self, checkpoint: WorkflowCheckpoint) -> None:
+        raise RuntimeError("Simulated checkpoint store failure")
+
+    async def get_checkpoint(self, campaign_id: str) -> Optional[WorkflowCheckpoint]:
+        return None
+
+    async def delete_checkpoint(self, campaign_id: str) -> bool:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint tests
+# ---------------------------------------------------------------------------
+
+class TestCoordinatorCheckpoints:
+    """Verify that checkpoint writes happen at every stage boundary."""
+
+    @pytest.mark.asyncio
+    async def test_checkpoints_written_for_all_stages(self, store, brief, mock_on_event):
+        """A checkpoint must be saved at the start of every pipeline stage."""
+        campaign = await store.create(brief)
+        checkpoint_store = _InMemoryCheckpointStore()
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+            )
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+
+        saved_stages = [cp.current_stage for cp in checkpoint_store.calls]
+        for expected_stage in (
+            "strategy",
+            "content",
+            "channel_planning",
+            "analytics_setup",
+            "review",
+            "content_revision",
+            "content_approval",
+        ):
+            assert expected_stage in saved_stages, (
+                f"Expected checkpoint for stage '{expected_stage}' but got: {saved_stages}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_failure_does_not_crash_pipeline(self, store, brief, mock_on_event):
+        """A failing checkpoint store must not break the pipeline — checkpoints are additive."""
+        campaign = await store.create(brief)
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=_FailingCheckpointStore(),
+            )
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        # Pipeline must complete normally despite checkpoint failures
+        assert result.status == CampaignStatus.APPROVED
+
+    @pytest.mark.asyncio
+    async def test_clarification_wait_checkpoint_has_wait_type(self, store, mock_on_event):
+        """Entry to clarification wait must save a checkpoint with CLARIFICATION wait_type."""
+        brief = CampaignBrief(
+            product_or_service="TestProd",
+            goal="Test goal",
+            budget=1000,
+            currency="USD",
+            start_date="2026-01-01",
+            end_date="2026-03-31",
+        )
+        campaign = await store.create(brief)
+        checkpoint_store = _InMemoryCheckpointStore()
+
+        clarification_needed = json.dumps({
+            "needs_clarification": True,
+            "context_summary": "Need more info",
+            "questions": [{"text": "What is your target market?", "id": "q1"}],
+        })
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=[
+                clarification_needed,
+                STRATEGY_RESPONSE,
+                CONTENT_RESPONSE,
+                CHANNEL_RESPONSE,
+                ANALYTICS_RESPONSE,
+                REVIEW_RESPONSE,
+                CONTENT_REVISION_RESPONSE,
+            ])
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+            )
+
+            async def _submit_clarification():
+                await asyncio.sleep(0.1)
+                await coordinator.submit_clarification(
+                    ClarificationResponse(
+                        campaign_id=campaign.id,
+                        answers={"q1": "Enterprise software companies"},
+                    )
+                )
+
+            async def _auto_approve():
+                await asyncio.sleep(0.4)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            clarify_task = asyncio.create_task(_submit_clarification())
+            approve_task = asyncio.create_task(_auto_approve())
+            await coordinator.run_pipeline(campaign)
+            await clarify_task
+            await approve_task
+
+        # Find the checkpoint saved when entering the clarification wait
+        wait_checkpoints = [
+            cp for cp in checkpoint_store.calls
+            if cp.wait_type == WorkflowWaitType.CLARIFICATION
+        ]
+        assert wait_checkpoints, "Expected at least one checkpoint with CLARIFICATION wait_type"
+        assert wait_checkpoints[0].current_stage == "clarification"
+
+        # After resolution, wait_type should be cleared
+        resolution_checkpoints = [
+            cp for cp in checkpoint_store.calls
+            if cp.current_stage == "clarification" and cp.wait_type is None
+        ]
+        assert resolution_checkpoints, (
+            "Expected a checkpoint for clarification resolution with wait_type=None"
+        )
+
+    @pytest.mark.asyncio
+    async def test_content_approval_wait_checkpoint_has_wait_type(self, store, brief, mock_on_event):
+        """Entry to content-approval wait must save a checkpoint with CONTENT_APPROVAL wait_type."""
+        campaign = await store.create(brief)
+        checkpoint_store = _InMemoryCheckpointStore()
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+            )
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+
+        # Checkpoint saved when entering the wait
+        wait_checkpoints = [
+            cp for cp in checkpoint_store.calls
+            if cp.wait_type == WorkflowWaitType.CONTENT_APPROVAL
+        ]
+        assert wait_checkpoints, "Expected at least one checkpoint with CONTENT_APPROVAL wait_type"
+        assert wait_checkpoints[0].current_stage == "content_approval"
+
+        # Checkpoint saved after human responds (wait_type cleared)
+        resolution_checkpoints = [
+            cp for cp in checkpoint_store.calls
+            if cp.current_stage == "content_approval" and cp.wait_type is None
+        ]
+        assert resolution_checkpoints, (
+            "Expected a checkpoint for content_approval resolution with wait_type=None"
+        )
