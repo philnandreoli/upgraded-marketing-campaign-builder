@@ -353,8 +353,18 @@ a:hover { color: var(--color-primary-hover); }
 .ws-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.3rem; }
 .ws-indicator.connected { background: var(--color-success); }
 .ws-indicator.disconnected { background: var(--color-danger); }
-.empty-state { text-align: center; padding: 3rem 1rem; color: var(--color-text-dim); }
-.empty-state p { margin-bottom: 1rem; }
+/* Empty state — redesigned */
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: calc(var(--radius) * 2);
+  margin-top: 1.5rem;
+}
+.empty-state-icon { font-size: 3.5rem; line-height: 1; margin-bottom: 1rem; }
+.empty-state-title { font-size: var(--text-2xl); font-family: var(--font-display); margin-bottom: 0.6rem; }
+.empty-state-body { color: var(--color-text-muted); font-size: var(--text-sm); max-width: 420px; margin: 0 auto 1.5rem; }
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .section-header h2 { font-size: var(--text-2xl); }
 .page-title { font-size: var(--text-2xl); margin-bottom: 1rem; }
@@ -1055,4 +1065,185 @@ a:hover { color: var(--color-primary-hover); }
 .compact-add-btn {
   padding: 0.35rem 0.75rem !important;
   font-size: 0.78rem !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard — Stats Hero Strip                                        */
+/* ------------------------------------------------------------------ */
+
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+@media (max-width: 640px) {
+  .dashboard-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+.stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  box-shadow: var(--shadow);
+}
+.stat-number {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-text);
+}
+.stat-number--progress { color: var(--color-primary-hover); }
+.stat-number--warning  { color: var(--color-warning); }
+.stat-number--success  { color: var(--color-success); }
+.stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard — Campaign Cards                                          */
+/* ------------------------------------------------------------------ */
+
+.campaign-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  border-left: 4px solid var(--color-border);
+  padding: 0.9rem 1.1rem;
+  transition: border-left-color 0.15s;
+}
+.campaign-card[data-status="approved"]         { border-left-color: var(--color-success); }
+.campaign-card[data-status="content"],
+.campaign-card[data-status="strategy"],
+.campaign-card[data-status="channel_planning"],
+.campaign-card[data-status="analytics_setup"],
+.campaign-card[data-status="review"],
+.campaign-card[data-status="review_clarification"],
+.campaign-card[data-status="content_revision"],
+.campaign-card[data-status="clarification"]   { border-left-color: var(--color-primary); }
+.campaign-card[data-status="content_approval"],
+.campaign-card[data-status="awaiting_approval"] { border-left-color: var(--color-warning); }
+.campaign-card[data-status="rejected"]         { border-left-color: var(--color-danger); }
+.campaign-card[data-status="manual_review_required"] { border-left-color: var(--color-warning); }
+
+.campaign-card-avatar {
+  flex-shrink: 0;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: var(--color-accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+.campaign-card-body {
+  flex: 1;
+  min-width: 0;
+}
+.campaign-card-title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.campaign-card-title:hover { color: var(--color-primary-hover); }
+.campaign-card-goal {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-top: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.campaign-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Campaign Detail — Banner Header                                     */
+/* ------------------------------------------------------------------ */
+
+.campaign-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow);
+}
+.campaign-banner--approved         { border-left-color: var(--color-success); }
+.campaign-banner--content,
+.campaign-banner--strategy,
+.campaign-banner--channel_planning,
+.campaign-banner--analytics_setup,
+.campaign-banner--review,
+.campaign-banner--review_clarification,
+.campaign-banner--content_revision,
+.campaign-banner--clarification    { border-left-color: var(--color-primary); }
+.campaign-banner--content_approval,
+.campaign-banner--awaiting_approval { border-left-color: var(--color-warning); }
+.campaign-banner--rejected          { border-left-color: var(--color-danger); }
+.campaign-banner--manual_review_required { border-left-color: var(--color-warning); }
+.campaign-banner--draft             { border-left-color: var(--color-text-dim); }
+
+.campaign-banner-main { flex: 1; min-width: 0; }
+.campaign-banner-title {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0.3rem;
+}
+.campaign-banner-goal {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: 0.6rem;
+}
+.campaign-banner-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+.campaign-banner-meta-item {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.campaign-banner-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .campaign-banner { flex-direction: column; }
+  .campaign-banner-side { flex-direction: row; flex-wrap: wrap; align-items: center; }
 }

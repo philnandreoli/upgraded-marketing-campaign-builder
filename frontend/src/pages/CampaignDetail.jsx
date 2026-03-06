@@ -32,6 +32,14 @@ const STATUS_ORDER = ["draft", ...PIPELINE_STAGES.map((s) => s.statusKey)];
 
 const VIEW_MODE_KEY = "campaign_detail_view_mode";
 
+function formatBudget(amount, currency) {
+  return amount.toLocaleString(undefined, {
+    style: "currency",
+    currency: currency || "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
 export default function CampaignDetail() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState(null);
@@ -302,43 +310,39 @@ export default function CampaignDetail() {
         <span className="breadcrumb-divider">/</span>
         <span>{campaign?.brief?.product_or_service}</span>
       </nav>
-      <div className="section-header">
-        <div>
-          <h1 className="page-title">{campaign.brief.product_or_service}</h1>
-          {viewMode === "focus" && (
-            <>
-              <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
-                {campaign.brief.goal}
-              </p>
-              {campaign.brief.selected_channels?.length > 0 && (
-                <div style={{ marginTop: "0.4rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                  {campaign.brief.selected_channels.map((ch) => (
-                    <span
-                      key={ch}
-                      className="badge"
-                      style={{
-                        background: "rgba(99,102,241,0.15)",
-                        color: "var(--color-primary-hover)",
-                        fontSize: "0.7rem",
-                      }}
-                    >
-                      {ch.replace(/_/g, " ")}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
+
+      {/* Campaign banner */}
+      <div className={`campaign-banner campaign-banner--${campaign.status}`} data-status={campaign.status}>
+        <div className="campaign-banner-main">
+          <h1 className="campaign-banner-title">{campaign.brief.product_or_service}</h1>
+          <p className="campaign-banner-goal">{campaign.brief.goal}</p>
+          <div className="campaign-banner-meta">
+            {campaign.brief.budget != null && (
+              <span className="campaign-banner-meta-item">
+                💰 {formatBudget(campaign.brief.budget, campaign.brief.currency)}
+              </span>
+            )}
+            {campaign.brief.start_date && campaign.brief.end_date && (
+              <span className="campaign-banner-meta-item">
+                📅 {campaign.brief.start_date} → {campaign.brief.end_date}
+              </span>
+            )}
+            {campaign.brief.selected_channels?.length > 0 && (
+              <span className="campaign-banner-meta-item">
+                📡 {campaign.brief.selected_channels.length} channel{campaign.brief.selected_channels.length !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <div className="campaign-banner-side">
+          <span className={`badge badge-${campaign.status}${badgePulse ? " badge-updated" : ""}`}>
+            {campaign.status.replace(/_/g, " ")}
+          </span>
           {isViewer && (
             <span className="badge" style={{ background: "rgba(148,163,184,0.2)", color: "var(--color-text-muted)", fontSize: "0.75rem" }}>
               👁 Read-only
             </span>
           )}
-          <span className={`badge badge-${campaign.status}${badgePulse ? " badge-updated" : ""}`}>
-            {campaign.status.replace(/_/g, " ")}
-          </span>
           <div className="view-toggle" role="group" aria-label="Layout view">
             <button
               className={`view-toggle-btn${viewMode === "focus" ? " active" : ""}`}
@@ -355,7 +359,6 @@ export default function CampaignDetail() {
               Split
             </button>
           </div>
-
         </div>
       </div>
 
