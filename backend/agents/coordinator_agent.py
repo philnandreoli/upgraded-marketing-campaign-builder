@@ -57,6 +57,7 @@ from backend.models.messages import (
 )
 from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
 from backend.services.campaign_store import CampaignStore, get_campaign_store
+from backend.services.exceptions import WorkflowConflictError
 from backend.services.workflow_checkpoint_store import (
     WorkflowCheckpointStore,
     get_workflow_checkpoint_store,
@@ -115,6 +116,18 @@ def _transform_review_output(output: dict) -> ReviewFeedback:
 # When True (default), _run_pipeline_stages uses the declarative StageDefinition
 # loop.  Flip to False to fall back to the hand-coded sequence without a deploy.
 _USE_DECLARATIVE_PIPELINE = True
+
+# Maps declarative pipeline stage names to the campaign field key used in
+# ``stage_errors``.  Used by ``retry_current_stage`` to locate the error entry.
+_STAGE_TO_ERROR_KEY: dict[str, str] = {
+    "strategy": "strategy",
+    "content": "content",
+    "channel_planning": "channel_plan",
+    "analytics": "analytics_plan",
+    "review": "review",
+    "content_revision": "content_revision",
+    "content_approval": "content_approval",
+}
 
 
 class CoordinatorAgent:
@@ -231,6 +244,62 @@ class CoordinatorAgent:
 
         logger.info(
             "Pipeline finished for campaign %s — status: %s",
+            campaign.id,
+            campaign.status.value,
+        )
+        await self._emit("pipeline_completed", {
+            "campaign_id": campaign.id,
+            "status": campaign.status.value,
+        })
+        return campaign
+
+    async def retry_current_stage(self, campaign_id: str) -> Campaign:
+        """Retry the current failed stage of a campaign.
+
+        Loads the campaign and its checkpoint, identifies the current stage
+        from the checkpoint, clears the stored stage error, and re-runs the
+        pipeline from that stage.
+
+        Raises ``ValueError`` if the campaign does not exist or has no
+        checkpoint, and ``WorkflowConflictError`` if the checkpoint stage has
+        no recorded error (i.e. nothing to retry).
+        """
+        campaign = await self._store.get(campaign_id)
+        if campaign is None:
+            raise ValueError(f"Campaign {campaign_id} not found")
+
+        checkpoint = await self._checkpoint_store.get_checkpoint(campaign_id)
+        if checkpoint is None:
+            raise ValueError(f"No checkpoint found for campaign {campaign_id}; use resume instead")
+
+        current_stage = checkpoint.current_stage
+        error_key = _STAGE_TO_ERROR_KEY.get(current_stage, current_stage)
+
+        if error_key not in campaign.stage_errors:
+            raise WorkflowConflictError(
+                f"Stage '{current_stage}' has no recorded error for campaign {campaign_id}"
+            )
+
+        logger.info(
+            "Retrying stage '%s' for campaign %s (clearing error: %s)",
+            current_stage,
+            campaign_id,
+            campaign.stage_errors[error_key],
+        )
+
+        # Clear the error so _should_run_stage will permit re-running this stage
+        del campaign.stage_errors[error_key]
+        await self._store.update(campaign)
+
+        await self._emit("pipeline_started", {"campaign_id": campaign.id})
+        campaign_data = campaign.model_dump(mode="json")
+
+        # Run pipeline stages; skip_completed=True ensures already-finished
+        # stages before the retried stage are not re-executed.
+        campaign = await self._run_pipeline_stages(campaign, campaign_data, skip_completed=True)
+
+        logger.info(
+            "Retry finished for campaign %s — status: %s",
             campaign.id,
             campaign.status.value,
         )

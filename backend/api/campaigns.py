@@ -11,6 +11,8 @@ Endpoints:
   PATCH  /api/campaigns/{id}/content/{piece_index}/decision — Immediately persist a per-piece approval/rejection
   POST   /api/campaigns/{id}/content-approve — Submit per-piece content approval decisions (finalize)
   PATCH  /api/campaigns/{id}/content/{piece_index}/notes — Update human_notes on an approved piece
+  POST   /api/campaigns/{id}/resume    — Resume a pipeline that was interrupted (server restart, timeout, etc.)
+  POST   /api/campaigns/{id}/retry     — Retry the current failed stage of a campaign
 """
 
 from __future__ import annotations
@@ -440,6 +442,40 @@ async def update_piece_notes(
         raise HTTPException(status_code=404, detail=str(exc))
     except WorkflowConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/campaigns/{campaign_id}/resume", response_model=WorkflowActionResponse)
+async def resume_campaign(
+    campaign_id: str,
+    background_tasks: BackgroundTasks,
+    user: Optional[User] = Depends(get_current_user),
+) -> WorkflowActionResponse:
+    """Resume a pipeline that was interrupted (server restart, timeout, etc.)."""
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.WRITE, store)
+    workflow = get_workflow_service(_get_coordinator())
+    background_tasks.add_task(workflow.resume_pipeline, campaign_id)
+    return WorkflowActionResponse(message="Pipeline resume initiated", campaign_id=campaign_id)
+
+
+@router.post("/campaigns/{campaign_id}/retry", response_model=WorkflowActionResponse)
+async def retry_campaign(
+    campaign_id: str,
+    background_tasks: BackgroundTasks,
+    user: Optional[User] = Depends(get_current_user),
+) -> WorkflowActionResponse:
+    """Retry the current failed stage of a campaign."""
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.WRITE, store)
+    workflow = get_workflow_service(_get_coordinator())
+    background_tasks.add_task(workflow.retry_current_stage, campaign_id)
+    return WorkflowActionResponse(message="Stage retry initiated", campaign_id=campaign_id)
 
 
 # ---------------------------------------------------------------------------

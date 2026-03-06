@@ -14,10 +14,9 @@ from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, Con
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse
 from backend.models.user import User
 from backend.services.campaign_store import CampaignStore, get_campaign_store
+from backend.services.exceptions import WorkflowConflictError
 
-
-class WorkflowConflictError(Exception):
-    """Raised when a workflow action is not valid for the current campaign status."""
+__all__ = ["CampaignWorkflowService", "WorkflowConflictError", "get_workflow_service"]
 
 
 class CampaignWorkflowService:
@@ -41,6 +40,10 @@ class CampaignWorkflowService:
     async def resume_pipeline(self, campaign_id: str) -> None:
         """Resume a previously interrupted pipeline from its last checkpoint."""
         await self._coordinator.resume_pipeline(campaign_id)
+
+    async def retry_current_stage(self, campaign_id: str) -> None:
+        """Clear the current stage error and re-run that stage."""
+        await self._coordinator.retry_current_stage(campaign_id)
 
     async def submit_clarification(
         self, campaign_id: str, response: ClarificationResponse
