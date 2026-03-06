@@ -35,26 +35,44 @@ function LoginPage() {
   const { instance } = useMsal();
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <h1>
-          <span role="img" aria-label="rocket">🚀</span> Campaign Builder
-        </h1>
-      </header>
-      <main className="app-main" style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
-        <div className="card" style={{ textAlign: "center", maxWidth: 420 }}>
-          <h2>Welcome</h2>
-          <p style={{ color: "var(--color-text-muted)", marginBottom: "1.5rem" }}>
-            Sign in with your Microsoft account to continue.
+    <div className="login-page">
+      <div className="login-brand">
+        <div className="login-brand-content">
+          <div className="login-brand-icon" aria-hidden="true">🚀</div>
+          <h1 className="login-title">Campaign Builder</h1>
+          <p className="login-tagline">
+            AI-powered marketing campaigns, from strategy to approval.
+          </p>
+          <div className="login-features">
+            <div className="login-feature">🎯 Strategy Generation</div>
+            <div className="login-feature">✍️ Content Creation</div>
+            <div className="login-feature">📊 Analytics Planning</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="login-form-area">
+        <div className="login-card">
+          <div className="login-card-logo" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 23 23" width="40" height="40" aria-hidden="true">
+              <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+              <rect x="12" y="1" width="10" height="10" fill="#7FBA00" />
+              <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
+              <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
+            </svg>
+          </div>
+          <h2 className="login-card-title">Welcome back</h2>
+          <p className="login-card-subtitle">
+            Sign in with your Microsoft account to continue building campaigns.
           </p>
           <button
-            className="btn btn-primary"
+            className="btn btn-primary btn-login"
             onClick={() => instance.loginRedirect(loginRequest)}
           >
-            Sign in
+            Sign in with Microsoft
           </button>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
