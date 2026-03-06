@@ -56,6 +56,22 @@ EventCallback = Callable[[str, dict[str, Any]], Coroutine[Any, Any, None]]
 # Maximum number of per-piece revision cycles before forcing completion
 MAX_CONTENT_REVISION_CYCLES = 3
 
+ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
+    CampaignStatus.DRAFT: {CampaignStatus.CLARIFICATION, CampaignStatus.STRATEGY},
+    CampaignStatus.CLARIFICATION: {CampaignStatus.STRATEGY},
+    CampaignStatus.STRATEGY: {CampaignStatus.CONTENT},
+    CampaignStatus.CONTENT: {CampaignStatus.CHANNEL_PLANNING},
+    CampaignStatus.CHANNEL_PLANNING: {CampaignStatus.ANALYTICS_SETUP},
+    CampaignStatus.ANALYTICS_SETUP: {CampaignStatus.REVIEW},
+    CampaignStatus.REVIEW: {CampaignStatus.CONTENT_REVISION, CampaignStatus.CONTENT_APPROVAL},
+    CampaignStatus.CONTENT_REVISION: {CampaignStatus.CONTENT_APPROVAL},
+    CampaignStatus.CONTENT_APPROVAL: {
+        CampaignStatus.APPROVED,
+        CampaignStatus.REJECTED,
+        CampaignStatus.CONTENT_REVISION,
+    },
+}
+
 # Maximum seconds to wait for _content_approval_gate to persist per-piece decisions
 # before the submit_content_approval API handler returns.  10 s is well above the
 # expected DB-write latency (<100 ms typical) while keeping the API responsive on
@@ -278,6 +294,20 @@ class CoordinatorAgent:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _transition(self, campaign: Campaign, new_status: CampaignStatus) -> None:
+        """Validate and apply a status transition.
+
+        Logs a warning if the transition is not in ALLOWED_TRANSITIONS but
+        still applies it — warn-only for now (will become a hard error in 5.3).
+        """
+        allowed = ALLOWED_TRANSITIONS.get(campaign.status, set())
+        if new_status not in allowed:
+            logger.warning(
+                "Unexpected transition %s -> %s for campaign %s",
+                campaign.status.value, new_status.value, campaign.id,
+            )
+        campaign.advance_status(new_status)
+
     async def _run_stage(
         self,
         agent: BaseAgent,
@@ -289,7 +319,7 @@ class CoordinatorAgent:
         extra_instruction: str = "",
     ) -> Campaign:
         """Run a single agent stage and persist the result on the campaign."""
-        campaign.advance_status(status_before)
+        self._transition(campaign, status_before)
         await self._persist_and_emit(campaign, "stage_started", {
             "campaign_id": campaign.id,
             "stage": status_before.value,
@@ -335,7 +365,7 @@ class CoordinatorAgent:
         campaign_data: dict[str, Any],
     ) -> Campaign:
         """Run the Review/QA agent."""
-        campaign.advance_status(CampaignStatus.REVIEW)
+        self._transition(campaign, CampaignStatus.REVIEW)
         await self._persist_and_emit(campaign, "stage_started", {
             "campaign_id": campaign.id,
             "stage": "review",
@@ -387,7 +417,7 @@ class CoordinatorAgent:
     ) -> Campaign:
         """Automatically send review feedback back to the content creator
         to regenerate improved content."""
-        campaign.advance_status(CampaignStatus.CONTENT_REVISION)
+        self._transition(campaign, CampaignStatus.CONTENT_REVISION)
         await self._persist_and_emit(campaign, "stage_started", {
             "campaign_id": campaign.id,
             "stage": "content_revision",
@@ -450,7 +480,7 @@ class CoordinatorAgent:
         re-present for approval until all approved or campaign rejected.
         """
         for cycle in range(MAX_CONTENT_REVISION_CYCLES + 1):
-            campaign.advance_status(CampaignStatus.CONTENT_APPROVAL)
+            self._transition(campaign, CampaignStatus.CONTENT_APPROVAL)
             # Emit content for human review
             content_data = campaign.content.model_dump(mode="json") if campaign.content else {}
             await self._persist_and_emit(campaign, "content_approval_requested", {
@@ -471,7 +501,7 @@ class CoordinatorAgent:
 
             # Handle campaign-level rejection
             if human_response.reject_campaign:
-                campaign.advance_status(CampaignStatus.REJECTED)
+                self._transition(campaign, CampaignStatus.REJECTED)
                 await self._store.update(campaign)
                 # Signal the API handler that decisions have been persisted
                 self._resolve_approval_saved(campaign.id)
@@ -516,7 +546,7 @@ class CoordinatorAgent:
             )
 
             if all_approved:
-                campaign.advance_status(CampaignStatus.APPROVED)
+                self._transition(campaign, CampaignStatus.APPROVED)
                 await self._persist_and_emit(campaign, "content_approval_completed", {
                     "campaign_id": campaign.id,
                     "approved": True,
@@ -544,7 +574,7 @@ class CoordinatorAgent:
                 # Loop back to present for approval again
             else:
                 # Max cycles reached — approve remaining as-is
-                campaign.advance_status(CampaignStatus.APPROVED)
+                self._transition(campaign, CampaignStatus.APPROVED)
                 await self._persist_and_emit(campaign, "content_approval_completed", {
                     "campaign_id": campaign.id,
                     "approved": True,
@@ -654,7 +684,7 @@ class CoordinatorAgent:
         # Store questions on the campaign so the frontend can display them
         questions = clarification.get("questions", [])
         campaign.clarification_questions = questions
-        campaign.advance_status(CampaignStatus.CLARIFICATION)
+        self._transition(campaign, CampaignStatus.CLARIFICATION)
         await self._store.update(campaign)
 
         # If answers were already submitted (e.g. user returned after navigating

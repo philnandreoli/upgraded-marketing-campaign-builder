@@ -560,3 +560,59 @@ class TestCoordinatorClarificationResume:
                 answers={"q1": "Answer"},
             )
         )
+
+
+class TestTransitionValidation:
+    """Tests for the ALLOWED_TRANSITIONS map and _transition() helper."""
+
+    def test_valid_transition_succeeds(self, store):
+        """A transition listed in ALLOWED_TRANSITIONS should apply without warning."""
+        from backend.agents.coordinator_agent import ALLOWED_TRANSITIONS
+
+        coordinator = CoordinatorAgent(store=store)
+        campaign = Campaign(
+            brief=CampaignBrief(
+                product_or_service="Test",
+                goal="Test goal",
+                budget=1000,
+                currency="USD",
+                start_date="2026-01-01",
+                end_date="2026-03-31",
+            )
+        )
+        # DRAFT -> STRATEGY is a valid transition
+        assert CampaignStatus.STRATEGY in ALLOWED_TRANSITIONS[CampaignStatus.DRAFT]
+
+        import logging
+        with patch("backend.agents.coordinator_agent.logger") as mock_logger:
+            coordinator._transition(campaign, CampaignStatus.STRATEGY)
+
+        assert campaign.status == CampaignStatus.STRATEGY
+        mock_logger.warning.assert_not_called()
+
+    def test_invalid_transition_logs_warning_but_proceeds(self, store):
+        """An invalid transition should log a warning but still update the status."""
+        coordinator = CoordinatorAgent(store=store)
+        campaign = Campaign(
+            brief=CampaignBrief(
+                product_or_service="Test",
+                goal="Test goal",
+                budget=1000,
+                currency="USD",
+                start_date="2026-01-01",
+                end_date="2026-03-31",
+            )
+        )
+        # DRAFT -> APPROVED is NOT a valid transition
+        assert campaign.status == CampaignStatus.DRAFT
+
+        with patch("backend.agents.coordinator_agent.logger") as mock_logger:
+            coordinator._transition(campaign, CampaignStatus.APPROVED)
+
+        # Status is still updated despite being invalid
+        assert campaign.status == CampaignStatus.APPROVED
+        # Warning was logged
+        mock_logger.warning.assert_called_once()
+        args, _ = mock_logger.warning.call_args
+        assert args[1] == "draft"
+        assert args[2] == "approved"
