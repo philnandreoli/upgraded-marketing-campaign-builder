@@ -97,9 +97,17 @@ a:hover { color: var(--color-primary-hover); }
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.55rem 1.1rem; font-size: 0.875rem; font-weight: 500;
   border: none; border-radius: var(--radius); cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background 0.15s, opacity 0.15s, transform 0.15s, box-shadow 0.15s;
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
 .btn-primary { background: var(--color-accent-gradient); color: #fff; }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
 .btn-success { background: var(--color-success); color: #fff; }
@@ -354,7 +362,110 @@ a:hover { color: var(--color-primary-hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { width: 20px; height: 20px; border: 2px solid var(--color-border); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 0.5rem; }
 
-.detail-tab-content { padding-top: 1rem; }
+/* ------------------------------------------------------------------ */
+/* Motion & Micro-interactions                                         */
+/* ------------------------------------------------------------------ */
+
+/* Card entrance animation (scoped to dashboard campaign list) */
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.campaign-list .card {
+  animation: card-enter 0.3s ease-out both;
+}
+.campaign-list .card:nth-child(1)  { animation-delay: 0s; }
+.campaign-list .card:nth-child(2)  { animation-delay: 0.05s; }
+.campaign-list .card:nth-child(3)  { animation-delay: 0.1s; }
+.campaign-list .card:nth-child(4)  { animation-delay: 0.15s; }
+.campaign-list .card:nth-child(5)  { animation-delay: 0.2s; }
+.campaign-list .card:nth-child(6)  { animation-delay: 0.25s; }
+.campaign-list .card:nth-child(7)  { animation-delay: 0.3s; }
+.campaign-list .card:nth-child(8)  { animation-delay: 0.35s; }
+.campaign-list .card:nth-child(9)  { animation-delay: 0.4s; }
+.campaign-list .card:nth-child(n+10) { animation-delay: 0.45s; }
+
+/* Tab content fade-in + slide on tab switch */
+@keyframes tab-fade-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Status badge pulse on update */
+@keyframes badge-update {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+.badge-updated {
+  animation: badge-update 0.4s ease-out;
+}
+
+/* Sidebar active stage dot pulse */
+@keyframes dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(13,148,136,0.25); }
+  50%       { box-shadow: 0 0 0 5px rgba(13,148,136,0.4); }
+}
+.sidebar-stage-active .sidebar-stage-dot {
+  animation: dot-pulse 1.6s ease-in-out infinite;
+}
+
+/* Route / page fade-in */
+@keyframes page-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.app-main > * {
+  animation: page-fade-in 0.25s ease-out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Toast notifications                                                 */
+/* ------------------------------------------------------------------ */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 0.82rem;
+  color: var(--color-text);
+  max-width: 320px;
+  pointer-events: auto;
+  animation: toast-in 0.25s ease-out both;
+}
+.toast.toast-exiting {
+  animation: toast-out 0.2s ease-in both;
+}
+.toast-icon { font-size: 0.9rem; flex-shrink: 0; margin-top: 0.05rem; }
+.toast-body { flex: 1; min-width: 0; }
+.toast-stage { font-weight: 600; color: var(--color-primary-hover); }
+.toast-message { color: var(--color-text-muted); margin-top: 0.1rem; }
+
+/* ------------------------------------------------------------------ */
+
+.detail-tab-content { padding-top: 1rem; animation: tab-fade-in 0.2s ease-out; }
 
 /* ------------------------------------------------------------------ */
 /* View toggle (Focus / Split)                                         */
