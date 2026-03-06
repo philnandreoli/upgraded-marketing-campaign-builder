@@ -643,15 +643,12 @@ class TestTransitionValidation:
         # DRAFT -> STRATEGY is a valid transition
         assert CampaignStatus.STRATEGY in ALLOWED_TRANSITIONS[CampaignStatus.DRAFT]
 
-        import logging
-        with patch("backend.agents.coordinator_agent.logger") as mock_logger:
-            coordinator._transition(campaign, CampaignStatus.STRATEGY)
+        coordinator._transition(campaign, CampaignStatus.STRATEGY)
 
         assert campaign.status == CampaignStatus.STRATEGY
-        mock_logger.warning.assert_not_called()
 
-    def test_invalid_transition_logs_warning_but_proceeds(self, store):
-        """An invalid transition should log a warning but still update the status."""
+    def test_invalid_transition_raises_value_error(self, store):
+        """An invalid transition should raise ValueError and not modify the campaign status."""
         coordinator = CoordinatorAgent(store=store)
         campaign = Campaign(
             brief=CampaignBrief(
@@ -666,16 +663,93 @@ class TestTransitionValidation:
         # DRAFT -> APPROVED is NOT a valid transition
         assert campaign.status == CampaignStatus.DRAFT
 
-        with patch("backend.agents.coordinator_agent.logger") as mock_logger:
+        with pytest.raises(ValueError, match="Invalid transition draft -> approved"):
             coordinator._transition(campaign, CampaignStatus.APPROVED)
 
-        # Status is still updated despite being invalid
-        assert campaign.status == CampaignStatus.APPROVED
-        # Warning was logged
-        mock_logger.warning.assert_called_once()
-        args, _ = mock_logger.warning.call_args
-        assert args[1] == "draft"
-        assert args[2] == "approved"
+        # Status must NOT have changed
+        assert campaign.status == CampaignStatus.DRAFT
+
+
+class TestConcurrencyGuards:
+    """Tests that concurrent submit_clarification / submit_content_approval calls
+    do not crash due to race conditions on the check-then-set future sequences."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_clarification_submissions_do_not_crash(self, store):
+        """Two simultaneous submit_clarification calls must not raise InvalidStateError."""
+        coordinator = CoordinatorAgent(store=store)
+        campaign = Campaign(
+            brief=CampaignBrief(
+                product_or_service="Test",
+                goal="Test goal",
+                budget=1000,
+                currency="USD",
+                start_date="2026-01-01",
+                end_date="2026-03-31",
+            )
+        )
+        await store.update(campaign)
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[ClarificationResponse] = loop.create_future()
+        coordinator._pending_clarifications[campaign.id] = future
+
+        response = ClarificationResponse(campaign_id=campaign.id, answers={"q1": "A"})
+
+        # Fire two concurrent submissions; only one should win the race
+        await asyncio.gather(
+            coordinator.submit_clarification(response),
+            coordinator.submit_clarification(response),
+        )
+
+        # Future must be resolved exactly once — no InvalidStateError raised
+        assert future.done()
+        assert future.result() is response
+
+    @pytest.mark.asyncio
+    async def test_concurrent_content_approval_submissions_do_not_crash(self, store):
+        """Two simultaneous submit_content_approval calls must not raise InvalidStateError."""
+        coordinator = CoordinatorAgent(store=store)
+        campaign = Campaign(
+            brief=CampaignBrief(
+                product_or_service="Test",
+                goal="Test goal",
+                budget=1000,
+                currency="USD",
+                start_date="2026-01-01",
+                end_date="2026-03-31",
+            )
+        )
+        await store.update(campaign)
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[ContentApprovalResponse] = loop.create_future()
+        coordinator._pending_content_approvals[campaign.id] = future
+
+        response = ContentApprovalResponse(
+            campaign_id=campaign.id,
+            pieces=[ContentPieceApproval(piece_index=0, approved=True)],
+        )
+
+        # Fire two concurrent submissions; only one should win the race.
+        # The winner will await the save signal which will never arrive (no
+        # pipeline running), so we bound the wait with a short timeout.
+        async def _submit_with_timeout():
+            try:
+                await asyncio.wait_for(
+                    coordinator.submit_content_approval(response),
+                    timeout=0.5,
+                )
+            except asyncio.TimeoutError:
+                pass  # Expected: no pipeline to resolve the save signal
+
+        await asyncio.gather(
+            _submit_with_timeout(),
+            _submit_with_timeout(),
+        )
+
+        # Future must be resolved exactly once — no InvalidStateError raised
+        assert future.done()
 
 
 class TestDeclarativePipelineConditions:
