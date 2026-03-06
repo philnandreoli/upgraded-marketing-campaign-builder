@@ -674,3 +674,84 @@ class TestTransitionValidation:
         args, _ = mock_logger.warning.call_args
         assert args[1] == "draft"
         assert args[2] == "approved"
+
+
+class TestDeclarativePipelineConditions:
+    """Verify that StageDefinition conditions gate stages correctly."""
+
+    _BRIEF = CampaignBrief(
+        product_or_service="Test",
+        goal="Test goal",
+        budget=1000,
+        currency="USD",
+        start_date="2026-01-01",
+        end_date="2026-03-31",
+    )
+
+    def _get_stage(self, coordinator: CoordinatorAgent, name: str):
+        return next(s for s in coordinator._stages if s.name == name)
+
+    def test_stage_registry_has_all_seven_stages(self, store):
+        """Coordinator must register exactly the seven expected pipeline stages."""
+        coordinator = CoordinatorAgent(store=store)
+        names = [s.name for s in coordinator._stages]
+        assert names == [
+            "strategy",
+            "content",
+            "channel_planning",
+            "analytics",
+            "review",
+            "content_revision",
+            "content_approval",
+        ]
+
+    def test_content_revision_skipped_when_review_is_none(self, store):
+        """content_revision stage must not run when campaign.review is None."""
+        coordinator = CoordinatorAgent(store=store)
+        stage = self._get_stage(coordinator, "content_revision")
+        campaign = Campaign(brief=self._BRIEF)
+        campaign.review = None
+        campaign.content = MagicMock()
+        assert not stage.condition(campaign)
+
+    def test_content_revision_skipped_when_content_is_none(self, store):
+        """content_revision stage must not run when campaign.content is None."""
+        coordinator = CoordinatorAgent(store=store)
+        stage = self._get_stage(coordinator, "content_revision")
+        campaign = Campaign(brief=self._BRIEF)
+        campaign.review = MagicMock()
+        campaign.content = None
+        assert not stage.condition(campaign)
+
+    def test_content_revision_runs_when_both_present(self, store):
+        """content_revision stage must run when both review and content are set."""
+        coordinator = CoordinatorAgent(store=store)
+        stage = self._get_stage(coordinator, "content_revision")
+        campaign = Campaign(brief=self._BRIEF)
+        campaign.review = MagicMock()
+        campaign.content = MagicMock()
+        assert stage.condition(campaign)
+
+    def test_content_approval_skipped_when_content_is_none(self, store):
+        """content_approval stage must not run when campaign.content is None."""
+        coordinator = CoordinatorAgent(store=store)
+        stage = self._get_stage(coordinator, "content_approval")
+        campaign = Campaign(brief=self._BRIEF)
+        campaign.content = None
+        assert not stage.condition(campaign)
+
+    def test_content_approval_runs_when_content_present(self, store):
+        """content_approval stage must run when campaign.content is set."""
+        coordinator = CoordinatorAgent(store=store)
+        stage = self._get_stage(coordinator, "content_approval")
+        campaign = Campaign(brief=self._BRIEF)
+        campaign.content = MagicMock()
+        assert stage.condition(campaign)
+
+    def test_early_stages_have_no_condition_guard(self, store):
+        """Strategy, content, channel, analytics, and review always run (condition=True)."""
+        coordinator = CoordinatorAgent(store=store)
+        campaign = Campaign(brief=self._BRIEF)
+        for name in ("strategy", "content", "channel_planning", "analytics", "review"):
+            stage = self._get_stage(coordinator, name)
+            assert stage.condition(campaign), f"{name} stage condition should always be True"

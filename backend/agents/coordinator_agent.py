@@ -28,6 +28,7 @@ from backend.agents.content_creator_agent import ContentCreatorAgent
 from backend.agents.channel_planner_agent import ChannelPlannerAgent
 from backend.agents.analytics_agent import AnalyticsAgent
 from backend.agents.review_qa_agent import ReviewQAAgent
+from backend.agents.workflow_types import StageDefinition, StageExecutionResult, WorkflowAction
 from backend.models.campaign import (
     AnalyticsPlan,
     Campaign,
@@ -80,6 +81,10 @@ ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
 # will pick up the saved state on the next poll cycle.
 _APPROVAL_SAVE_TIMEOUT_SECONDS = 10
 
+# When True (default), _run_pipeline_stages uses the declarative StageDefinition
+# loop.  Flip to False to fall back to the hand-coded sequence without a deploy.
+_USE_DECLARATIVE_PIPELINE = True
+
 
 class CoordinatorAgent:
     """Orchestrates the marketing campaign pipeline."""
@@ -97,6 +102,26 @@ class CoordinatorAgent:
         self._channel = ChannelPlannerAgent()
         self._analytics = AnalyticsAgent()
         self._review = ReviewQAAgent()
+
+        # Declarative stage registry — ordered list of pipeline stages
+        self._stages: list[StageDefinition] = [
+            StageDefinition("strategy", CampaignStatus.STRATEGY, self._run_strategy_stage),
+            StageDefinition("content", CampaignStatus.CONTENT, self._run_content_stage),
+            StageDefinition("channel_planning", CampaignStatus.CHANNEL_PLANNING, self._run_channel_stage),
+            StageDefinition("analytics", CampaignStatus.ANALYTICS_SETUP, self._run_analytics_stage),
+            StageDefinition("review", CampaignStatus.REVIEW, self._run_review_stage),
+            StageDefinition(
+                "content_revision", CampaignStatus.CONTENT_REVISION,
+                self._run_content_revision_stage,
+                condition=lambda c: c.review is not None and c.content is not None,
+            ),
+            StageDefinition(
+                "content_approval", CampaignStatus.CONTENT_APPROVAL,
+                self._run_content_approval_stage,
+                condition=lambda c: c.content is not None,
+                terminal_on_failure=False,
+            ),
+        ]
 
         # Optional callback for pushing real-time events (WebSocket etc.)
         self._on_event = on_event
@@ -158,7 +183,31 @@ class CoordinatorAgent:
         campaign: Campaign,
         campaign_data: dict[str, Any],
     ) -> Campaign:
-        """Run Strategy -> Content -> Channel -> Analytics -> Review -> Content Revision -> Content Approval."""
+        """Iterate over registered StageDefinition objects: condition → handler → action.
+
+        Falls back to the hand-coded sequence when _USE_DECLARATIVE_PIPELINE is False.
+        """
+        if not _USE_DECLARATIVE_PIPELINE:
+            return await self._run_pipeline_stages_legacy(campaign, campaign_data)
+
+        for stage in self._stages:
+            if not stage.condition(campaign):
+                continue
+            result = await stage.handler(campaign, campaign_data)
+            campaign = result.campaign
+            campaign_data = campaign.model_dump(mode="json")
+            if result.action in (WorkflowAction.COMPLETE, WorkflowAction.WAIT):
+                return campaign
+            if result.action == WorkflowAction.FAIL and stage.terminal_on_failure:
+                return campaign
+        return campaign
+
+    async def _run_pipeline_stages_legacy(
+        self,
+        campaign: Campaign,
+        campaign_data: dict[str, Any],
+    ) -> Campaign:
+        """Hand-coded pipeline sequence. Used when _USE_DECLARATIVE_PIPELINE is False."""
         # 1 — Strategy
         campaign = await self._run_stage(
             agent=self._strategy,
@@ -227,6 +276,87 @@ class CoordinatorAgent:
             campaign = await self._content_approval_gate(campaign, campaign_data)
 
         return campaign
+
+    # ------------------------------------------------------------------
+    # Stage handlers (declarative pipeline)
+    # ------------------------------------------------------------------
+
+    async def _run_strategy_stage(
+        self, campaign: Campaign, campaign_data: dict[str, Any]
+    ) -> StageExecutionResult:
+        campaign = await self._run_stage(
+            agent=self._strategy,
+            campaign=campaign,
+            campaign_data=campaign_data,
+            status_before=CampaignStatus.STRATEGY,
+            result_key="strategy",
+            model_cls=CampaignStrategy,
+        )
+        action = WorkflowAction.FAIL if "strategy" in campaign.stage_errors else WorkflowAction.CONTINUE
+        return StageExecutionResult(action=action, campaign=campaign)
+
+    async def _run_content_stage(
+        self, campaign: Campaign, campaign_data: dict[str, Any]
+    ) -> StageExecutionResult:
+        campaign = await self._run_stage(
+            agent=self._content,
+            campaign=campaign,
+            campaign_data=campaign_data,
+            status_before=CampaignStatus.CONTENT,
+            result_key="content",
+            model_cls=CampaignContent,
+        )
+        action = WorkflowAction.FAIL if "content" in campaign.stage_errors else WorkflowAction.CONTINUE
+        return StageExecutionResult(action=action, campaign=campaign)
+
+    async def _run_channel_stage(
+        self, campaign: Campaign, campaign_data: dict[str, Any]
+    ) -> StageExecutionResult:
+        campaign = await self._run_stage(
+            agent=self._channel,
+            campaign=campaign,
+            campaign_data=campaign_data,
+            status_before=CampaignStatus.CHANNEL_PLANNING,
+            result_key="channel_plan",
+            model_cls=ChannelPlan,
+        )
+        action = WorkflowAction.FAIL if "channel_plan" in campaign.stage_errors else WorkflowAction.CONTINUE
+        return StageExecutionResult(action=action, campaign=campaign)
+
+    async def _run_analytics_stage(
+        self, campaign: Campaign, campaign_data: dict[str, Any]
+    ) -> StageExecutionResult:
+        campaign = await self._run_stage(
+            agent=self._analytics,
+            campaign=campaign,
+            campaign_data=campaign_data,
+            status_before=CampaignStatus.ANALYTICS_SETUP,
+            result_key="analytics_plan",
+            model_cls=AnalyticsPlan,
+        )
+        action = WorkflowAction.FAIL if "analytics_plan" in campaign.stage_errors else WorkflowAction.CONTINUE
+        return StageExecutionResult(action=action, campaign=campaign)
+
+    async def _run_review_stage(
+        self, campaign: Campaign, campaign_data: dict[str, Any]
+    ) -> StageExecutionResult:
+        campaign = await self._run_review(campaign, campaign_data)
+        action = WorkflowAction.FAIL if "review" in campaign.stage_errors else WorkflowAction.CONTINUE
+        return StageExecutionResult(action=action, campaign=campaign)
+
+    async def _run_content_revision_stage(
+        self, campaign: Campaign, campaign_data: dict[str, Any]
+    ) -> StageExecutionResult:
+        campaign = await self._run_content_revision(campaign, campaign_data)
+        # Content revision failures are non-terminal — always continue to approval
+        return StageExecutionResult(action=WorkflowAction.CONTINUE, campaign=campaign)
+
+    async def _run_content_approval_stage(
+        self, campaign: Campaign, campaign_data: dict[str, Any]
+    ) -> StageExecutionResult:
+        campaign = await self._content_approval_gate(campaign, campaign_data)
+        # Terminal stage — COMPLETE signals the loop to stop
+        return StageExecutionResult(action=WorkflowAction.COMPLETE, campaign=campaign)
 
     async def submit_clarification(self, response: ClarificationResponse) -> None:
         """Called by the API layer when the user answers clarifying questions."""
