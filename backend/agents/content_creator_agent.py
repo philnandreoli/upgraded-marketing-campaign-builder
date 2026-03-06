@@ -6,10 +6,13 @@ and email content aligned with the campaign strategy.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from backend.agents.base_agent import BaseAgent
-from backend.models.messages import AgentTask, AgentType
+from backend.models.messages import AgentResult, AgentTask, AgentType
+
+logger = logging.getLogger(__name__)
 
 
 class ContentCreatorAgent(BaseAgent):
@@ -343,3 +346,68 @@ Guidelines:
         )
 
         return "\n".join(parts)
+
+    async def revise(self, task: AgentTask, campaign_data: dict[str, Any]) -> AgentResult:
+        """Full content revision using review feedback.
+
+        Builds the revision prompt, calls the LLM, and returns a standard
+        AgentResult so callers never need to reach into agent internals.
+        """
+        messages = [
+            {"role": "system", "content": self.revision_system_prompt()},
+            {"role": "user", "content": self.build_revision_prompt(task, campaign_data)},
+        ]
+        try:
+            raw = await self._llm.chat_json(messages)
+            output = self.parse_response(raw, task)
+            return AgentResult(
+                task_id=task.task_id,
+                agent_type=self.agent_type,
+                campaign_id=task.campaign_id,
+                success=True,
+                output=output,
+            )
+        except Exception as exc:
+            logger.exception("Content revision failed for campaign %s: %s", task.campaign_id, exc)
+            return AgentResult(
+                task_id=task.task_id,
+                agent_type=self.agent_type,
+                campaign_id=task.campaign_id,
+                success=False,
+                error=str(exc),
+            )
+
+    async def revise_pieces(
+        self,
+        task: AgentTask,
+        campaign_data: dict[str, Any],
+        rejected_pieces: list[dict[str, Any]],
+    ) -> AgentResult:
+        """Re-revise only the specified rejected pieces.
+
+        Builds the piece-revision prompt, calls the LLM, and returns a standard
+        AgentResult so callers never need to reach into agent internals.
+        """
+        messages = [
+            {"role": "system", "content": self.revision_system_prompt()},
+            {"role": "user", "content": self.build_piece_revision_prompt(task, campaign_data, rejected_pieces)},
+        ]
+        try:
+            raw = await self._llm.chat_json(messages)
+            output = self.parse_response(raw, task)
+            return AgentResult(
+                task_id=task.task_id,
+                agent_type=self.agent_type,
+                campaign_id=task.campaign_id,
+                success=True,
+                output=output,
+            )
+        except Exception as exc:
+            logger.exception("Piece re-revision failed for campaign %s: %s", task.campaign_id, exc)
+            return AgentResult(
+                task_id=task.task_id,
+                agent_type=self.agent_type,
+                campaign_id=task.campaign_id,
+                success=False,
+                error=str(exc),
+            )
