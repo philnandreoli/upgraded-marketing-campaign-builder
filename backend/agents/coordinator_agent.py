@@ -574,12 +574,13 @@ class CoordinatorAgent:
                 campaign_data = campaign.model_dump(mode="json")
                 # Loop back to present for approval again
             else:
-                # Max cycles reached — approve remaining as-is
-                self._transition(campaign, CampaignStatus.APPROVED)
+                # Max cycles reached — escalate for manual review
+                self._transition(campaign, CampaignStatus.MANUAL_REVIEW_REQUIRED)
                 await self._persist_and_emit(campaign, "content_approval_completed", {
                     "campaign_id": campaign.id,
-                    "approved": True,
-                    "note": "Max revision cycles reached",
+                    "approved": False,
+                    "needs_manual_review": True,
+                    "note": "Max revision cycles reached — escalated for manual review",
                 })
                 return campaign
 
