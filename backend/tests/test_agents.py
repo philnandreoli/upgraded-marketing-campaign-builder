@@ -241,6 +241,85 @@ class TestContentCreatorAgent:
         assert result["pieces"][0]["content_type"] == "social_post"
         assert result["pieces"][0]["content"] == "Post copy"
 
+    def test_parse_response_merges_headline_cta_pairs(self, mock_llm):
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        raw = json.dumps({
+            "theme": "Unleash",
+            "tone_of_voice": "Bold",
+            "pieces": [
+                {"content_type": "headline", "channel": "email", "content": "Go Cloud Now", "variant": "A", "notes": "punchy"},
+                {"content_type": "cta", "channel": "email", "content": "Start Free Trial", "variant": "A", "notes": "urgency"},
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        assert len(result["pieces"]) == 1
+        piece = result["pieces"][0]
+        assert piece["content_type"] == "headline_cta"
+        assert "Go Cloud Now" in piece["content"]
+        assert "Start Free Trial" in piece["content"]
+        assert "\n---\n" in piece["content"]
+        assert "punchy" in piece["notes"]
+        assert "urgency" in piece["notes"]
+
+    def test_parse_response_merges_multiple_headline_cta_variants(self, mock_llm):
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        raw = json.dumps({
+            "theme": "Unleash",
+            "tone_of_voice": "Bold",
+            "pieces": [
+                {"content_type": "headline", "channel": "email", "content": "Headline A", "variant": "A", "notes": ""},
+                {"content_type": "cta", "channel": "email", "content": "CTA A", "variant": "A", "notes": ""},
+                {"content_type": "headline", "channel": "email", "content": "Headline B", "variant": "B", "notes": ""},
+                {"content_type": "cta", "channel": "email", "content": "CTA B", "variant": "B", "notes": ""},
+                {"content_type": "social_post", "channel": "social_media", "content": "Post copy", "variant": "A", "notes": ""},
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        headline_cta_pieces = [p for p in result["pieces"] if p["content_type"] == "headline_cta"]
+        assert len(headline_cta_pieces) == 2
+        variants = {p["variant"] for p in headline_cta_pieces}
+        assert variants == {"A", "B"}
+        social_pieces = [p for p in result["pieces"] if p["content_type"] == "social_post"]
+        assert len(social_pieces) == 1
+
+    def test_parse_response_leaves_standalone_headline_or_cta_unchanged(self, mock_llm):
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        # headline with no matching cta for same (channel, variant)
+        raw = json.dumps({
+            "theme": "T",
+            "tone_of_voice": "Bold",
+            "pieces": [
+                {"content_type": "headline", "channel": "email", "content": "Only a headline", "variant": "A", "notes": ""},
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        assert len(result["pieces"]) == 1
+        assert result["pieces"][0]["content_type"] == "headline"
+
+    def test_parse_response_passes_through_headline_cta_natively(self, mock_llm):
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        raw = json.dumps({
+            "theme": "T",
+            "tone_of_voice": "Bold",
+            "pieces": [
+                {
+                    "content_type": "headline_cta",
+                    "channel": "email",
+                    "content": "Go Cloud Now\n---\nStart Free Trial",
+                    "variant": "A",
+                    "notes": "combined",
+                },
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        assert len(result["pieces"]) == 1
+        assert result["pieces"][0]["content_type"] == "headline_cta"
+        assert result["pieces"][0]["content"] == "Go Cloud Now\n---\nStart Free Trial"
+
     @pytest.mark.asyncio
     async def test_run_success(self, mock_llm):
         mock_llm.chat_json = AsyncMock(return_value=json.dumps({

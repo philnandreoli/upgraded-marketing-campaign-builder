@@ -27,7 +27,7 @@ You MUST respond with a valid JSON object using exactly this schema:
   "tone_of_voice": "Description of tone (e.g. bold & playful, professional & trustworthy)",
   "pieces": [
     {
-      "content_type": "headline | body_copy | cta | social_post | email_subject | email_body | ad_copy | tagline",
+      "content_type": "headline_cta | body_copy | social_post | email_subject | email_body | ad_copy | tagline",
       "channel": "email | social_media | paid_ads | content_marketing | website",
       "content": "The actual copy text",
       "variant": "A",
@@ -37,10 +37,8 @@ You MUST respond with a valid JSON object using exactly this schema:
 }
 
 Guidelines:
-- Provide A/B variants for headlines and CTAs.
+- Headline & CTA: Combine a punchy, benefit-driven headline (under 10 words) with an action-oriented CTA that creates urgency, separated by a line containing only "---". Provide A/B variants.
 - Tailor tone and length to each channel.
-- Headlines: punchy, benefit-driven, under 10 words.
-- CTAs: action-oriented, create urgency.
 - Email subjects: curiosity-driven, under 50 characters.
 - Social posts: appropriate length per platform, include hashtag suggestions.
 - Ensure all content reinforces the key messages from the strategy.
@@ -111,8 +109,67 @@ Guidelines:
                 "notes": str(piece.get("notes", "")).strip(),
             })
 
-        data["pieces"] = cleaned_pieces
+        data["pieces"] = self._normalize_headline_cta(cleaned_pieces)
         return data
+
+    @staticmethod
+    def _normalize_headline_cta(pieces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Merge legacy headline+cta pairs (same channel & variant) into headline_cta.
+
+        If the LLM still returns separate ``headline`` and ``cta`` pieces that share
+        the same ``(channel, variant)`` key, combine them into a single piece with
+        ``content_type="headline_cta"`` and content formatted as
+        ``"<headline>\\n---\\n<cta>"``.  Standalone headline or cta pieces that
+        have no matching counterpart are left unchanged.
+        """
+        # Collect indices of headline/cta pieces keyed by (channel, variant)
+        headline_idx: dict[tuple[str, str], int] = {}
+        cta_idx: dict[tuple[str, str], int] = {}
+
+        for i, piece in enumerate(pieces):
+            key = (piece.get("channel", ""), piece.get("variant", "A"))
+            if piece["content_type"] == "headline":
+                headline_idx[key] = i
+            elif piece["content_type"] == "cta":
+                cta_idx[key] = i
+
+        merged_keys = set(headline_idx.keys()) & set(cta_idx.keys())
+        if not merged_keys:
+            return pieces
+
+        # Mark both headline and cta indices that will be merged so the loop can
+        # skip them uniformly, regardless of which comes first in the list.
+        skip_indices: set[int] = set()
+        merged_pieces: dict[tuple[str, str], dict[str, Any]] = {}
+        for key in merged_keys:
+            h_i = headline_idx[key]
+            c_i = cta_idx[key]
+            h = pieces[h_i]
+            c = pieces[c_i]
+            combined_notes = " | ".join(filter(None, [h.get("notes", ""), c.get("notes", "")]))
+            merged_pieces[key] = {
+                "content_type": "headline_cta",
+                "channel": h.get("channel", ""),
+                "content": f"{h['content']}\n---\n{c['content']}",
+                "variant": h.get("variant", "A"),
+                "notes": combined_notes,
+            }
+            # The merged piece will be inserted at the headline's position
+            skip_indices.add(c_i)
+
+        result: list[dict[str, Any]] = []
+        for i, piece in enumerate(pieces):
+            if i in skip_indices:
+                continue
+            key = (piece.get("channel", ""), piece.get("variant", "A"))
+            if piece["content_type"] == "headline" and key in merged_keys:
+                result.append(merged_pieces[key])
+            elif piece["content_type"] == "cta" and key in merged_keys:
+                result.append(merged_pieces[key])
+            else:
+                result.append(piece)
+
+        return result
 
     # ------------------------------------------------------------------
     # Revision support: Improve content based on review feedback
@@ -135,7 +192,7 @@ You MUST respond with a valid JSON object using exactly this schema:
   "tone_of_voice": "Description of tone (may be updated)",
   "pieces": [
     {
-      "content_type": "headline | body_copy | cta | social_post | email_subject | email_body | ad_copy | tagline",
+      "content_type": "headline_cta | body_copy | social_post | email_subject | email_body | ad_copy | tagline",
       "channel": "email | social_media | paid_ads | content_marketing | website",
       "content": "The IMPROVED copy text",
       "variant": "A",
@@ -147,7 +204,7 @@ You MUST respond with a valid JSON object using exactly this schema:
 Guidelines:
 - Address EVERY issue raised in the review.
 - Incorporate ALL suggestions where possible.
-- Maintain or improve A/B variants for headlines and CTAs.
+- Maintain or improve A/B variants for headline_cta pairs (headline and CTA separated by a line containing only "---").
 - Keep the same number of content pieces (or more) — do not drop any.
 - In the notes field for each piece, briefly describe what you improved.
 - Ensure all content reinforces the key messages from the strategy.

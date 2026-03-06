@@ -8,6 +8,18 @@ const PLATFORM_LABELS = {
   linkedin: "LinkedIn",
 };
 
+const CONTENT_TYPE_LABELS = {
+  headline_cta: "Headline & CTA",
+  headline: "Headline",
+  cta: "CTA",
+  social_post: "Social Post",
+  ad_copy: "Ad Copy",
+  tagline: "Tagline",
+  body_copy: "Body Copy",
+  email_subject: "Email Subject",
+  email_body: "Email Body",
+};
+
 // Stable no-op used as onChange for readOnly textareas to satisfy React's
 // controlled-component contract without recreating a function on every render.
 const noop = () => {};
@@ -214,7 +226,7 @@ export default function ContentSection({
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div className="piece-type">
-                      {piece.content_type}
+                      {CONTENT_TYPE_LABELS[piece.content_type] || piece.content_type}
                       {piece.variant && piece.variant !== "A" && (
                         <span style={{ marginLeft: "0.4rem", opacity: 0.7 }}>
                           (Variant {piece.variant})
@@ -242,6 +254,24 @@ export default function ContentSection({
                       onChange={isPending && !effectiveApproved ? (e) => setEdit(i, e.target.value) : noop}
                       readOnly={!isPending || effectiveApproved}
                     />
+                  ) : piece.content_type === "headline_cta" ? (
+                    (() => {
+                      const displayContent = piece.human_edited_content || piece.content;
+                      const parts = displayContent.split("\n---\n");
+                      const headlinePart = parts[0] || "";
+                      const ctaPart = parts[1] || "";
+                      return (
+                        <div className="piece-body piece-body-headline-cta">
+                          <div className="headline-cta-headline">{headlinePart}</div>
+                          {ctaPart && (
+                            <>
+                              <div className="headline-cta-divider" />
+                              <div className="headline-cta-cta">{ctaPart}</div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="piece-body">
                       {piece.human_edited_content || piece.content}

@@ -259,6 +259,10 @@ a:hover { color: var(--color-primary-hover); }
 .content-piece .piece-channel { font-size: 0.7rem; color: var(--color-text-dim); margin-bottom: 0.35rem; }
 .content-piece .piece-platform { font-size: 0.72rem; color: var(--color-text-muted); margin-bottom: 0.35rem; }
 .content-piece .piece-body { font-size: 0.85rem; white-space: pre-wrap; }
+.content-piece .piece-body-headline-cta { font-size: 0.85rem; }
+.content-piece .headline-cta-headline { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; }
+.content-piece .headline-cta-divider { border: none; border-top: 1px dashed var(--color-border); margin: 0.4rem 0; }
+.content-piece .headline-cta-cta { font-size: 0.85rem; color: var(--color-primary-hover); font-style: italic; }
 
 /* Channel bars */
 .channel-bar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
