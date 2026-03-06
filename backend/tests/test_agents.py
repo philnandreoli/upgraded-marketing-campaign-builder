@@ -413,6 +413,97 @@ class TestContentCreatorRevision:
         assert "Sync Without Limits" in prompt
         assert "Make it punchier" in prompt
 
+    async def test_revise_returns_agent_result_on_success(self, mock_llm):
+        revised_data = {
+            "theme": "Updated Theme",
+            "tone_of_voice": "Casual",
+            "pieces": [
+                {"content_type": "body_copy", "channel": "email", "content": "New copy", "variant": "A", "notes": ""},
+            ],
+        }
+        mock_llm.chat_json = AsyncMock(return_value=json.dumps(revised_data))
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "review": {
+                "approved": False,
+                "issues": ["Tone is too formal"],
+                "suggestions": ["Make it casual"],
+                "brand_consistency_score": 5.0,
+                "review_summary": "Needs work",
+            },
+        }
+        result = await agent.revise(task, data)
+        assert result.success is True
+        assert result.agent_type == AgentType.CONTENT_CREATOR
+        assert result.campaign_id == "c1"
+        assert "pieces" in result.output
+        assert result.output["pieces"][0]["content"] == "New copy"
+
+    async def test_revise_returns_failed_agent_result_on_llm_error(self, mock_llm):
+        mock_llm.chat_json = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        result = await agent.revise(task, SAMPLE_CAMPAIGN_DATA)
+        assert result.success is False
+        assert "LLM unavailable" in (result.error or "")
+
+    async def test_revise_calls_revision_prompts(self, mock_llm):
+        revised_data = {"theme": "T", "tone_of_voice": "Bold", "pieces": []}
+        mock_llm.chat_json = AsyncMock(return_value=json.dumps(revised_data))
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        await agent.revise(task, SAMPLE_CAMPAIGN_DATA)
+        # Verify the system message uses the revision system prompt
+        call_args = mock_llm.chat_json.call_args[0][0]
+        assert call_args[0]["role"] == "system"
+        assert "improve" in call_args[0]["content"].lower() or "revise" in call_args[0]["content"].lower()
+
+    async def test_revise_pieces_returns_agent_result_on_success(self, mock_llm):
+        revised_data = {
+            "theme": "T",
+            "tone_of_voice": "Bold",
+            "pieces": [
+                {"content_type": "headline", "channel": "email", "content": "Punchier Headline", "variant": "A", "notes": "Fixed"},
+            ],
+        }
+        mock_llm.chat_json = AsyncMock(return_value=json.dumps(revised_data))
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        rejected = [
+            {"content_type": "headline", "channel": "email", "content": "Old Headline", "variant": "A", "human_notes": "Too bland"},
+        ]
+        result = await agent.revise_pieces(task, SAMPLE_CAMPAIGN_DATA, rejected)
+        assert result.success is True
+        assert result.output["pieces"][0]["content"] == "Punchier Headline"
+
+    async def test_revise_pieces_returns_failed_agent_result_on_llm_error(self, mock_llm):
+        mock_llm.chat_json = AsyncMock(side_effect=ValueError("bad response"))
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        rejected = [
+            {"content_type": "body_copy", "channel": "email", "content": "Some text", "variant": "A", "human_notes": "Boring"},
+        ]
+        result = await agent.revise_pieces(task, SAMPLE_CAMPAIGN_DATA, rejected)
+        assert result.success is False
+        assert "bad response" in (result.error or "")
+
+    async def test_revise_pieces_calls_piece_revision_prompt(self, mock_llm):
+        revised_data = {"theme": "T", "tone_of_voice": "Bold", "pieces": []}
+        mock_llm.chat_json = AsyncMock(return_value=json.dumps(revised_data))
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        rejected = [
+            {"content_type": "headline", "channel": "email", "content": "Sync Without Limits", "variant": "A", "human_notes": "Make punchier"},
+        ]
+        await agent.revise_pieces(task, SAMPLE_CAMPAIGN_DATA, rejected)
+        # Verify the user message contains the rejected piece content
+        call_args = mock_llm.chat_json.call_args[0][0]
+        user_msg = call_args[1]["content"]
+        assert "Sync Without Limits" in user_msg
+        assert "Make punchier" in user_msg
+
 
 # ---- Channel Planner Agent ----
 

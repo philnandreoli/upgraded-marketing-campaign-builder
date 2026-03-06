@@ -416,16 +416,11 @@ class CoordinatorAgent:
             instruction="",
         )
 
-        # Use the revision prompt instead of the normal content prompt
-        revision_prompt = self._content.build_revision_prompt(task, campaign_data)
-        messages = [
-            {"role": "system", "content": self._content.revision_system_prompt()},
-            {"role": "user", "content": revision_prompt},
-        ]
-
         try:
-            raw = await self._content._llm.chat_json(messages)
-            result_data = self._content.parse_response(raw, task)
+            result = await self._content.revise(task, campaign_data)
+            if not result.success:
+                raise RuntimeError(result.error or "Content revision failed")
+            result_data = result.output
 
             # Set all pieces to pending approval
             for piece in result_data.get("pieces", []):
@@ -592,17 +587,11 @@ class CoordinatorAgent:
             instruction="",
         )
 
-        revision_prompt = self._content.build_piece_revision_prompt(
-            task, campaign_data, rejected_pieces,
-        )
-        messages = [
-            {"role": "system", "content": self._content.revision_system_prompt()},
-            {"role": "user", "content": revision_prompt},
-        ]
-
         try:
-            raw = await self._content._llm.chat_json(messages)
-            result_data = self._content.parse_response(raw, task)
+            result = await self._content.revise_pieces(task, campaign_data, rejected_pieces)
+            if not result.success:
+                raise RuntimeError(result.error or "Piece revision failed")
+            result_data = result.output
             revised_pieces = result_data.get("pieces", [])
 
             # Match revised pieces back to rejected ones and update in-place
