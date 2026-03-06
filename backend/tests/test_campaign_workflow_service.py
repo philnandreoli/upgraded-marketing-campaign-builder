@@ -264,3 +264,26 @@ class TestUpdatePieceNotes:
         assert result["campaign_id"] == campaign.id
         saved = await store.get(campaign.id)
         assert saved.content.pieces[0].human_notes == "Ship it!"
+
+
+# ---------------------------------------------------------------------------
+# resume_pipeline
+# ---------------------------------------------------------------------------
+
+class TestResumePipeline:
+    async def test_resume_pipeline_delegates_to_coordinator(
+        self, service, store, brief, builder_user, coordinator
+    ):
+        """resume_pipeline must call coordinator.resume_pipeline with the campaign id."""
+        coordinator.resume_pipeline = AsyncMock()
+        campaign = await store.create(brief, owner_id=builder_user.id)
+        await service.resume_pipeline(campaign.id)
+        coordinator.resume_pipeline.assert_awaited_once_with(campaign.id)
+
+    async def test_resume_pipeline_propagates_value_error(self, service, coordinator):
+        """ValueError from the coordinator must propagate to the caller."""
+        coordinator.resume_pipeline = AsyncMock(
+            side_effect=ValueError("Campaign abc not found")
+        )
+        with pytest.raises(ValueError, match="not found"):
+            await service.resume_pipeline("abc")

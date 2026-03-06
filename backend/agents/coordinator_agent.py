@@ -165,6 +165,52 @@ class CoordinatorAgent:
     # Public API
     # ------------------------------------------------------------------
 
+    async def resume_pipeline(self, campaign_id: str) -> Campaign:
+        """Resume a previously interrupted pipeline from its last checkpoint.
+
+        Loads the campaign from the store, checks for an existing checkpoint,
+        and resumes from where the pipeline was interrupted. Completed stages
+        are not re-run (idempotency checks via ``_should_run_stage``).
+
+        If no checkpoint exists the pipeline starts fresh via ``run_pipeline``.
+        """
+        campaign = await self._store.get(campaign_id)
+        if campaign is None:
+            raise ValueError(f"Campaign {campaign_id} not found")
+
+        checkpoint = await self._checkpoint_store.get_checkpoint(campaign_id)
+        if checkpoint is None:
+            logger.info("No checkpoint for %s, starting fresh", campaign_id)
+            return await self.run_pipeline(campaign)
+
+        logger.info(
+            "Resuming pipeline for campaign %s from checkpoint stage '%s'",
+            campaign_id,
+            checkpoint.current_stage,
+        )
+
+        await self._emit("pipeline_started", {"campaign_id": campaign.id})
+        campaign_data = campaign.model_dump(mode="json")
+
+        # Only run clarification if strategy hasn't been generated yet
+        if self._should_run_stage(campaign, "strategy"):
+            campaign = await self._run_clarification(campaign, campaign_data)
+            campaign_data = campaign.model_dump(mode="json")
+
+        # Run pipeline stages with idempotency checks to skip completed stages
+        campaign = await self._run_pipeline_stages(campaign, campaign_data, skip_completed=True)
+
+        logger.info(
+            "Pipeline finished for campaign %s — status: %s",
+            campaign.id,
+            campaign.status.value,
+        )
+        await self._emit("pipeline_completed", {
+            "campaign_id": campaign.id,
+            "status": campaign.status.value,
+        })
+        return campaign
+
     async def run_pipeline(self, campaign: Campaign) -> Campaign:
         """Run the full campaign pipeline end-to-end.
 
@@ -207,15 +253,27 @@ class CoordinatorAgent:
         self,
         campaign: Campaign,
         campaign_data: dict[str, Any],
+        skip_completed: bool = False,
     ) -> Campaign:
         """Iterate over registered StageDefinition objects: condition → handler → action.
 
         Falls back to the hand-coded sequence when _USE_DECLARATIVE_PIPELINE is False.
+
+        When *skip_completed* is ``True`` (resume mode) stages that already have
+        output are skipped via ``_should_run_stage`` idempotency checks before
+        the stage condition or handler is evaluated.
         """
         if not _USE_DECLARATIVE_PIPELINE:
             return await self._run_pipeline_stages_legacy(campaign, campaign_data)
 
         for stage in self._stages:
+            if skip_completed and not self._should_run_stage(campaign, stage.name):
+                logger.info(
+                    "Skipping completed stage '%s' for campaign %s",
+                    stage.name,
+                    campaign.id,
+                )
+                continue
             if not stage.condition(campaign):
                 continue
             result = await stage.handler(campaign, campaign_data)
@@ -459,6 +517,35 @@ class CoordinatorAgent:
         saved = self._content_approval_saved.get(campaign_id)
         if saved and not saved.done():
             saved.set_result(None)
+
+    def _should_run_stage(self, campaign: Campaign, stage_name: str) -> bool:
+        """Return ``True`` if *stage_name* still needs to run for *campaign*.
+
+        Used by ``resume_pipeline`` to skip stages that have already produced
+        output, providing idempotency guarantees when resuming after a server
+        restart.  Stages whose output field is ``None`` (or whose state
+        otherwise indicates the work is pending) return ``True``; finished
+        stages return ``False``.
+        """
+        if stage_name == "strategy":
+            return campaign.strategy is None
+        if stage_name == "content":
+            return campaign.content is None
+        if stage_name == "channel_planning":
+            return campaign.channel_plan is None
+        if stage_name == "analytics":
+            return campaign.analytics_plan is None
+        if stage_name == "review":
+            return campaign.review is None
+        if stage_name == "content_revision":
+            return campaign.content_revision_count == 0
+        if stage_name == "content_approval":
+            return campaign.status not in (
+                CampaignStatus.APPROVED,
+                CampaignStatus.REJECTED,
+                CampaignStatus.MANUAL_REVIEW_REQUIRED,
+            )
+        return True
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -1027,3 +1027,350 @@ class TestCoordinatorCheckpoints:
         assert resolution_checkpoints, (
             "Expected a checkpoint for content_approval resolution with wait_type=None"
         )
+
+
+# ---------------------------------------------------------------------------
+# Resume pipeline tests
+# ---------------------------------------------------------------------------
+
+class TestCoordinatorResume:
+    """Verify resume_pipeline idempotency and checkpoint-based recovery."""
+
+    @pytest.fixture
+    def brief(self):
+        return CampaignBrief(
+            product_or_service="CloudSync — cloud storage for teams",
+            goal="Increase enterprise signups by 30% in Q2",
+            budget=50000,
+            currency="USD",
+            start_date="2026-04-01",
+            end_date="2026-06-30",
+        )
+
+    @pytest.mark.asyncio
+    async def test_resume_with_existing_strategy_skips_strategy_stage(
+        self, store, brief, mock_on_event
+    ):
+        """A campaign with strategy already set must skip the strategy stage on resume.
+
+        Only content, channel, analytics, review, content_revision, and
+        content_approval should execute — strategy must not be re-run.
+        """
+        campaign = await store.create(brief)
+        from backend.models.campaign import CampaignStrategy, TargetAudience
+
+        # Pre-populate strategy so the stage should be skipped on resume
+        campaign.strategy = CampaignStrategy(
+            objectives=["Increase signups"],
+            target_audience=TargetAudience(
+                demographics="25-45",
+                psychographics="Productivity-focused",
+                pain_points=["Data silos"],
+                personas=["IT Manager Maria"],
+            ),
+            value_proposition="Seamless collaboration",
+            positioning="Enterprise-grade simplicity",
+            key_messages=["Work anywhere"],
+            competitive_landscape="Dropbox, Box",
+            constraints="$50K budget",
+        )
+        campaign.status = CampaignStatus.STRATEGY
+        await store.update(campaign)
+
+        checkpoint_store = _InMemoryCheckpointStore()
+        from datetime import datetime
+        checkpoint_store._checkpoints[campaign.id] = WorkflowCheckpoint(
+            campaign_id=campaign.id,
+            current_stage="strategy",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
+        llm_call_count = 0
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+
+            original_side_effect = [
+                CONTENT_RESPONSE,
+                CHANNEL_RESPONSE,
+                ANALYTICS_RESPONSE,
+                REVIEW_RESPONSE,
+                CONTENT_REVISION_RESPONSE,
+            ]
+
+            def count_and_return(messages, **kwargs):
+                nonlocal llm_call_count
+                llm_call_count += 1
+                return original_side_effect[llm_call_count - 1]
+
+            mock_llm.chat_json = AsyncMock(side_effect=original_side_effect)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+            )
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.resume_pipeline(campaign.id)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+
+        # Strategy was pre-populated and should not have been overwritten
+        assert result.strategy is not None
+        assert result.strategy.objectives == ["Increase signups"]
+
+        # All later stages must have run
+        assert result.content is not None
+        assert result.channel_plan is not None
+        assert result.analytics_plan is not None
+        assert result.review is not None
+
+        # Strategy LLM call must not have been made — only 5 calls (content,
+        # channel, analytics, review, content_revision)
+        assert mock_llm.chat_json.call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_resume_clarification_with_existing_answers(
+        self, store, mock_on_event
+    ):
+        """A campaign stuck in clarification with answers already present must
+        skip the clarification wait and continue to run all pipeline stages."""
+        clarification_brief = CampaignBrief(
+            product_or_service="TestProd",
+            goal="Test goal",
+            budget=1000,
+            currency="USD",
+            start_date="2026-01-01",
+            end_date="2026-03-31",
+        )
+        campaign = await store.create(clarification_brief)
+
+        # Simulate: pipeline paused at clarification, answers already submitted
+        campaign.status = CampaignStatus.CLARIFICATION
+        campaign.clarification_questions = [{"id": "q1", "text": "What is your target market?"}]
+        campaign.clarification_answers = {"q1": "Enterprise software companies"}
+        await store.update(campaign)
+
+        checkpoint_store = _InMemoryCheckpointStore()
+        from datetime import datetime
+        checkpoint_store._checkpoints[campaign.id] = WorkflowCheckpoint(
+            campaign_id=campaign.id,
+            current_stage="clarification",
+            wait_type=WorkflowWaitType.CLARIFICATION,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            # gather_clarifications + all 6 pipeline stages
+            mock_llm.chat_json = AsyncMock(side_effect=[
+                CLARIFICATION_RESPONSE,   # gather_clarifications (clarification already answered)
+                STRATEGY_RESPONSE,
+                CONTENT_RESPONSE,
+                CHANNEL_RESPONSE,
+                ANALYTICS_RESPONSE,
+                REVIEW_RESPONSE,
+                CONTENT_REVISION_RESPONSE,
+            ])
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+            )
+
+            async def _auto_approve():
+                await asyncio.sleep(0.4)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.resume_pipeline(campaign.id)
+            await approve_task
+
+        # Pipeline must complete successfully
+        assert result.status == CampaignStatus.APPROVED
+        assert result.strategy is not None
+        assert result.content is not None
+        assert result.channel_plan is not None
+        assert result.analytics_plan is not None
+        assert result.review is not None
+
+    @pytest.mark.asyncio
+    async def test_resume_with_no_checkpoint_starts_fresh(self, store, brief, mock_on_event):
+        """When no checkpoint exists, resume_pipeline must run a full fresh pipeline."""
+        campaign = await store.create(brief)
+
+        # No checkpoint saved for this campaign
+        checkpoint_store = _InMemoryCheckpointStore()
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+            )
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.resume_pipeline(campaign.id)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+        assert result.strategy is not None
+        assert result.content is not None
+        assert result.channel_plan is not None
+        assert result.analytics_plan is not None
+        assert result.review is not None
+
+    @pytest.mark.asyncio
+    async def test_resume_fully_completed_campaign_not_rerun(
+        self, store, brief, mock_on_event
+    ):
+        """A fully approved campaign must not trigger any agent stage on resume."""
+        from backend.models.campaign import (
+            CampaignStrategy,
+            CampaignContent,
+            ChannelPlan,
+            AnalyticsPlan,
+            ReviewFeedback,
+            TargetAudience,
+            ChannelType,
+        )
+        from backend.models.campaign import ContentPiece, ChannelRecommendation, KPI
+
+        campaign = await store.create(brief)
+
+        # Populate all stages as if the pipeline completed normally
+        campaign.strategy = CampaignStrategy(
+            objectives=["Increase signups"],
+            target_audience=TargetAudience(),
+            value_proposition="Seamless collaboration",
+            positioning="Enterprise-grade",
+            key_messages=["Work anywhere"],
+            competitive_landscape="Dropbox",
+            constraints="$50K",
+        )
+        campaign.content = CampaignContent(
+            theme="Unleash",
+            tone_of_voice="Professional",
+            pieces=[
+                ContentPiece(
+                    content_type="headline",
+                    channel="email",
+                    content="Sync Without Limits",
+                    approval_status=ContentApprovalStatus.APPROVED,
+                ),
+            ],
+        )
+        campaign.channel_plan = ChannelPlan(
+            total_budget=50000,
+            currency="USD",
+            recommendations=[
+                ChannelRecommendation(
+                    channel=ChannelType.EMAIL,
+                    rationale="High ROI",
+                    budget_pct=25,
+                    timing="Week 1-12",
+                    tactics=["Drip"],
+                ),
+            ],
+            timeline_summary="12-week plan",
+        )
+        campaign.analytics_plan = AnalyticsPlan(
+            kpis=[KPI(name="Signup Rate", target_value="5%")],
+            tracking_tools=["GA4"],
+            reporting_cadence="weekly",
+            attribution_model="multi-touch",
+            success_criteria="30% increase",
+        )
+        campaign.review = ReviewFeedback(
+            approved=True,
+            issues=[],
+            suggestions=[],
+            brand_consistency_score=9.0,
+        )
+        campaign.content_revision_count = 1
+        campaign.status = CampaignStatus.APPROVED
+        await store.update(campaign)
+
+        checkpoint_store = _InMemoryCheckpointStore()
+        from datetime import datetime
+        checkpoint_store._checkpoints[campaign.id] = WorkflowCheckpoint(
+            campaign_id=campaign.id,
+            current_stage="content_approval",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock()
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                checkpoint_store=checkpoint_store,
+            )
+
+            result = await coordinator.resume_pipeline(campaign.id)
+
+        # Campaign remains approved, no stages re-run
+        assert result.status == CampaignStatus.APPROVED
+
+        # No LLM calls should have been made
+        mock_llm.chat_json.assert_not_called()
+
+        # Original strategy is unchanged
+        assert result.strategy.objectives == ["Increase signups"]
+
+    @pytest.mark.asyncio
+    async def test_resume_raises_for_unknown_campaign(self, store):
+        """resume_pipeline must raise ValueError when the campaign does not exist."""
+        coordinator = CoordinatorAgent(store=store)
+        with pytest.raises(ValueError, match="not found"):
+            await coordinator.resume_pipeline("nonexistent-id")
