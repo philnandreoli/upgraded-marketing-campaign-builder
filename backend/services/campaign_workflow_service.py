@@ -8,9 +8,14 @@ with HTTP concerns, while business/workflow rules live here.
 from __future__ import annotations
 
 from backend.agents.coordinator_agent import CoordinatorAgent
-from backend.models.campaign import Campaign, CampaignBrief
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
+from backend.models.messages import ClarificationResponse
 from backend.models.user import User
 from backend.services.campaign_store import CampaignStore, get_campaign_store
+
+
+class WorkflowConflictError(Exception):
+    """Raised when a workflow action is not valid for the current campaign status."""
 
 
 class CampaignWorkflowService:
@@ -30,6 +35,20 @@ class CampaignWorkflowService:
         if campaign is None:
             raise ValueError(f"Campaign {campaign_id} not found")
         await self._coordinator.run_pipeline(campaign)
+
+    async def submit_clarification(
+        self, campaign_id: str, response: ClarificationResponse
+    ) -> None:
+        """Validate campaign status and forward clarification answers to the coordinator."""
+        campaign = await self._store.get(campaign_id)
+        if campaign is None:
+            raise ValueError(f"Campaign {campaign_id} not found")
+        if campaign.status != CampaignStatus.CLARIFICATION:
+            raise WorkflowConflictError(
+                f"Campaign is in '{campaign.status.value}', not 'clarification'"
+            )
+        response.campaign_id = campaign_id
+        await self._coordinator.submit_clarification(response)
 
 
 # ---------------------------------------------------------------------------

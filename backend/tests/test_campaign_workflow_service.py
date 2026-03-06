@@ -6,8 +6,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.models.campaign import CampaignBrief, CampaignStatus
+from backend.models.messages import ClarificationResponse
 from backend.models.user import User, UserRole
-from backend.services.campaign_workflow_service import CampaignWorkflowService, get_workflow_service
+from backend.services.campaign_workflow_service import CampaignWorkflowService, WorkflowConflictError, get_workflow_service
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
@@ -20,6 +21,7 @@ def store():
 def coordinator():
     mock = MagicMock()
     mock.run_pipeline = AsyncMock()
+    mock.submit_clarification = AsyncMock()
     return mock
 
 
@@ -88,6 +90,35 @@ class TestStartPipeline:
     async def test_start_pipeline_raises_for_unknown_campaign(self, service):
         with pytest.raises(ValueError, match="not found"):
             await service.start_pipeline("nonexistent-id")
+
+
+# ---------------------------------------------------------------------------
+# submit_clarification
+# ---------------------------------------------------------------------------
+
+class TestSubmitClarification:
+    async def test_raises_for_unknown_campaign(self, service):
+        response = ClarificationResponse(campaign_id="nonexistent-id", answers={"q1": "a"})
+        with pytest.raises(ValueError, match="not found"):
+            await service.submit_clarification("nonexistent-id", response)
+
+    async def test_raises_conflict_when_wrong_status(self, service, store, brief):
+        campaign = await store.create(brief, owner_id=None)
+        # Campaign starts in DRAFT status — not CLARIFICATION
+        response = ClarificationResponse(campaign_id=campaign.id, answers={"q1": "a"})
+        with pytest.raises(WorkflowConflictError, match="clarification"):
+            await service.submit_clarification(campaign.id, response)
+
+    async def test_calls_coordinator_when_status_is_clarification(self, service, store, brief, coordinator):
+        campaign = await store.create(brief, owner_id=None)
+        campaign.advance_status(CampaignStatus.CLARIFICATION)
+        store._campaigns[campaign.id] = campaign
+
+        response = ClarificationResponse(campaign_id=campaign.id, answers={"q1": "B2B"})
+        await service.submit_clarification(campaign.id, response)
+
+        coordinator.submit_clarification.assert_awaited_once_with(response)
+        assert response.campaign_id == campaign.id
 
 
 # ---------------------------------------------------------------------------
