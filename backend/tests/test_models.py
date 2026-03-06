@@ -437,3 +437,143 @@ class TestUserModel:
     def test_inactive_user(self):
         u = User(id="oid-000", is_active=False)
         assert u.is_active is False
+
+
+# ---- Event models ----
+
+from backend.models.events import (
+    ClarificationRequestedEvent,
+    ContentApprovalRequestedEvent,
+    StageCompletedEvent,
+    StageErrorEvent,
+    StageStartedEvent,
+    WorkflowEvent,
+)
+
+
+class TestWorkflowEventBase:
+    def test_defaults(self):
+        evt = WorkflowEvent(event_type="test_event", campaign_id="camp-1")
+        assert evt.event_type == "test_event"
+        assert evt.campaign_id == "camp-1"
+        assert evt.version == "1.0"
+        assert evt.payload == {}
+        assert evt.timestamp.tzinfo is not None
+
+    def test_serialises_to_dict(self):
+        evt = WorkflowEvent(event_type="test_event", campaign_id="camp-1")
+        data = evt.model_dump(mode="json")
+        assert data["event_type"] == "test_event"
+        assert data["campaign_id"] == "camp-1"
+        assert data["version"] == "1.0"
+        assert "timestamp" in data
+
+
+class TestStageStartedEvent:
+    def test_fields(self):
+        evt = StageStartedEvent(campaign_id="c1", stage="strategy")
+        assert evt.event_type == "stage_started"
+        assert evt.stage == "strategy"
+        assert evt.campaign_id == "c1"
+
+    def test_is_superset_of_legacy_payload(self):
+        """Serialised dict must contain all fields from the old untyped payload."""
+        evt = StageStartedEvent(campaign_id="c1", stage="strategy")
+        data = evt.model_dump(mode="json")
+        assert data["campaign_id"] == "c1"
+        assert data["stage"] == "strategy"
+
+
+class TestStageCompletedEvent:
+    def test_fields(self):
+        output = {"key": "value"}
+        evt = StageCompletedEvent(campaign_id="c2", stage="content", output=output)
+        assert evt.event_type == "stage_completed"
+        assert evt.stage == "content"
+        assert evt.output == output
+
+    def test_output_defaults_empty(self):
+        evt = StageCompletedEvent(campaign_id="c2", stage="content")
+        assert evt.output == {}
+
+    def test_is_superset_of_legacy_payload(self):
+        output = {"pieces": []}
+        evt = StageCompletedEvent(campaign_id="c2", stage="content", output=output)
+        data = evt.model_dump(mode="json")
+        assert data["campaign_id"] == "c2"
+        assert data["stage"] == "content"
+        assert data["output"] == output
+
+
+class TestStageErrorEvent:
+    def test_fields(self):
+        evt = StageErrorEvent(campaign_id="c3", stage="analytics_setup", error="LLM timeout")
+        assert evt.event_type == "stage_error"
+        assert evt.stage == "analytics_setup"
+        assert evt.error == "LLM timeout"
+
+    def test_is_superset_of_legacy_payload(self):
+        evt = StageErrorEvent(campaign_id="c3", stage="analytics_setup", error="oops")
+        data = evt.model_dump(mode="json")
+        assert data["campaign_id"] == "c3"
+        assert data["stage"] == "analytics_setup"
+        assert data["error"] == "oops"
+
+
+class TestClarificationRequestedEvent:
+    def test_fields(self):
+        questions = [{"id": "q1", "question": "Who is your audience?"}]
+        evt = ClarificationRequestedEvent(
+            campaign_id="c4",
+            questions=questions,
+            context_summary="Need more info",
+        )
+        assert evt.event_type == "clarification_requested"
+        assert evt.questions == questions
+        assert evt.context_summary == "Need more info"
+
+    def test_context_summary_defaults_empty(self):
+        evt = ClarificationRequestedEvent(campaign_id="c4", questions=[])
+        assert evt.context_summary == ""
+
+    def test_is_superset_of_legacy_payload(self):
+        questions = [{"id": "q1", "question": "Target?"}]
+        evt = ClarificationRequestedEvent(
+            campaign_id="c4",
+            questions=questions,
+            context_summary="summary",
+        )
+        data = evt.model_dump(mode="json")
+        assert data["campaign_id"] == "c4"
+        assert data["questions"] == questions
+        assert data["context_summary"] == "summary"
+
+
+class TestContentApprovalRequestedEvent:
+    def test_fields(self):
+        content = {"theme": "Test", "pieces": []}
+        evt = ContentApprovalRequestedEvent(
+            campaign_id="c5",
+            content=content,
+            revision_cycle=1,
+        )
+        assert evt.event_type == "content_approval_requested"
+        assert evt.content == content
+        assert evt.revision_cycle == 1
+
+    def test_defaults(self):
+        evt = ContentApprovalRequestedEvent(campaign_id="c5")
+        assert evt.content == {}
+        assert evt.revision_cycle == 0
+
+    def test_is_superset_of_legacy_payload(self):
+        content = {"pieces": []}
+        evt = ContentApprovalRequestedEvent(
+            campaign_id="c5",
+            content=content,
+            revision_cycle=2,
+        )
+        data = evt.model_dump(mode="json")
+        assert data["campaign_id"] == "c5"
+        assert data["content"] == content
+        assert data["revision_cycle"] == 2
