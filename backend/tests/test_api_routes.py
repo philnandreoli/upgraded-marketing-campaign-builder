@@ -39,7 +39,10 @@ def _isolated_store():
 
     # Mock _run_pipeline to be a no-op so BackgroundTasks doesn't trigger real LLM calls
     # Mock init_db/close_db so TestClient doesn't need a real database
+    # Reset _workflow_service singleton so each test gets a fresh one with the fresh store
     with patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store), \
+         patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
+         patch("backend.services.campaign_workflow_service._workflow_service", None), \
          patch("backend.api.campaigns._coordinator", None), \
          patch("backend.api.campaigns._run_pipeline", new_callable=AsyncMock), \
          patch("backend.main.init_db", new_callable=AsyncMock), \
