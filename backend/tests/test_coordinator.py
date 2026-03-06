@@ -307,20 +307,16 @@ class TestCoordinatorPipeline:
 
     @pytest.mark.asyncio
     async def test_pipeline_handles_stage_failure(self, store, brief, events_log, mock_on_event):
-        """If an agent fails, the pipeline should continue (graceful degradation)."""
+        """If strategy fails, the pipeline should stop — no downstream stages should run."""
         campaign = await store.create(brief)
 
         with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
-            # Clarification skipped, strategy succeeds, then all others fail
+            # Clarification skipped, strategy fails immediately
             mock_llm.chat_json = AsyncMock(
                 side_effect=[
                     CLARIFICATION_RESPONSE,
-                    STRATEGY_RESPONSE,
-                    Exception("Content LLM Error"),
-                    Exception("Channel LLM Error"),
-                    Exception("Analytics LLM Error"),
-                    Exception("Review LLM Error"),
+                    Exception("Strategy LLM Error"),
                 ]
             )
             mock_get_llm.return_value = mock_llm
@@ -328,16 +324,30 @@ class TestCoordinatorPipeline:
             coordinator = CoordinatorAgent(store=store, on_event=mock_on_event)
             result = await coordinator.run_pipeline(campaign)
 
-        # Strategy should be populated
-        assert result.strategy is not None
-        # Other sections should be None since agents failed
+        # Strategy failed — recorded in stage_errors
+        assert "strategy" in result.stage_errors
+
+        # Downstream stages must NOT have run (pipeline short-circuited)
+        assert result.strategy is None
         assert result.content is None
         assert result.channel_plan is None
         assert result.analytics_plan is None
 
-        # Stage errors emitted
+        # LLM called exactly twice: once for clarification, once for strategy
+        assert mock_llm.chat_json.call_count == 2
+
+        # Stage error event emitted, but no stage_started for content/channel/analytics/review
         event_names = [e["event"] for e in events_log]
         assert "stage_error" in event_names
+        stage_started_stages = [
+            e.get("stage")
+            for e in events_log
+            if e["event"] == "stage_started"
+        ]
+        assert "content" not in stage_started_stages
+        assert "channel_planning" not in stage_started_stages
+        assert "analytics_setup" not in stage_started_stages
+        assert "review" not in stage_started_stages
 
 
 class TestCoordinatorContentApproval:
