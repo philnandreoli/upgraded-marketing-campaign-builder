@@ -41,6 +41,13 @@ function formatBudget(amount, currency) {
   });
 }
 
+function getTabIcon(state, isPipelineRunning) {
+  if (state === "completed") return "✓";
+  if (state === "active") return isPipelineRunning ? "●" : "○";
+  if (state === "error") return "✕";
+  return "○"; // pending
+}
+
 export default function CampaignDetail() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState(null);
@@ -291,6 +298,7 @@ export default function CampaignDetail() {
             disabled={!isClickable}
             onClick={() => isClickable && setUserTab(stage.key)}
           >
+            <span className="pipeline-tab-icon" aria-hidden="true">{getTabIcon(state, isPipelineRunning)}</span>
             {stage.label}
           </button>
         );
@@ -299,6 +307,7 @@ export default function CampaignDetail() {
         className={`pipeline-tab completed${activeTab === "events" ? " selected" : ""}`}
         onClick={() => setUserTab("events")}
       >
+        <span className="pipeline-tab-icon" aria-hidden="true">✓</span>
         Event Log
       </button>
     </div>
