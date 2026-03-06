@@ -39,6 +39,6 @@ class StageDefinition:
 
     name: str
     status: CampaignStatus
-    handler: Callable[[Campaign, dict[str, Any]], Awaitable[Campaign]]
+    handler: Callable[[Campaign, dict[str, Any]], Awaitable[StageExecutionResult]]
     condition: Callable[[Campaign], bool] = field(default=lambda c: True)
     terminal_on_failure: bool = True
