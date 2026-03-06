@@ -115,6 +115,15 @@ class CampaignContent(BaseModel):
     pieces: list[ContentPiece] = Field(default_factory=list)
 
 
+class PlatformBreakdown(BaseModel):
+    """Per-platform budget sub-allocation for the social_media channel."""
+
+    platform: str = Field(description="Social media platform name (e.g. instagram, facebook, x, linkedin)")
+    budget_pct: float = Field(default=0.0, description="% of the social_media channel budget allocated to this platform")
+    tactics: list[str] = Field(default_factory=list)
+    timing: str = Field(default="", description="Platform-specific timing / cadence")
+
+
 class ChannelRecommendation(BaseModel):
     """A single channel recommendation."""
 
@@ -123,6 +132,10 @@ class ChannelRecommendation(BaseModel):
     budget_pct: float = Field(default=0.0, description="Recommended % of total budget")
     timing: str = Field(default="", description="Suggested schedule / cadence")
     tactics: list[str] = Field(default_factory=list)
+    platform_breakdown: Optional[list[PlatformBreakdown]] = Field(
+        default=None,
+        description="Per-platform budget breakdown for social_media channel (only populated when social_media platforms are specified)",
+    )
 
 
 class ChannelPlan(BaseModel):
