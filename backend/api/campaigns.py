@@ -31,7 +31,7 @@ from backend.models.messages import ClarificationResponse, ContentApprovalRespon
 from backend.models.user import CampaignMemberRole, User, UserRole, roles_to_db
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
-from backend.services.campaign_workflow_service import CampaignWorkflowService, get_workflow_service
+from backend.services.campaign_workflow_service import CampaignWorkflowService, WorkflowConflictError, get_workflow_service
 from backend.api.websocket import manager as ws_manager
 
 logger = logging.getLogger(__name__)
@@ -276,21 +276,15 @@ async def submit_clarification(
 ) -> dict[str, str]:
     """Submit answers to strategy clarification questions."""
     store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.WRITE, store)
 
-    if campaign.status != CampaignStatus.CLARIFICATION:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Campaign is not awaiting clarification (current status: {campaign.status.value})",
-        )
-
-    response.campaign_id = campaign_id
-
-    coordinator = _get_coordinator()
-    await coordinator.submit_clarification(response)
+    workflow = get_workflow_service(_get_coordinator())
+    try:
+        await workflow.submit_clarification(campaign_id, response)
+    except WorkflowConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Campaign not found")
 
     return {"message": "Clarification submitted", "campaign_id": campaign_id}
 
