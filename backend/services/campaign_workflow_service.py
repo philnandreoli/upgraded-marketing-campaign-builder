@@ -38,6 +38,10 @@ class CampaignWorkflowService:
             raise ValueError(f"Campaign {campaign_id} not found")
         await self._coordinator.run_pipeline(campaign)
 
+    async def resume_pipeline(self, campaign_id: str) -> None:
+        """Resume a previously interrupted pipeline from its last checkpoint."""
+        await self._coordinator.resume_pipeline(campaign_id)
+
     async def submit_clarification(
         self, campaign_id: str, response: ClarificationResponse
     ) -> None:
