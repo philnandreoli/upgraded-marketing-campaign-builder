@@ -31,6 +31,7 @@ from backend.models.messages import ClarificationResponse, ContentApprovalRespon
 from backend.models.user import CampaignMemberRole, User, UserRole, roles_to_db
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
+from backend.services.campaign_workflow_service import CampaignWorkflowService, get_workflow_service
 from backend.api.websocket import manager as ws_manager
 
 logger = logging.getLogger(__name__)
@@ -187,18 +188,13 @@ async def create_campaign(
 
     try:
         logger.info("Creating campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())
-        store = get_campaign_store()
-        campaign = await store.create(brief, owner_id=user.id if user else None)
+        coordinator = _get_coordinator()
+        service = get_workflow_service(coordinator)
+        campaign = await service.create_campaign(brief, user)
         logger.info("Campaign %s created successfully", campaign.id)
     except Exception as exc:
         logger.exception("Failed to create campaign: %s", exc)
         raise HTTPException(status_code=500, detail=f"Campaign creation failed: {exc}")
-
-    try:
-        coordinator = _get_coordinator()
-    except Exception as exc:
-        logger.exception("Failed to initialise coordinator: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Coordinator init failed: {exc}")
 
     # Run the pipeline in the background so the HTTP response returns immediately
     background_tasks.add_task(_run_pipeline, coordinator, campaign)

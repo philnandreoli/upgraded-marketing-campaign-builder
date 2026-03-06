@@ -71,6 +71,8 @@ def _as_user(user: User, store: InMemoryCampaignStore):
     app.dependency_overrides[get_current_user] = lambda: user
     try:
         with patch("backend.api.campaigns.get_campaign_store", return_value=store), \
+             patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=store), \
+             patch("backend.services.campaign_workflow_service._workflow_service", None), \
              patch("backend.api.campaigns._coordinator", None), \
              patch("backend.api.campaigns._run_pipeline", new_callable=AsyncMock), \
              patch("backend.main.init_db", new_callable=AsyncMock), \
