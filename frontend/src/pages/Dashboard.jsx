@@ -66,26 +66,28 @@ export default function Dashboard({ events }) {
         )}
       </div>
 
-      {campaigns.map((c) => (
-        <div key={c.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <Link to={`/campaign/${c.id}`} style={{ fontWeight: 600 }}>
-              {c.product_or_service}
-            </Link>
-            <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "0.2rem" }}>
-              {c.goal}
-            </p>
+      <div className="campaign-list">
+        {campaigns.map((c) => (
+          <div key={c.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <Link to={`/campaign/${c.id}`} style={{ fontWeight: 600 }}>
+                {c.product_or_service}
+              </Link>
+              <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "0.2rem" }}>
+                {c.goal}
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <span className={`badge badge-${c.status}`}>{c.status.replace(/_/g, " ")}</span>
+              {(isAdmin || (!isViewer && c.owner_id === user?.id)) && (
+                <button className="btn btn-outline" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }} onClick={() => handleDelete(c.id)}>
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span className={`badge badge-${c.status}`}>{c.status.replace(/_/g, " ")}</span>
-            {(isAdmin || (!isViewer && c.owner_id === user?.id)) && (
-              <button className="btn btn-outline" style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }} onClick={() => handleDelete(c.id)}>
-                Delete
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

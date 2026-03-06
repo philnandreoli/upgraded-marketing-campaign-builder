@@ -10,6 +10,7 @@ import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
 import EventLog from "../components/EventLog.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
+import Toast from "../components/Toast.jsx";
 import { useUser } from "../UserContext";
 
 const TERMINAL_STATES = ["approved", "rejected", "manual_review_required"];
@@ -39,8 +40,10 @@ export default function CampaignDetail() {
   const [viewMode, setViewMode] = useState(
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
+  const [badgePulse, setBadgePulse] = useState(false);
   const { events } = useWebSocket(id);
   const { isViewer, isAdmin, user } = useUser();
+  const prevStatusRef = useRef(null);
 
   // canManage: admins always can; campaign owners can too
   const canManage = isAdmin || (campaign?.owner_id != null && user?.id === campaign.owner_id);
@@ -82,6 +85,17 @@ export default function CampaignDetail() {
     if (status && TERMINAL_STATES.includes(status)) {
       clearInterval(pollRef.current);
     }
+  }, [status]);
+
+  // Pulse the status badge whenever the campaign status changes
+  useEffect(() => {
+    if (!status) return;
+    if (prevStatusRef.current !== null && prevStatusRef.current !== status) {
+      setBadgePulse(true);
+      const t = setTimeout(() => setBadgePulse(false), 400);
+      return () => clearTimeout(t);
+    }
+    prevStatusRef.current = status;
   }, [status]);
 
   // Derive stage states: completed / active / pending / error for each pipeline stage
@@ -281,6 +295,7 @@ export default function CampaignDetail() {
 
   return (
     <div>
+      <Toast events={events} />
       <nav className="breadcrumb">
         <Link to="/">Dashboard</Link>
         <span className="breadcrumb-divider">/</span>
@@ -320,6 +335,9 @@ export default function CampaignDetail() {
               👁 Read-only
             </span>
           )}
+          <span className={`badge badge-${campaign.status}${badgePulse ? " badge-updated" : ""}`}>
+            {campaign.status.replace(/_/g, " ")}
+          </span>
           <div className="view-toggle" role="group" aria-label="Layout view">
             <button
               className={`view-toggle-btn${viewMode === "focus" ? " active" : ""}`}
@@ -353,7 +371,7 @@ export default function CampaignDetail() {
               </div>
             )}
             {manualReviewBanner}
-            <div className="detail-tab-content">{renderTabContent()}</div>
+            <div key={activeTab} className="detail-tab-content">{renderTabContent()}</div>
           </div>
 
           {/* Sticky sidebar */}
@@ -422,7 +440,7 @@ export default function CampaignDetail() {
           )}
           {manualReviewBanner}
           {renderPipelineTabs()}
-          <div className="detail-tab-content">{renderTabContent()}</div>
+          <div key={activeTab} className="detail-tab-content">{renderTabContent()}</div>
         </>
       )}
     </div>
