@@ -306,6 +306,64 @@ class TestCoordinatorPipeline:
             assert piece.approval_status == ContentApprovalStatus.APPROVED
 
     @pytest.mark.asyncio
+    async def test_pipeline_max_revision_cycles_escalates_to_manual_review(
+        self, store, brief, events_log, mock_on_event
+    ):
+        """Reject a piece every round until MAX_CONTENT_REVISION_CYCLES is exhausted.
+
+        The coordinator must transition to MANUAL_REVIEW_REQUIRED instead of
+        auto-approving, and the emitted event must carry approved=False and
+        needs_manual_review=True.
+        """
+        from backend.agents.coordinator_agent import MAX_CONTENT_REVISION_CYCLES
+
+        campaign = await store.create(brief)
+
+        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            # Normal pipeline stages + one piece-revision response per approval cycle
+            responses = _stage_responses() + [PIECE_REVISION_RESPONSE] * MAX_CONTENT_REVISION_CYCLES
+            mock_llm.chat_json = AsyncMock(side_effect=responses)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event)
+
+            async def _always_reject():
+                # Keep rejecting piece 1 on every approval round until the pipeline ends
+                while True:
+                    await asyncio.sleep(0.3)
+                    try:
+                        await coordinator.submit_content_approval(
+                            ContentApprovalResponse(
+                                campaign_id=campaign.id,
+                                pieces=[
+                                    ContentPieceApproval(piece_index=0, approved=True),
+                                    ContentPieceApproval(piece_index=1, approved=False, notes="Still not good"),
+                                ],
+                                reject_campaign=False,
+                            )
+                        )
+                    except Exception:
+                        break
+
+            reject_task = asyncio.create_task(_always_reject())
+            result = await coordinator.run_pipeline(campaign)
+            reject_task.cancel()
+            try:
+                await reject_task
+            except asyncio.CancelledError:
+                pass
+
+        assert result.status == CampaignStatus.MANUAL_REVIEW_REQUIRED
+
+        # The emitted event must signal manual review, not approval
+        approval_events = [e for e in events_log if e["event"] == "content_approval_completed"]
+        assert approval_events, "content_approval_completed event must be emitted"
+        last_event = approval_events[-1]
+        assert last_event["approved"] is False
+        assert last_event.get("needs_manual_review") is True
+
+    @pytest.mark.asyncio
     async def test_pipeline_handles_stage_failure(self, store, brief, events_log, mock_on_event):
         """If strategy fails, the pipeline should stop — no downstream stages should run."""
         campaign = await store.create(brief)
