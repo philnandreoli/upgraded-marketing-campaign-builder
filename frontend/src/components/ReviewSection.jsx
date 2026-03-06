@@ -21,7 +21,7 @@ export default function ReviewSection({ data, _campaignId, status, error }) {
     );
   }
 
-  if (!data && status !== "approved" && status !== "rejected") {
+  if (!data && status === "review") {
     return (
       <div className="card">
         <h2>🔍 Review &amp; QA</h2>
