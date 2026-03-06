@@ -109,6 +109,32 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
 
+async def get_campaign_for_read(
+    campaign_id: str,
+    user: Optional[User] = Depends(get_current_user),
+) -> Campaign:
+    """FastAPI dependency: load a campaign and authorize READ access."""
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.READ, store)
+    return campaign
+
+
+async def get_campaign_for_write(
+    campaign_id: str,
+    user: Optional[User] = Depends(get_current_user),
+) -> Campaign:
+    """FastAPI dependency: load a campaign and authorize WRITE access."""
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.WRITE, store)
+    return campaign
+
+
 # ---------------------------------------------------------------------------
 # Member-management request / response models
 # ---------------------------------------------------------------------------
@@ -280,15 +306,9 @@ async def list_campaigns(
 
 @router.get("/campaigns/{campaign_id}")
 async def get_campaign(
-    campaign_id: str,
-    user: Optional[User] = Depends(get_current_user),
+    campaign: Campaign = Depends(get_campaign_for_read),
 ) -> dict[str, Any]:
     """Return the full campaign document."""
-    store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.READ, store)
     return campaign.model_dump(mode="json")
 
 
@@ -308,23 +328,19 @@ async def delete_campaign(
 
 @router.post("/campaigns/{campaign_id}/clarify", response_model=WorkflowActionResponse)
 async def submit_clarification(
-    campaign_id: str,
     response: ClarificationResponse,
-    user: Optional[User] = Depends(get_current_user),
+    campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Submit answers to strategy clarification questions."""
-    store = get_campaign_store()
-    await _authorize(campaign_id, user, Action.WRITE, store)
-
     workflow = get_workflow_service(_get_coordinator())
     try:
-        await workflow.submit_clarification(campaign_id, response)
+        await workflow.submit_clarification(campaign.id, response)
     except WorkflowConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except ValueError:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    return WorkflowActionResponse(message="Clarification submitted", campaign_id=campaign_id)
+    return WorkflowActionResponse(message="Clarification submitted", campaign_id=campaign.id)
 
 
 @router.post("/campaigns/{campaign_id}/review-clarify")
@@ -343,21 +359,17 @@ async def submit_review(campaign_id: str, response: HumanReviewResponse) -> dict
 
 @router.post("/campaigns/{campaign_id}/content-approve", response_model=WorkflowActionResponse)
 async def submit_content_approval(
-    campaign_id: str,
     response: ContentApprovalResponse,
-    user: Optional[User] = Depends(get_current_user),
+    campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Submit per-piece content approval decisions."""
-    store = get_campaign_store()
-    await _authorize(campaign_id, user, Action.WRITE, store)
-
     workflow = get_workflow_service(_get_coordinator())
     try:
-        await workflow.submit_content_approval(campaign_id, response)
+        await workflow.submit_content_approval(campaign.id, response)
     except ValueError:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    return WorkflowActionResponse(message="Content approval submitted", campaign_id=campaign_id)
+    return WorkflowActionResponse(message="Content approval submitted", campaign_id=campaign.id)
 
 
 class PieceDecisionRequest(BaseModel):
@@ -368,10 +380,9 @@ class PieceDecisionRequest(BaseModel):
 
 @router.patch("/campaigns/{campaign_id}/content/{piece_index}/decision", response_model=PieceDecisionResponse)
 async def update_piece_decision(
-    campaign_id: str,
     piece_index: int,
     body: PieceDecisionRequest,
-    user: Optional[User] = Depends(get_current_user),
+    campaign: Campaign = Depends(get_campaign_for_write),
 ) -> PieceDecisionResponse:
     """Immediately persist an approve/reject decision for a single content piece.
 
@@ -384,13 +395,10 @@ async def update_piece_decision(
     not in ``content_approval`` status, or if an attempt is made to reject an
     already-approved piece (approved content is immutable).
     """
-    store = get_campaign_store()
-    await _authorize(campaign_id, user, Action.WRITE, store)
-
     workflow = get_workflow_service(_get_coordinator())
     try:
         result = await workflow.update_piece_decision(
-            campaign_id, piece_index, body.approved, body.edited_content, body.notes
+            campaign.id, piece_index, body.approved, body.edited_content, body.notes
         )
         return PieceDecisionResponse(
             campaign_id=result["campaign_id"],
@@ -410,10 +418,9 @@ class UpdatePieceNotesRequest(BaseModel):
 
 @router.patch("/campaigns/{campaign_id}/content/{piece_index}/notes", response_model=PieceNotesResponse)
 async def update_piece_notes(
-    campaign_id: str,
     piece_index: int,
     body: UpdatePieceNotesRequest,
-    user: Optional[User] = Depends(get_current_user),
+    campaign: Campaign = Depends(get_campaign_for_write),
 ) -> PieceNotesResponse:
     """Update human_notes on an already-approved content piece.
 
@@ -421,12 +428,9 @@ async def update_piece_notes(
     changed via this endpoint.  Returns 404 if the campaign or piece does not
     exist and 409 if the piece has not yet been approved.
     """
-    store = get_campaign_store()
-    await _authorize(campaign_id, user, Action.WRITE, store)
-
     workflow = get_workflow_service(_get_coordinator())
     try:
-        result = await workflow.update_piece_notes(campaign_id, piece_index, body.notes)
+        result = await workflow.update_piece_notes(campaign.id, piece_index, body.notes)
         return PieceNotesResponse(
             campaign_id=result["campaign_id"],
             piece_index=result["piece_index"],
@@ -444,16 +448,11 @@ async def update_piece_notes(
 
 @router.get("/campaigns/{campaign_id}/members")
 async def list_campaign_members(
-    campaign_id: str,
-    user: Optional[User] = Depends(get_current_user),
+    campaign: Campaign = Depends(get_campaign_for_read),
 ) -> list[CampaignMemberResponse]:
     """List all members of a campaign. Requires READ access."""
     store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.READ, store)
-    members = await store.list_members(campaign_id)
+    members = await store.list_members(campaign.id)
     return [
         CampaignMemberResponse(
             campaign_id=m.campaign_id,
