@@ -7,9 +7,11 @@ with HTTP concerns, while business/workflow rules live here.
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 from backend.agents.coordinator_agent import CoordinatorAgent
-from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
-from backend.models.messages import ClarificationResponse
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
+from backend.models.messages import ClarificationResponse, ContentApprovalResponse
 from backend.models.user import User
 from backend.services.campaign_store import CampaignStore, get_campaign_store
 
@@ -49,6 +51,88 @@ class CampaignWorkflowService:
             )
         response.campaign_id = campaign_id
         await self._coordinator.submit_clarification(response)
+
+    async def submit_content_approval(
+        self, campaign_id: str, response: ContentApprovalResponse
+    ) -> None:
+        """Forward content approval decisions to the coordinator."""
+        campaign = await self._store.get(campaign_id)
+        if campaign is None:
+            raise ValueError(f"Campaign {campaign_id} not found")
+        response.campaign_id = campaign_id
+        await self._coordinator.submit_content_approval(response)
+
+    async def update_piece_decision(
+        self,
+        campaign_id: str,
+        piece_index: int,
+        approved: bool,
+        edited_content: Optional[str],
+        notes: str,
+    ) -> dict[str, Any]:
+        """Persist an approve/reject decision for a single content piece.
+
+        Raises ValueError if the campaign or piece does not exist, and
+        WorkflowConflictError if the campaign is not in content_approval status
+        or if an attempt is made to reject an already-approved piece.
+        """
+        campaign = await self._store.get(campaign_id)
+        if campaign is None:
+            raise ValueError(f"Campaign {campaign_id} not found")
+        if campaign.status != CampaignStatus.CONTENT_APPROVAL:
+            raise WorkflowConflictError("Campaign is not in content_approval status")
+        if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
+            raise ValueError("Content piece not found")
+
+        piece = campaign.content.pieces[piece_index]
+
+        # Approved pieces are immutable — cannot be un-approved via this endpoint.
+        if piece.approval_status == ContentApprovalStatus.APPROVED and not approved:
+            raise WorkflowConflictError("Cannot reject an already-approved piece")
+
+        if approved:
+            piece.approval_status = ContentApprovalStatus.APPROVED
+            if edited_content is not None:
+                piece.human_edited_content = edited_content
+            if notes:
+                piece.human_notes = notes
+        else:
+            piece.approval_status = ContentApprovalStatus.REJECTED
+            if edited_content is not None:
+                piece.human_edited_content = edited_content
+            piece.human_notes = notes
+
+        await self._store.update(campaign)
+
+        return {
+            "message": "Piece decision saved",
+            "campaign_id": campaign_id,
+            "piece_index": piece_index,
+            "approval_status": piece.approval_status,
+        }
+
+    async def update_piece_notes(
+        self, campaign_id: str, piece_index: int, notes: str
+    ) -> dict[str, Any]:
+        """Update human_notes on an already-approved content piece.
+
+        Raises ValueError if the campaign or piece does not exist, and
+        WorkflowConflictError if the piece has not yet been approved.
+        """
+        campaign = await self._store.get(campaign_id)
+        if campaign is None:
+            raise ValueError(f"Campaign {campaign_id} not found")
+        if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
+            raise ValueError("Content piece not found")
+
+        piece = campaign.content.pieces[piece_index]
+        if piece.approval_status != ContentApprovalStatus.APPROVED:
+            raise WorkflowConflictError("Notes can only be updated on approved content pieces")
+
+        piece.human_notes = notes
+        await self._store.update(campaign)
+
+        return {"message": "Notes updated", "campaign_id": campaign_id, "piece_index": piece_index}
 
 
 # ---------------------------------------------------------------------------

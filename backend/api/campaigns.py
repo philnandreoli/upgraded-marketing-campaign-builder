@@ -26,7 +26,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.agents.coordinator_agent import CoordinatorAgent
-from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
+from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
 from backend.models.user import CampaignMemberRole, User, UserRole, roles_to_db
 from backend.services.auth import get_current_user
@@ -311,15 +311,13 @@ async def submit_content_approval(
 ) -> dict[str, str]:
     """Submit per-piece content approval decisions."""
     store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.WRITE, store)
 
-    response.campaign_id = campaign_id
-
-    coordinator = _get_coordinator()
-    await coordinator.submit_content_approval(response)
+    workflow = get_workflow_service(_get_coordinator())
+    try:
+        await workflow.submit_content_approval(campaign_id, response)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Campaign not found")
 
     return {"message": "Content approval submitted", "campaign_id": campaign_id}
 
@@ -349,49 +347,17 @@ async def update_piece_decision(
     already-approved piece (approved content is immutable).
     """
     store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.WRITE, store)
 
-    if campaign.status != CampaignStatus.CONTENT_APPROVAL:
-        raise HTTPException(
-            status_code=409,
-            detail="Campaign is not in content_approval status",
+    workflow = get_workflow_service(_get_coordinator())
+    try:
+        return await workflow.update_piece_decision(
+            campaign_id, piece_index, body.approved, body.edited_content, body.notes
         )
-
-    if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
-        raise HTTPException(status_code=404, detail="Content piece not found")
-
-    piece = campaign.content.pieces[piece_index]
-
-    # Approved pieces are immutable — cannot be un-approved via this endpoint.
-    if piece.approval_status == ContentApprovalStatus.APPROVED and not body.approved:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot reject an already-approved piece",
-        )
-
-    if body.approved:
-        piece.approval_status = ContentApprovalStatus.APPROVED
-        if body.edited_content is not None:
-            piece.human_edited_content = body.edited_content
-        if body.notes:
-            piece.human_notes = body.notes
-    else:
-        piece.approval_status = ContentApprovalStatus.REJECTED
-        piece.human_notes = body.notes
-        if body.edited_content is not None:
-            piece.human_edited_content = body.edited_content
-
-    await store.update(campaign)
-
-    return {
-        "message": "Piece decision saved",
-        "campaign_id": campaign_id,
-        "piece_index": piece_index,
-        "approval_status": piece.approval_status,
-    }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except WorkflowConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 class UpdatePieceNotesRequest(BaseModel):
@@ -412,25 +378,15 @@ async def update_piece_notes(
     exist and 409 if the piece has not yet been approved.
     """
     store = get_campaign_store()
-    campaign = await store.get(campaign_id)
-    if campaign is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.WRITE, store)
 
-    if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
-        raise HTTPException(status_code=404, detail="Content piece not found")
-
-    piece = campaign.content.pieces[piece_index]
-    if piece.approval_status != ContentApprovalStatus.APPROVED:
-        raise HTTPException(
-            status_code=409,
-            detail="Notes can only be updated on approved content pieces",
-        )
-
-    piece.human_notes = body.notes
-    await store.update(campaign)
-
-    return {"message": "Notes updated", "campaign_id": campaign_id, "piece_index": piece_index}
+    workflow = get_workflow_service(_get_coordinator())
+    try:
+        return await workflow.update_piece_notes(campaign_id, piece_index, body.notes)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except WorkflowConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------
