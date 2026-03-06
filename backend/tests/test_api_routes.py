@@ -1182,3 +1182,117 @@ class TestCampaignMembers:
                 "role": "editor",
             })
         assert r.status_code == 201
+
+
+# ---- POST /api/campaigns/{id}/resume ----
+
+class TestResumeCampaign:
+    def test_resume_not_found_returns_404(self, client):
+        """Returns 404 when the campaign does not exist."""
+        r = client.post("/api/campaigns/nonexistent-id/resume")
+        assert r.status_code == 404
+
+    def test_resume_enqueues_background_task(self, authed_client, _isolated_store):
+        """Resume a valid campaign; expects 200 with the queued message."""
+        r = authed_client.post("/api/campaigns", json={
+            "product_or_service": "ResumeCo", "goal": "Test",
+        })
+        cid = r.json()["id"]
+
+        with patch("backend.api.campaigns.get_workflow_service") as mock_get_svc:
+            mock_svc = MagicMock()
+            mock_svc.resume_pipeline = AsyncMock()
+            mock_get_svc.return_value = mock_svc
+
+            r = authed_client.post(f"/api/campaigns/{cid}/resume")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["campaign_id"] == cid
+        assert "resume" in data["message"].lower()
+
+    def test_resume_viewer_returns_403(self, _isolated_store):
+        """A viewer cannot resume a campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="ViewCo", goal="Test"),
+            owner_id=_TEST_USER.id,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+
+        viewer = User(id="viewer-001", email="v@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
+        _isolated_store._members[(campaign.id, viewer.id)] = "viewer"
+
+        with _as_user(viewer) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/resume")
+        assert r.status_code == 403
+
+    def test_resume_other_user_returns_404(self, _isolated_store):
+        """A non-member user cannot resume another user's campaign (returns 404 to avoid leaking)."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Priv", goal="Test"),
+            owner_id=_TEST_USER.id,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+
+        with _as_user(_OTHER_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/resume")
+        assert r.status_code == 404
+
+
+# ---- POST /api/campaigns/{id}/retry ----
+
+class TestRetryCampaign:
+    def test_retry_not_found_returns_404(self, client):
+        """Returns 404 when the campaign does not exist."""
+        r = client.post("/api/campaigns/nonexistent-id/retry")
+        assert r.status_code == 404
+
+    def test_retry_enqueues_background_task(self, authed_client, _isolated_store):
+        """Retry a valid campaign; expects 200 with the queued message."""
+        r = authed_client.post("/api/campaigns", json={
+            "product_or_service": "RetryCo", "goal": "Test",
+        })
+        cid = r.json()["id"]
+
+        with patch("backend.api.campaigns.get_workflow_service") as mock_get_svc:
+            mock_svc = MagicMock()
+            mock_svc.retry_current_stage = AsyncMock()
+            mock_get_svc.return_value = mock_svc
+
+            r = authed_client.post(f"/api/campaigns/{cid}/retry")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["campaign_id"] == cid
+        assert "retry" in data["message"].lower()
+
+    def test_retry_viewer_returns_403(self, _isolated_store):
+        """A viewer cannot retry a campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="ViewCo", goal="Test"),
+            owner_id=_TEST_USER.id,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+
+        viewer = User(id="viewer-002", email="v2@example.com", display_name="Viewer2", roles=[UserRole.VIEWER])
+        _isolated_store._members[(campaign.id, viewer.id)] = "viewer"
+
+        with _as_user(viewer) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/retry")
+        assert r.status_code == 403
+
+    def test_retry_other_user_returns_404(self, _isolated_store):
+        """A non-member user cannot retry another user's campaign (returns 404 to avoid leaking)."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Priv", goal="Test"),
+            owner_id=_TEST_USER.id,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+
+        with _as_user(_OTHER_USER) as c:
+            r = c.post(f"/api/campaigns/{campaign.id}/retry")
+        assert r.status_code == 404

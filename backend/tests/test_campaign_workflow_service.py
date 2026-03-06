@@ -287,3 +287,35 @@ class TestResumePipeline:
         )
         with pytest.raises(ValueError, match="not found"):
             await service.resume_pipeline("abc")
+
+
+# ---------------------------------------------------------------------------
+# retry_current_stage
+# ---------------------------------------------------------------------------
+
+class TestRetryCurrentStage:
+    async def test_retry_delegates_to_coordinator(
+        self, service, store, brief, builder_user, coordinator
+    ):
+        """retry_current_stage must call coordinator.retry_current_stage with the campaign id."""
+        coordinator.retry_current_stage = AsyncMock()
+        campaign = await store.create(brief, owner_id=builder_user.id)
+        await service.retry_current_stage(campaign.id)
+        coordinator.retry_current_stage.assert_awaited_once_with(campaign.id)
+
+    async def test_retry_propagates_value_error(self, service, coordinator):
+        """ValueError from the coordinator must propagate to the caller."""
+        coordinator.retry_current_stage = AsyncMock(
+            side_effect=ValueError("Campaign abc not found")
+        )
+        with pytest.raises(ValueError, match="not found"):
+            await service.retry_current_stage("abc")
+
+    async def test_retry_propagates_workflow_conflict_error(self, service, coordinator):
+        """WorkflowConflictError from the coordinator must propagate to the caller."""
+        from backend.services.campaign_workflow_service import WorkflowConflictError
+        coordinator.retry_current_stage = AsyncMock(
+            side_effect=WorkflowConflictError("Stage 'strategy' has no recorded error")
+        )
+        with pytest.raises(WorkflowConflictError, match="no recorded error"):
+            await service.retry_current_stage("some-id")
