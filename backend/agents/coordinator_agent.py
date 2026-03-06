@@ -40,6 +40,13 @@ from backend.models.campaign import (
     ContentPiece,
     ReviewFeedback,
 )
+from backend.models.events import (
+    ClarificationRequestedEvent,
+    ContentApprovalRequestedEvent,
+    StageCompletedEvent,
+    StageErrorEvent,
+    StageStartedEvent,
+)
 from backend.models.messages import (
     AgentResult,
     AgentTask,
@@ -482,10 +489,10 @@ class CoordinatorAgent:
         plain ``model_cls.model_validate`` call.
         """
         self._transition(campaign, status_before)
-        await self._persist_and_emit(campaign, "stage_started", {
-            "campaign_id": campaign.id,
-            "stage": status_before.value,
-        })
+        await self._persist_and_emit(campaign, "stage_started", StageStartedEvent(
+            campaign_id=campaign.id,
+            stage=status_before.value,
+        ).model_dump(mode="json"))
 
         task = AgentTask(
             task_id=str(uuid.uuid4()),
@@ -504,11 +511,11 @@ class CoordinatorAgent:
                 result.error,
             )
             campaign.stage_errors[result_key] = result.error or "Unknown error"
-            await self._persist_and_emit(campaign, "stage_error", {
-                "campaign_id": campaign.id,
-                "stage": status_before.value,
-                "error": result.error,
-            })
+            await self._persist_and_emit(campaign, "stage_error", StageErrorEvent(
+                campaign_id=campaign.id,
+                stage=status_before.value,
+                error=result.error or "Unknown error",
+            ).model_dump(mode="json"))
             return campaign
 
         # Hydrate the model and attach to the campaign
@@ -520,11 +527,11 @@ class CoordinatorAgent:
             )
             model_instance = model_cls.model_validate(result.output)
         setattr(campaign, result_key, model_instance)
-        await self._persist_and_emit(campaign, "stage_completed", {
-            "campaign_id": campaign.id,
-            "stage": status_before.value,
-            "output": result.output,
-        })
+        await self._persist_and_emit(campaign, "stage_completed", StageCompletedEvent(
+            campaign_id=campaign.id,
+            stage=status_before.value,
+            output=result.output,
+        ).model_dump(mode="json"))
         return campaign
 
     # ------------------------------------------------------------------
@@ -539,10 +546,10 @@ class CoordinatorAgent:
         """Automatically send review feedback back to the content creator
         to regenerate improved content."""
         self._transition(campaign, CampaignStatus.CONTENT_REVISION)
-        await self._persist_and_emit(campaign, "stage_started", {
-            "campaign_id": campaign.id,
-            "stage": "content_revision",
-        })
+        await self._persist_and_emit(campaign, "stage_started", StageStartedEvent(
+            campaign_id=campaign.id,
+            stage="content_revision",
+        ).model_dump(mode="json"))
 
         # Save original content for comparison
         if campaign.original_content is None and campaign.content:
@@ -570,19 +577,19 @@ class CoordinatorAgent:
             revised_content = CampaignContent.model_validate(result_data)
             campaign.content = revised_content
             campaign.content_revision_count += 1
-            await self._persist_and_emit(campaign, "stage_completed", {
-                "campaign_id": campaign.id,
-                "stage": "content_revision",
-                "output": result_data,
-            })
+            await self._persist_and_emit(campaign, "stage_completed", StageCompletedEvent(
+                campaign_id=campaign.id,
+                stage="content_revision",
+                output=result_data,
+            ).model_dump(mode="json"))
         except Exception as exc:
             logger.exception("Content revision failed for campaign %s: %s", campaign.id, exc)
             campaign.stage_errors["content_revision"] = str(exc)
-            await self._persist_and_emit(campaign, "stage_error", {
-                "campaign_id": campaign.id,
-                "stage": "content_revision",
-                "error": str(exc),
-            })
+            await self._persist_and_emit(campaign, "stage_error", StageErrorEvent(
+                campaign_id=campaign.id,
+                stage="content_revision",
+                error=str(exc),
+            ).model_dump(mode="json"))
 
         return campaign
 
@@ -604,11 +611,11 @@ class CoordinatorAgent:
             self._transition(campaign, CampaignStatus.CONTENT_APPROVAL)
             # Emit content for human review
             content_data = campaign.content.model_dump(mode="json") if campaign.content else {}
-            await self._persist_and_emit(campaign, "content_approval_requested", {
-                "campaign_id": campaign.id,
-                "content": content_data,
-                "revision_cycle": cycle,
-            })
+            await self._persist_and_emit(campaign, "content_approval_requested", ContentApprovalRequestedEvent(
+                campaign_id=campaign.id,
+                content=content_data,
+                revision_cycle=cycle,
+            ).model_dump(mode="json"))
 
             # Wait for human response
             loop = asyncio.get_running_loop()
@@ -824,11 +831,11 @@ class CoordinatorAgent:
             return campaign
 
         # Populate typed question objects for the event payload
-        await self._emit("clarification_requested", {
-            "campaign_id": campaign.id,
-            "questions": questions,
-            "context_summary": clarification.get("context_summary", ""),
-        })
+        await self._emit("clarification_requested", ClarificationRequestedEvent(
+            campaign_id=campaign.id,
+            questions=questions,
+            context_summary=clarification.get("context_summary", ""),
+        ).model_dump(mode="json"))
 
         # Wait for user answers (same future pattern as content approval)
         loop = asyncio.get_running_loop()
