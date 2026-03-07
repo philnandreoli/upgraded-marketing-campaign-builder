@@ -217,6 +217,10 @@ class Campaign(BaseModel):
         default=None,
         description="Unique identifier of the user who created the campaign (JWT oid/sub).",
     )
+    workspace_id: Optional[str] = Field(
+        default=None,
+        description="Workspace this campaign belongs to (FK to workspaces.id). None means unassigned.",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     status: CampaignStatus = CampaignStatus.DRAFT
