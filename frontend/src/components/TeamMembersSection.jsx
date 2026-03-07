@@ -389,16 +389,32 @@ export function TeamMembersCompact({ campaignId, canManage }) {
           {members.map((m) => (
             <li key={m.user_id} className="sidebar-team-member">
               <span className="sidebar-team-name">{getUserLabel(m.user_id)}</span>
-              <span
-                className="badge"
-                style={{
-                  background: m.role === "owner" ? "rgba(99,102,241,0.15)" : "rgba(148,163,184,0.12)",
-                  color: m.role === "owner" ? "var(--color-primary-hover)" : "var(--color-text-dim)",
-                  fontSize: "0.65rem",
-                  padding: "0.12rem 0.45rem",
-                }}
-              >
-                {m.role}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", flexWrap: "wrap" }}>
+                <span
+                  className="badge"
+                  style={{
+                    background: m.role === "owner" ? "rgba(99,102,241,0.15)" : "rgba(148,163,184,0.12)",
+                    color: m.role === "owner" ? "var(--color-primary-hover)" : "var(--color-text-dim)",
+                    fontSize: "0.65rem",
+                    padding: "0.12rem 0.45rem",
+                  }}
+                >
+                  {m.role}
+                </span>
+                {m.via_workspace && (
+                  <span
+                    className="badge"
+                    title={`Access via workspace: ${m.workspace_name ?? "workspace"}`}
+                    style={{
+                      background: "rgba(16,185,129,0.12)",
+                      color: "var(--color-success, #10b981)",
+                      fontSize: "0.6rem",
+                      padding: "0.1rem 0.35rem",
+                    }}
+                  >
+                    via {m.workspace_name ?? "workspace"}
+                  </span>
+                )}
               </span>
             </li>
           ))}
@@ -535,7 +551,7 @@ export default function TeamMembersSection({ campaignId, canManage }) {
                     {getUserEmail(m.user_id) ?? "—"}
                   </td>
                   <td style={{ padding: "0.6rem 0.75rem" }}>
-                    {canManage && m.role !== "owner" ? (
+                    {canManage && m.role !== "owner" && !m.via_workspace ? (
                       <MemberRoleSelect
                         campaignId={campaignId}
                         userId={m.user_id}
@@ -543,15 +559,31 @@ export default function TeamMembersSection({ campaignId, canManage }) {
                         onUpdated={handleRoleUpdated}
                       />
                     ) : (
-                      <span
-                        className="badge"
-                        style={{
-                          background: m.role === "owner" ? "rgba(99,102,241,0.15)" : "rgba(148,163,184,0.15)",
-                          color: m.role === "owner" ? "var(--color-primary-hover)" : "var(--color-text-muted)",
-                          fontSize: "0.75rem",
-                        }}
-                      >
-                        {m.role}
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                        <span
+                          className="badge"
+                          style={{
+                            background: m.role === "owner" ? "rgba(99,102,241,0.15)" : "rgba(148,163,184,0.15)",
+                            color: m.role === "owner" ? "var(--color-primary-hover)" : "var(--color-text-muted)",
+                            fontSize: "0.75rem",
+                          }}
+                        >
+                          {m.role}
+                        </span>
+                        {m.via_workspace && (
+                          <span
+                            className="badge"
+                            title={`Access via workspace: ${m.workspace_name ?? "workspace"}`}
+                            style={{
+                              background: "rgba(16,185,129,0.12)",
+                              color: "var(--color-success, #10b981)",
+                              fontSize: "0.68rem",
+                              padding: "0.1rem 0.4rem",
+                            }}
+                          >
+                            via {m.workspace_name ?? "workspace"}
+                          </span>
+                        )}
                       </span>
                     )}
                   </td>
