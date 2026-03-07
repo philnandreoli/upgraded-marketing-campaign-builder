@@ -32,6 +32,31 @@ class Base(DeclarativeBase):
     pass
 
 
+class WorkspaceRow(Base):
+    """A workspace that groups campaigns and members together."""
+
+    __tablename__ = "workspaces"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    owner_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    is_personal = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+
+class WorkspaceMemberRow(Base):
+    """Join table: associates users with workspaces and records a per-workspace role."""
+
+    __tablename__ = "workspace_members"
+
+    workspace_id = Column(String, ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role = Column(String, nullable=False)
+    added_at = Column(DateTime, nullable=False)
+
+
 class CampaignRow(Base):
     """Single-table design: indexed id/status + full document in JSONB."""
 
@@ -43,6 +68,7 @@ class CampaignRow(Base):
     data = Column(Text, nullable=False)  # JSON text of the full Campaign
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+    workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True, index=True)
 
 
 class UserRow(Base):
