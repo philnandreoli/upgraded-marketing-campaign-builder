@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from backend.models.campaign import Campaign
@@ -24,6 +24,7 @@ from backend.models.messages import ClarificationResponse, ContentApprovalRespon
 from backend.models.user import User
 from backend.services.auth import get_current_user
 from backend.services.campaign_workflow_service import WorkflowConflictError
+from backend.services.workflow_executor import get_executor, WorkflowJob
 
 # Access shared state through the campaigns module so that test patches on
 # backend.api.campaigns.* continue to work without modification.
@@ -47,7 +48,7 @@ async def submit_clarification(
     campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Submit answers to strategy clarification questions."""
-    workflow = _cam.get_workflow_service(_cam._get_coordinator())
+    workflow = _cam.get_workflow_service()
     try:
         await workflow.submit_clarification(campaign.id, response)
     except WorkflowConflictError as exc:
@@ -78,7 +79,7 @@ async def submit_content_approval(
     campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Submit per-piece content approval decisions."""
-    workflow = _cam.get_workflow_service(_cam._get_coordinator())
+    workflow = _cam.get_workflow_service()
     try:
         await workflow.submit_content_approval(campaign.id, response)
     except ValueError:
@@ -104,7 +105,7 @@ async def update_piece_decision(
     not in ``content_approval`` status, or if an attempt is made to reject an
     already-approved piece (approved content is immutable).
     """
-    workflow = _cam.get_workflow_service(_cam._get_coordinator())
+    workflow = _cam.get_workflow_service()
     try:
         result = await workflow.update_piece_decision(
             campaign.id, piece_index, body.approved, body.edited_content, body.notes
@@ -133,7 +134,7 @@ async def update_piece_notes(
     changed via this endpoint.  Returns 404 if the campaign or piece does not
     exist and 409 if the piece has not yet been approved.
     """
-    workflow = _cam.get_workflow_service(_cam._get_coordinator())
+    workflow = _cam.get_workflow_service()
     try:
         result = await workflow.update_piece_notes(campaign.id, piece_index, body.notes)
         return PieceNotesResponse(
@@ -150,22 +151,18 @@ async def update_piece_notes(
 @router.post("/campaigns/{campaign_id}/resume", response_model=WorkflowActionResponse)
 async def resume_campaign(
     campaign_id: str,
-    background_tasks: BackgroundTasks,
     campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Resume a pipeline that was interrupted (server restart, timeout, etc.)."""
-    workflow = _cam.get_workflow_service(_cam._get_coordinator())
-    background_tasks.add_task(workflow.resume_pipeline, campaign.id)
+    await get_executor().dispatch(WorkflowJob(campaign_id=campaign.id, action="resume_pipeline"))
     return WorkflowActionResponse(message="Pipeline resume initiated", campaign_id=campaign.id)
 
 
 @router.post("/campaigns/{campaign_id}/retry", response_model=WorkflowActionResponse)
 async def retry_campaign(
     campaign_id: str,
-    background_tasks: BackgroundTasks,
     campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Retry the current failed stage of a campaign."""
-    workflow = _cam.get_workflow_service(_cam._get_coordinator())
-    background_tasks.add_task(workflow.retry_current_stage, campaign.id)
+    await get_executor().dispatch(WorkflowJob(campaign_id=campaign.id, action="retry_stage"))
     return WorkflowActionResponse(message="Stage retry initiated", campaign_id=campaign.id)
