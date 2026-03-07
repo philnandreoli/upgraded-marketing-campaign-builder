@@ -13,6 +13,24 @@ services:
       timeout: 5s
       retries: 3
 
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Containerfile
+    command: ["python", "-m", "backend.worker"]
+    env_file:
+      - .env
+    environment:
+      WORKFLOW_EXECUTOR: azure_service_bus
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   frontend:
     build:
       context: frontend
