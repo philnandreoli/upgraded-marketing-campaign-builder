@@ -139,6 +139,28 @@ class ServiceBusSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class WorkerSettings(BaseSettings):
+    """Settings for the standalone worker process (backend/worker.py)."""
+
+    max_concurrency: int = Field(
+        default=3,
+        alias="WORKER_MAX_CONCURRENCY",
+        description="Maximum number of simultaneous pipeline executions.",
+    )
+    shutdown_timeout_seconds: int = Field(
+        default=300,
+        alias="WORKER_SHUTDOWN_TIMEOUT_SECONDS",
+        description="Seconds to wait for active jobs to finish during graceful shutdown.",
+    )
+    health_port: int = Field(
+        default=8001,
+        alias="WORKER_HEALTH_PORT",
+        description="TCP port for the worker health HTTP endpoint (GET /health/live, /health/ready).",
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class Settings(BaseSettings):
     """Aggregate settings — single entry-point for the whole app."""
 
@@ -149,6 +171,7 @@ class Settings(BaseSettings):
     foundry_agents: FoundryAgentsSettings = FoundryAgentsSettings()
     oidc: OIDCSettings = OIDCSettings()
     service_bus: ServiceBusSettings = ServiceBusSettings()
+    worker: WorkerSettings = WorkerSettings()
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
