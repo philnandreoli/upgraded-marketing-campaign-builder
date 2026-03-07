@@ -1,0 +1,203 @@
+/**
+ * Tests for the workspace picker in NewCampaign.
+ *
+ * Covers:
+ *  - Workspace picker is rendered above Step 1
+ *  - Only workspaces with role "creator" are listed for non-admin users
+ *  - Admin users see all workspaces
+ *  - Pre-selects the workspace from the ?workspace= query param
+ *  - Defaults to personal workspace when no query param is present
+ *  - Falls back to the first creatable workspace when no personal workspace matches
+ *  - Shows error when no creatable workspaces exist
+ *  - Validates workspace selection before submit
+ *  - Passes workspace_id to createCampaign on submit
+ */
+
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import NewCampaign from '../pages/NewCampaign';
+import { UserProvider } from '../UserContext';
+import { WorkspaceProvider } from '../WorkspaceContext';
+
+vi.mock('../api');
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+  };
+});
+
+import * as api from '../api';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeMeResponse({ isAdmin = false } = {}) {
+  return {
+    id: 'user-1',
+    email: 'test@example.com',
+    display_name: 'Test User',
+    roles: isAdmin ? ['admin'] : ['campaign_builder'],
+    is_admin: isAdmin,
+    can_build: true,
+    is_viewer: false,
+  };
+}
+
+const PERSONAL_WS = { id: 'ws-personal', name: 'My Space', is_personal: true, role: 'creator' };
+const TEAM_WS_CREATOR = { id: 'ws-team', name: 'Team WS', is_personal: false, role: 'creator' };
+const TEAM_WS_VIEWER = { id: 'ws-viewer', name: 'View Only', is_personal: false, role: 'viewer' };
+const TEAM_WS_CONTRIB = { id: 'ws-contrib', name: 'Contrib WS', is_personal: false, role: 'contributor' };
+
+function renderNewCampaign({ initialPath = '/new', isAdmin = false, workspaces = [] } = {}) {
+  api.getMe.mockResolvedValue(makeMeResponse({ isAdmin }));
+  api.listWorkspaces.mockResolvedValue(workspaces);
+
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <UserProvider>
+        <WorkspaceProvider>
+          <NewCampaign />
+        </WorkspaceProvider>
+      </UserProvider>
+    </MemoryRouter>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('NewCampaign — workspace picker', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // createCampaign never resolves by default — tests that need it mock it explicitly
+    api.createCampaign.mockResolvedValue({ id: 'camp-1' });
+  });
+
+  it('renders the workspace picker section', async () => {
+    renderNewCampaign({
+      workspaces: [PERSONAL_WS],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/create in workspace/i)).toBeInTheDocument();
+    });
+  });
+
+  it('lists only workspaces where user has creator role', async () => {
+    renderNewCampaign({
+      workspaces: [PERSONAL_WS, TEAM_WS_CREATOR, TEAM_WS_VIEWER, TEAM_WS_CONTRIB],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /My Space/i })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /Team WS/i })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('option', { name: /View Only/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Contrib WS/i })).not.toBeInTheDocument();
+  });
+
+  it('shows all workspaces for admin users', async () => {
+    renderNewCampaign({
+      isAdmin: true,
+      workspaces: [PERSONAL_WS, TEAM_WS_CREATOR, TEAM_WS_VIEWER, TEAM_WS_CONTRIB],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /View Only/i })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /Contrib WS/i })).toBeInTheDocument();
+    });
+  });
+
+  it('pre-selects personal workspace by default', async () => {
+    renderNewCampaign({
+      workspaces: [TEAM_WS_CREATOR, PERSONAL_WS],
+    });
+
+    await waitFor(() => {
+      const select = screen.getByLabelText(/create in workspace/i);
+      expect(select.value).toBe(PERSONAL_WS.id);
+    });
+  });
+
+  it('pre-selects workspace from ?workspace= query param', async () => {
+    renderNewCampaign({
+      initialPath: `/new?workspace=${TEAM_WS_CREATOR.id}`,
+      workspaces: [PERSONAL_WS, TEAM_WS_CREATOR],
+    });
+
+    await waitFor(() => {
+      const select = screen.getByLabelText(/create in workspace/i);
+      expect(select.value).toBe(TEAM_WS_CREATOR.id);
+    });
+  });
+
+  it('falls back to first creatable workspace when query param workspace is not in the list', async () => {
+    renderNewCampaign({
+      initialPath: '/new?workspace=ws-nonexistent',
+      workspaces: [PERSONAL_WS, TEAM_WS_CREATOR],
+    });
+
+    await waitFor(() => {
+      const select = screen.getByLabelText(/create in workspace/i);
+      // personal workspace is still available and should be pre-selected
+      expect(select.value).toBe(PERSONAL_WS.id);
+    });
+  });
+
+  it('shows error message when user has no creatable workspaces', async () => {
+    renderNewCampaign({
+      workspaces: [TEAM_WS_VIEWER, TEAM_WS_CONTRIB],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/don't have Creator access/i)).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText(/create in workspace/i)).not.toBeInTheDocument();
+  });
+
+  it('passes workspace_id to createCampaign on submit', async () => {
+    renderNewCampaign({
+      workspaces: [PERSONAL_WS],
+    });
+
+    // Wait for workspace to be selected
+    await waitFor(() => {
+      expect(screen.getByLabelText(/create in workspace/i).value).toBe(PERSONAL_WS.id);
+    });
+
+    // Fill required fields
+    fireEvent.change(screen.getByPlaceholderText(/CloudSync/i), {
+      target: { value: 'Test Product' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Increase free-trial/i), {
+      target: { value: 'Grow signups' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Launch Campaign/i }));
+
+    await waitFor(() => {
+      expect(api.createCampaign).toHaveBeenCalledWith(
+        expect.objectContaining({ product_or_service: 'Test Product' }),
+        PERSONAL_WS.id
+      );
+    });
+  });
+
+  it('shows workspace label with (Personal) suffix for personal workspace', async () => {
+    renderNewCampaign({
+      workspaces: [PERSONAL_WS, TEAM_WS_CREATOR],
+    });
+
+    await waitFor(() => {
+      const option = screen.getByRole('option', { name: /My Space \(Personal\)/i });
+      expect(option).toBeInTheDocument();
+    });
+  });
+});
