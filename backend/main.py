@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import logging
 
+import sqlalchemy
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.config import get_settings
 from backend.services.tracing import setup_tracing
@@ -58,13 +60,55 @@ app.add_middleware(
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 # ------------------------------------------------------------------
-# Health check
+# Health checks
 # ------------------------------------------------------------------
+
+@app.get("/health/live")
+async def health_live():
+    """Liveness probe — process is running."""
+    return {"status": "alive"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness probe — dependencies (DB + executor) are reachable."""
+    from backend.services.database import engine  # noqa: PLC0415
+    from backend.services.workflow_executor import get_executor  # noqa: PLC0415
+
+    # Check DB connectivity
+    db_ok = False
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(sqlalchemy.text("SELECT 1"))
+        db_ok = True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("DB health check failed: %s", exc)
+
+    # Check executor health
+    executor_ok = False
+    try:
+        executor_ok = await get_executor().health_check()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Executor health check failed: %s", exc)
+
+    checks = {"database": db_ok, "executor": executor_ok}
+    if db_ok and executor_ok:
+        return {"status": "ready", "checks": checks}
+
+    return JSONResponse(
+        status_code=503,
+        content={"status": "not_ready", "checks": checks},
+    )
+
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": "0.1.0"}
+    """Backward-compatible alias for /health/live."""
+    return {"status": "alive"}
 
 
 # ------------------------------------------------------------------
