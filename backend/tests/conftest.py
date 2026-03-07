@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.models.campaign import CampaignBrief, Campaign
 from backend.models.user import User, UserRole
+from backend.models.workspace import Workspace
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
@@ -144,3 +145,35 @@ def mock_llm_service():
     service.chat = AsyncMock(return_value="{}")
     service.chat_json = AsyncMock(return_value="{}")
     return service
+
+
+# ---- Workspace fixtures ----
+
+@pytest.fixture
+def sample_workspace(builder_user: User) -> Workspace:
+    """A test workspace owned by the builder_user fixture."""
+    now = datetime.now(timezone.utc)
+    return Workspace(
+        id="sample-ws-001",
+        name="Sample Workspace",
+        description="A test workspace for fixtures",
+        owner_id=builder_user.id,
+        is_personal=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.fixture
+def personal_workspace(builder_user: User) -> Workspace:
+    """A personal workspace for the builder_user fixture."""
+    now = datetime.now(timezone.utc)
+    return Workspace(
+        id="personal-ws-001",
+        name="Personal",
+        description=None,
+        owner_id=builder_user.id,
+        is_personal=True,
+        created_at=now,
+        updated_at=now,
+    )
