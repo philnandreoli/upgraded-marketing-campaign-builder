@@ -32,6 +32,7 @@ from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.services.campaign_workflow_service import get_workflow_service
 from backend.services.workflow_executor import get_executor, WorkflowJob
+import asyncio
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["campaigns"])
@@ -200,6 +201,8 @@ class CampaignSummary(BaseModel):
     product_or_service: str
     goal: str
     owner_id: Optional[str]
+    workspace_id: Optional[str]
+    workspace_name: Optional[str]
     created_at: str
     updated_at: str
 
@@ -339,6 +342,21 @@ async def list_campaigns(
         campaigns = await store.list_accessible(user.id, is_admin=user.is_admin)
     else:
         campaigns = await store.list_all()
+
+    # Resolve workspace names in a single batch (one lookup per unique workspace_id)
+    unique_ws_ids = {c.workspace_id for c in campaigns if c.workspace_id is not None}
+    ws_names: dict[str, Optional[str]] = {}
+    if unique_ws_ids:
+        results = await asyncio.gather(
+            *[store.get_workspace(ws_id) for ws_id in unique_ws_ids],
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning("Failed to look up workspace name: %s", result)
+            elif result is not None:
+                ws_names[result.id] = result.name
+
     return [
         CampaignSummary(
             id=c.id,
@@ -346,6 +364,8 @@ async def list_campaigns(
             product_or_service=c.brief.product_or_service,
             goal=c.brief.goal,
             owner_id=c.owner_id,
+            workspace_id=c.workspace_id,
+            workspace_name=ws_names.get(c.workspace_id) if c.workspace_id else None,
             created_at=c.created_at.isoformat(),
             updated_at=c.updated_at.isoformat(),
         )
