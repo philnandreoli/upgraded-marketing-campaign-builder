@@ -12,6 +12,7 @@ import useWebSocket from "./hooks/useWebSocket.js";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import { loginRequest } from "./authConfig.js";
 import { UserProvider, useUser } from "./UserContext.jsx";
+import { WorkspaceProvider } from "./WorkspaceContext.jsx";
 
 /**
  * When VITE_AZURE_CLIENT_ID is set we enforce authentication;
@@ -136,7 +137,9 @@ export default function App() {
   if (!authEnabled) {
     return (
       <UserProvider>
-        <AuthenticatedApp />
+        <WorkspaceProvider>
+          <AuthenticatedApp />
+        </WorkspaceProvider>
       </UserProvider>
     );
   }
@@ -145,7 +148,9 @@ export default function App() {
     <>
       <AuthenticatedTemplate>
         <UserProvider>
-          <AuthenticatedApp />
+          <WorkspaceProvider>
+            <AuthenticatedApp />
+          </WorkspaceProvider>
         </UserProvider>
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
