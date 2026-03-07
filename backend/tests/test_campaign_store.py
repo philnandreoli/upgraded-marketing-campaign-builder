@@ -9,6 +9,7 @@ skipped automatically when the database is not reachable.
 import os
 import pytest
 from backend.models.campaign import CampaignBrief, CampaignStatus
+from backend.models.workspace import WorkspaceRole
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
@@ -151,6 +152,233 @@ class TestCampaignStoreUnit:
         # After deletion, neither user should see the campaign
         assert await store.list_accessible("user-1") == []
         assert await store.list_accessible("user-2") == []
+
+
+# ---------------------------------------------------------------------------
+# Workspace unit tests
+# ---------------------------------------------------------------------------
+
+class TestWorkspaceUnit:
+    @pytest.mark.asyncio
+    async def test_create_workspace(self, store):
+        ws = await store.create_workspace("My WS", owner_id="user-1")
+        assert ws.id is not None
+        assert ws.name == "My WS"
+        assert ws.owner_id == "user-1"
+        assert ws.is_personal is False
+
+    @pytest.mark.asyncio
+    async def test_create_workspace_adds_creator_member(self, store):
+        ws = await store.create_workspace("My WS", owner_id="user-1")
+        role = await store.get_workspace_member_role(ws.id, "user-1")
+        assert role == WorkspaceRole.CREATOR
+
+    @pytest.mark.asyncio
+    async def test_get_workspace_existing(self, store):
+        ws = await store.create_workspace("My WS", owner_id="user-1")
+        fetched = await store.get_workspace(ws.id)
+        assert fetched is not None
+        assert fetched.id == ws.id
+        assert fetched.name == "My WS"
+
+    @pytest.mark.asyncio
+    async def test_get_workspace_nonexistent(self, store):
+        assert await store.get_workspace("no-such-id") is None
+
+    @pytest.mark.asyncio
+    async def test_update_workspace_name(self, store):
+        ws = await store.create_workspace("Old Name", owner_id="user-1")
+        updated = await store.update_workspace(ws.id, name="New Name")
+        assert updated.name == "New Name"
+        fetched = await store.get_workspace(ws.id)
+        assert fetched.name == "New Name"
+
+    @pytest.mark.asyncio
+    async def test_update_workspace_description(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        updated = await store.update_workspace(ws.id, description="Some desc")
+        assert updated.description == "Some desc"
+
+    @pytest.mark.asyncio
+    async def test_update_workspace_nonexistent(self, store):
+        with pytest.raises(ValueError):
+            await store.update_workspace("no-such-id", name="x")
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        assert await store.delete_workspace(ws.id) is True
+        assert await store.get_workspace(ws.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_nonexistent(self, store):
+        assert await store.delete_workspace("no-such-id") is False
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_orphans_campaigns(self, store, brief):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        c = await store.create(brief, workspace_id=ws.id)
+        assert c.workspace_id == ws.id
+        await store.delete_workspace(ws.id)
+        orphaned = await store.get(c.id)
+        assert orphaned.workspace_id is None
+
+    @pytest.mark.asyncio
+    async def test_list_workspaces_member_sees_own(self, store):
+        ws1 = await store.create_workspace("WS1", owner_id="user-1")
+        ws2 = await store.create_workspace("WS2", owner_id="user-2")
+        visible = await store.list_workspaces("user-1")
+        ids = [w.id for w in visible]
+        assert ws1.id in ids
+        assert ws2.id not in ids
+
+    @pytest.mark.asyncio
+    async def test_list_workspaces_admin_sees_all(self, store):
+        await store.create_workspace("WS1", owner_id="user-1")
+        await store.create_workspace("WS2", owner_id="user-2")
+        visible = await store.list_workspaces("admin", is_admin=True)
+        assert len(visible) == 2
+
+    @pytest.mark.asyncio
+    async def test_list_workspace_campaigns(self, store, brief):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        c1 = await store.create(brief, workspace_id=ws.id)
+        c2 = await store.create(brief)  # no workspace
+        campaigns = await store.list_workspace_campaigns(ws.id)
+        ids = [c.id for c in campaigns]
+        assert c1.id in ids
+        assert c2.id not in ids
+
+    @pytest.mark.asyncio
+    async def test_get_personal_workspace(self, store):
+        ws = await store.create_workspace("Personal", owner_id="user-1", is_personal=True)
+        found = await store.get_personal_workspace("user-1")
+        assert found is not None
+        assert found.id == ws.id
+
+    @pytest.mark.asyncio
+    async def test_get_personal_workspace_none(self, store):
+        await store.create_workspace("Regular", owner_id="user-1", is_personal=False)
+        assert await store.get_personal_workspace("user-1") is None
+
+    @pytest.mark.asyncio
+    async def test_create_campaign_with_workspace_id(self, store, brief):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        c = await store.create(brief, workspace_id=ws.id)
+        assert c.workspace_id == ws.id
+
+    @pytest.mark.asyncio
+    async def test_move_campaign(self, store, brief):
+        ws1 = await store.create_workspace("WS1", owner_id="user-1")
+        ws2 = await store.create_workspace("WS2", owner_id="user-1")
+        c = await store.create(brief, workspace_id=ws1.id)
+        moved = await store.move_campaign(c.id, ws2.id)
+        assert moved.workspace_id == ws2.id
+        fetched = await store.get(c.id)
+        assert fetched.workspace_id == ws2.id
+
+    @pytest.mark.asyncio
+    async def test_move_campaign_orphan(self, store, brief):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        c = await store.create(brief, workspace_id=ws.id)
+        moved = await store.move_campaign(c.id, None)
+        assert moved.workspace_id is None
+
+    @pytest.mark.asyncio
+    async def test_move_campaign_nonexistent(self, store):
+        with pytest.raises(ValueError):
+            await store.move_campaign("no-such-id", None)
+
+    @pytest.mark.asyncio
+    async def test_list_accessible_via_workspace_membership(self, store, brief):
+        """A user who is a workspace member should see campaigns in that workspace."""
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        c = await store.create(brief, workspace_id=ws.id)
+        # user-2 is not a direct campaign member, but is a workspace member
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
+        accessible = await store.list_accessible("user-2")
+        assert any(camp.id == c.id for camp in accessible)
+
+    @pytest.mark.asyncio
+    async def test_list_accessible_no_duplicate_via_both_memberships(self, store, brief):
+        """A user with both direct and workspace membership sees the campaign once."""
+        from backend.models.user import CampaignMemberRole
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        c = await store.create(brief, workspace_id=ws.id)
+        await store.add_member(c.id, "user-2", CampaignMemberRole.VIEWER)
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
+        accessible = await store.list_accessible("user-2")
+        ids = [camp.id for camp in accessible]
+        assert ids.count(c.id) == 1
+
+
+# ---------------------------------------------------------------------------
+# Workspace membership unit tests
+# ---------------------------------------------------------------------------
+
+class TestWorkspaceMembershipUnit:
+    @pytest.mark.asyncio
+    async def test_add_and_get_member_role(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.CONTRIBUTOR)
+        role = await store.get_workspace_member_role(ws.id, "user-2")
+        assert role == WorkspaceRole.CONTRIBUTOR
+
+    @pytest.mark.asyncio
+    async def test_get_member_role_nonexistent(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        assert await store.get_workspace_member_role(ws.id, "nobody") is None
+
+    @pytest.mark.asyncio
+    async def test_add_member_idempotent_update(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.CONTRIBUTOR)
+        role = await store.get_workspace_member_role(ws.id, "user-2")
+        assert role == WorkspaceRole.CONTRIBUTOR
+
+    @pytest.mark.asyncio
+    async def test_remove_workspace_member(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
+        removed = await store.remove_workspace_member(ws.id, "user-2")
+        assert removed is True
+        assert await store.get_workspace_member_role(ws.id, "user-2") is None
+
+    @pytest.mark.asyncio
+    async def test_remove_workspace_member_nonexistent(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        assert await store.remove_workspace_member(ws.id, "nobody") is False
+
+    @pytest.mark.asyncio
+    async def test_update_workspace_member_role(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
+        await store.update_workspace_member_role(ws.id, "user-2", WorkspaceRole.CREATOR)
+        role = await store.get_workspace_member_role(ws.id, "user-2")
+        assert role == WorkspaceRole.CREATOR
+
+    @pytest.mark.asyncio
+    async def test_update_workspace_member_role_nonexistent(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        with pytest.raises(ValueError):
+            await store.update_workspace_member_role(ws.id, "nobody", WorkspaceRole.VIEWER)
+
+    @pytest.mark.asyncio
+    async def test_list_workspace_members(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
+        members = await store.list_workspace_members(ws.id)
+        user_ids = [m.user_id for m in members]
+        assert "user-1" in user_ids  # creator added by create_workspace
+        assert "user-2" in user_ids
+
+    @pytest.mark.asyncio
+    async def test_list_workspace_members_empty(self, store):
+        ws = await store.create_workspace("WS", owner_id="user-1")
+        await store.remove_workspace_member(ws.id, "user-1")
+        members = await store.list_workspace_members(ws.id)
+        assert members == []
 
 
 # ---------------------------------------------------------------------------
