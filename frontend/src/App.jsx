@@ -8,6 +8,9 @@ import Dashboard from "./pages/Dashboard.jsx";
 import NewCampaign from "./pages/NewCampaign.jsx";
 import CampaignDetail from "./pages/CampaignDetail.jsx";
 import Admin from "./pages/Admin.jsx";
+import WorkspaceList from "./pages/WorkspaceList.jsx";
+import WorkspaceDetail from "./pages/WorkspaceDetail.jsx";
+import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
 import useWebSocket from "./hooks/useWebSocket.js";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import { loginRequest } from "./authConfig.js";
@@ -94,6 +97,7 @@ function AuthenticatedApp() {
           <NavLink to="/" end>
             Dashboard
           </NavLink>
+          <NavLink to="/workspaces">Workspaces</NavLink>
           {!isViewer && <NavLink to="/new">+ New Campaign</NavLink>}
           {isAdmin && <NavLink to="/admin">Admin</NavLink>}
           <ThemeToggle />
@@ -123,6 +127,9 @@ function AuthenticatedApp() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={<Dashboard events={events} />} />
+          <Route path="/workspaces" element={<WorkspaceList />} />
+          <Route path="/workspaces/:id" element={<WorkspaceDetail events={events} />} />
+          <Route path="/workspaces/:id/settings" element={<WorkspaceSettings />} />
           <Route path="/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
           <Route path="/campaign/:id" element={<CampaignDetail />} />
           <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
