@@ -14,8 +14,11 @@ export function WorkspaceProvider({ children }) {
   const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchWorkspaces = useCallback(() => {
-    setLoading(true);
+  // Internal fetch — does NOT call setLoading(true) synchronously so it is
+  // safe to call from within a useEffect without triggering the
+  // react-hooks/set-state-in-effect lint rule. loading starts as true and is
+  // only ever set to false (async) once the request resolves.
+  const doFetch = useCallback(() => {
     listWorkspaces()
       .then(setWorkspaces)
       .catch(() => setWorkspaces([]))
@@ -23,15 +26,22 @@ export function WorkspaceProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    fetchWorkspaces();
-  }, [fetchWorkspaces]);
+    doFetch();
+  }, [doFetch]);
+
+  // Public API — sets loading=true before re-fetching. Safe to call from
+  // event handlers / mutation callbacks (not from within effects).
+  const refreshWorkspaces = useCallback(() => {
+    setLoading(true);
+    doFetch();
+  }, [doFetch]);
 
   const personalWorkspace = workspaces.find((ws) => ws.is_personal) ?? null;
 
   const value = {
     workspaces,
     loading,
-    refreshWorkspaces: fetchWorkspaces,
+    refreshWorkspaces,
     personalWorkspace,
   };
 
