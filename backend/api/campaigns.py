@@ -75,7 +75,7 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
         return  # auth disabled — allow everything
 
     if user.is_admin:
-        return  # admins have full access
+        return  # admins have full access  # Step 1: admin → full access
 
     member_role = await store.get_member_role(campaign_id, user.id)
 
@@ -307,7 +307,7 @@ async def create_campaign(
         if ws_role != WorkspaceRole.CREATOR:
             raise HTTPException(status_code=403, detail="Only workspace CREATORs can create campaigns in a workspace")
 
-    # Build a plain CampaignBrief from the request (strips workspace_id)
+    # Build a plain CampaignBrief from the request (workspace_id is handled separately)
     brief = CampaignBrief(**request.model_dump(exclude={"workspace_id"}))
 
     try:

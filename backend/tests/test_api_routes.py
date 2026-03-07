@@ -933,7 +933,7 @@ class TestAuthorizeFunction:
             await _authorize(campaign.id, _VIEWER_USER, Action.READ, _isolated_store)
         assert exc.value.status_code == 404
 
-    async def test_workspace_creator_allows_all(self, _isolated_store):
+    async def test_workspace_creator_gets_full_access_without_campaign_membership(self, _isolated_store):
         """Builder with workspace CREATOR role gets full access when no campaign membership."""
         from backend.api.campaigns import _authorize, Action
         campaign = Campaign(
@@ -998,7 +998,7 @@ class TestAuthorizeFunction:
                 await _authorize(campaign.id, _VIEWER_USER, action, _isolated_store)
             assert exc.value.status_code == 403
 
-    async def test_no_workspace_id_no_campaign_member_returns_404(self, _isolated_store):
+    async def test_orphaned_campaign_without_membership_returns_404(self, _isolated_store):
         """Orphaned campaign (no workspace_id) with no campaign membership → 404."""
         from backend.api.campaigns import _authorize, Action
         from fastapi import HTTPException
