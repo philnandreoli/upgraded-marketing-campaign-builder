@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import CampaignMemberRole, User, UserRole
+from backend.models.workspace import WorkspaceRole
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.services.campaign_workflow_service import get_workflow_service
@@ -52,18 +53,23 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
     """Enforce RBAC for campaign access.
 
     Authorization matrix:
-      Platform Role     | Campaign Membership | READ | WRITE | DELETE | MANAGE_MEMBERS
-      admin             | (any/none)          |  ✅  |  ✅   |  ✅    |  ✅
-      campaign_builder  | owner               |  ✅  |  ✅   |  ✅    |  ✅
-      campaign_builder  | editor              |  ✅  |  ✅   |  ❌    |  ❌
-      campaign_builder  | viewer              |  ✅  |  ❌   |  ❌    |  ❌
-      campaign_builder  | (none)              |  ❌  |  ❌   |  ❌    |  ❌
-      viewer            | owner/editor/viewer |  ✅  |  ❌   |  ❌    |  ❌
-      viewer            | (none)              |  ❌  |  ❌   |  ❌    |  ❌
+      Platform Role | Campaign Member  | Workspace Member | READ | WRITE | DELETE | MANAGE
+      admin         | any/none         | any/none         |  ✅  |  ✅   |  ✅    |  ✅
+      builder       | owner            | —                |  ✅  |  ✅   |  ✅    |  ✅
+      builder       | editor           | —                |  ✅  |  ✅   |  ❌    |  ❌
+      builder       | viewer           | —                |  ✅  |  ❌   |  ❌    |  ❌
+      builder       | none             | ws CREATOR       |  ✅  |  ✅   |  ✅    |  ✅
+      builder       | none             | ws CONTRIBUTOR   |  ✅  |  ✅   |  ❌    |  ❌
+      builder       | none             | ws VIEWER        |  ✅  |  ❌   |  ❌    |  ❌
+      builder       | none             | none             |  ❌  |  ❌   |  ❌    |  ❌ (404)
+      viewer        | any member       | —                |  ✅  |  ❌   |  ❌    |  ❌
+      viewer        | none             | ws any           |  ✅  |  ❌   |  ❌    |  ❌
 
     When auth is disabled (user is None) all campaigns are accessible.
     Raises 404 when the user has no membership (to avoid leaking campaign existence).
     Raises 403 when authenticated but the action exceeds the user's permission.
+
+    Note: Platform VIEWER role never gets write access regardless of workspace role.
     """
     if user is None:
         return  # auth disabled — allow everything
@@ -72,19 +78,43 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
         return  # admins have full access
 
     member_role = await store.get_member_role(campaign_id, user.id)
-    if member_role is None:
-        raise HTTPException(status_code=404, detail="Campaign not found")
 
     allowed: bool
-    if user.can_build:
-        if member_role == CampaignMemberRole.OWNER:
-            allowed = True
-        elif member_role == CampaignMemberRole.EDITOR:
-            allowed = action in (Action.READ, Action.WRITE)
-        else:  # CampaignMemberRole.VIEWER
+    if member_role is not None:
+        # Step 2: Direct campaign membership — use campaign role
+        if user.can_build:
+            if member_role == CampaignMemberRole.OWNER:
+                allowed = True
+            elif member_role == CampaignMemberRole.EDITOR:
+                allowed = action in (Action.READ, Action.WRITE)
+            else:  # CampaignMemberRole.VIEWER
+                allowed = action == Action.READ
+        else:  # pure viewer platform role
             allowed = action == Action.READ
-    else:  # pure viewer role
-        allowed = action == Action.READ
+    else:
+        # No direct campaign membership — check workspace fallback
+        campaign = await store.get(campaign_id)
+        if campaign is not None and campaign.workspace_id is not None:
+            ws_role = await store.get_workspace_member_role(campaign.workspace_id, user.id)
+            if ws_role is not None:
+                # Step 3: Derive permissions from workspace role
+                # Platform VIEWER is always capped at READ regardless of workspace role
+                if not user.can_build:
+                    allowed = action == Action.READ
+                elif ws_role == WorkspaceRole.CREATOR:
+                    allowed = True
+                elif ws_role == WorkspaceRole.CONTRIBUTOR:
+                    allowed = action in (Action.READ, Action.WRITE)
+                else:  # WorkspaceRole.VIEWER
+                    allowed = action == Action.READ
+                if not allowed:
+                    raise HTTPException(status_code=403, detail="Insufficient permissions")
+                return
+        # Step 4: Owner_id fallback (backward compat for orphaned campaigns)
+        if campaign is not None and campaign.owner_id == user.id:
+            return  # full access for owner
+        # Step 5: No membership at all — 404 to avoid leaking campaign existence
+        raise HTTPException(status_code=404, detail="Campaign not found")
 
     if not allowed:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -174,6 +204,22 @@ class CampaignSummary(BaseModel):
     updated_at: str
 
 
+class CreateCampaignRequest(CampaignBrief):
+    """Request body for campaign creation.
+
+    Extends CampaignBrief with an optional workspace_id to associate
+    the new campaign with a workspace at creation time.
+    """
+
+    workspace_id: Optional[str] = None
+
+
+class AssignWorkspaceRequest(BaseModel):
+    """Request body for PATCH /api/campaigns/{id}/workspace."""
+
+    workspace_id: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Me response model
 # ---------------------------------------------------------------------------
@@ -235,19 +281,39 @@ async def get_me(
 
 @router.post("/campaigns", status_code=201, response_model=CreateCampaignResponse)
 async def create_campaign(
-    brief: CampaignBrief,
+    request: CreateCampaignRequest,
     user: Optional[User] = Depends(get_current_user),
 ) -> CreateCampaignResponse:
-    """Create a new campaign and kick off the agent pipeline in the background."""
+    """Create a new campaign and kick off the agent pipeline in the background.
+
+    If ``workspace_id`` is provided in the request body the campaign is
+    associated with that workspace.  Only workspace CREATORs (or ADMINs) may
+    create campaigns within a workspace.  When omitted, the campaign is
+    created as an orphan (no workspace).
+    """
     # When auth is enabled, only campaign_builder and admin may create campaigns.
     # When auth is disabled (user is None) all requests are allowed (dev mode).
     if user is not None and user.is_viewer:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
+    workspace_id = request.workspace_id
+    if workspace_id is not None and user is not None and not user.is_admin:
+        # Verify the user is a CREATOR member of the target workspace
+        store = get_campaign_store()
+        workspace = await store.get_workspace(workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+        ws_role = await store.get_workspace_member_role(workspace_id, user.id)
+        if ws_role != WorkspaceRole.CREATOR:
+            raise HTTPException(status_code=403, detail="Only workspace CREATORs can create campaigns in a workspace")
+
+    # Build a plain CampaignBrief from the request (strips workspace_id)
+    brief = CampaignBrief(**request.model_dump(exclude={"workspace_id"}))
+
     try:
         logger.info("Creating campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())
         service = get_workflow_service()
-        campaign = await service.create_campaign(brief, user)
+        campaign = await service.create_campaign(brief, user, workspace_id=workspace_id)
         logger.info("Campaign %s created successfully", campaign.id)
     except Exception as exc:
         logger.exception("Failed to create campaign: %s", exc)
@@ -307,3 +373,31 @@ async def delete_campaign(
     await _authorize(campaign_id, user, Action.DELETE, store)
     await store.delete(campaign_id)
     return Response(status_code=204)
+
+
+@router.patch("/campaigns/{campaign_id}/workspace")
+async def assign_campaign_workspace(
+    campaign_id: str,
+    body: AssignWorkspaceRequest,
+    user: Optional[User] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Move or assign a campaign to a workspace.  Admin-only endpoint.
+
+    Setting ``workspace_id`` to ``null`` orphans the campaign (no workspace).
+    """
+    if user is None or not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Validate target workspace exists (if not orphaning)
+    if body.workspace_id is not None:
+        workspace = await store.get_workspace(body.workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+
+    campaign = await store.move_campaign(campaign_id, body.workspace_id)
+    return campaign.model_dump(mode="json")

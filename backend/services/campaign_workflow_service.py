@@ -31,9 +31,9 @@ class CampaignWorkflowService:
         self._store = store
         self._signal_store = signal_store if signal_store is not None else get_workflow_signal_store()
 
-    async def create_campaign(self, brief: CampaignBrief, user: User | None) -> Campaign:
+    async def create_campaign(self, brief: CampaignBrief, user: User | None, workspace_id: Optional[str] = None) -> Campaign:
         """Persist a new campaign and return it."""
-        return await self._store.create(brief, owner_id=user.id if user else None)
+        return await self._store.create(brief, owner_id=user.id if user else None, workspace_id=workspace_id)
 
     async def submit_clarification(
         self, campaign_id: str, response: ClarificationResponse

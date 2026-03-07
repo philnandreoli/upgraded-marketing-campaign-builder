@@ -933,6 +933,113 @@ class TestAuthorizeFunction:
             await _authorize(campaign.id, _VIEWER_USER, Action.READ, _isolated_store)
         assert exc.value.status_code == 404
 
+    async def test_workspace_creator_allows_all(self, _isolated_store):
+        """Builder with workspace CREATOR role gets full access when no campaign membership."""
+        from backend.api.campaigns import _authorize, Action
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id="other",
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._workspace_members[("ws-1", _TEST_USER.id)] = "creator"
+        for action in Action:
+            await _authorize(campaign.id, _TEST_USER, action, _isolated_store)  # no exception
+
+    async def test_workspace_contributor_allows_read_write(self, _isolated_store):
+        """Builder with workspace CONTRIBUTOR role can READ and WRITE only."""
+        from backend.api.campaigns import _authorize, Action
+        from fastapi import HTTPException
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id="other",
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._workspace_members[("ws-1", _TEST_USER.id)] = "contributor"
+        await _authorize(campaign.id, _TEST_USER, Action.READ, _isolated_store)
+        await _authorize(campaign.id, _TEST_USER, Action.WRITE, _isolated_store)
+        for action in (Action.DELETE, Action.MANAGE_MEMBERS):
+            with pytest.raises(HTTPException) as exc:
+                await _authorize(campaign.id, _TEST_USER, action, _isolated_store)
+            assert exc.value.status_code == 403
+
+    async def test_workspace_viewer_allows_read_only(self, _isolated_store):
+        """Builder with workspace VIEWER role can only READ."""
+        from backend.api.campaigns import _authorize, Action
+        from fastapi import HTTPException
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id="other",
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._workspace_members[("ws-1", _TEST_USER.id)] = "viewer"
+        await _authorize(campaign.id, _TEST_USER, Action.READ, _isolated_store)
+        for action in (Action.WRITE, Action.DELETE, Action.MANAGE_MEMBERS):
+            with pytest.raises(HTTPException) as exc:
+                await _authorize(campaign.id, _TEST_USER, action, _isolated_store)
+            assert exc.value.status_code == 403
+
+    async def test_platform_viewer_workspace_creator_read_only(self, _isolated_store):
+        """Platform VIEWER role caps at READ even if workspace role is CREATOR."""
+        from backend.api.campaigns import _authorize, Action
+        from fastapi import HTTPException
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id="other",
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._workspace_members[("ws-1", _VIEWER_USER.id)] = "creator"
+        await _authorize(campaign.id, _VIEWER_USER, Action.READ, _isolated_store)
+        for action in (Action.WRITE, Action.DELETE, Action.MANAGE_MEMBERS):
+            with pytest.raises(HTTPException) as exc:
+                await _authorize(campaign.id, _VIEWER_USER, action, _isolated_store)
+            assert exc.value.status_code == 403
+
+    async def test_no_workspace_id_no_campaign_member_returns_404(self, _isolated_store):
+        """Orphaned campaign (no workspace_id) with no campaign membership → 404."""
+        from backend.api.campaigns import _authorize, Action
+        from fastapi import HTTPException
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id="other",
+            workspace_id=None,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        with pytest.raises(HTTPException) as exc:
+            await _authorize(campaign.id, _TEST_USER, Action.READ, _isolated_store)
+        assert exc.value.status_code == 404
+
+    async def test_owner_id_fallback_for_orphaned_campaign(self, _isolated_store):
+        """User matching owner_id gets full access even without campaign membership."""
+        from backend.api.campaigns import _authorize, Action
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id=_TEST_USER.id,
+            workspace_id=None,
+        )
+        # No campaign membership entry — just the owner_id on the campaign
+        _isolated_store._campaigns[campaign.id] = campaign
+        for action in Action:
+            await _authorize(campaign.id, _TEST_USER, action, _isolated_store)  # no exception
+
+    async def test_workspace_member_not_in_workspace_returns_404(self, _isolated_store):
+        """Builder with no campaign or workspace membership gets 404."""
+        from backend.api.campaigns import _authorize, Action
+        from fastapi import HTTPException
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id="other",
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        # No workspace membership for _TEST_USER
+        with pytest.raises(HTTPException) as exc:
+            await _authorize(campaign.id, _TEST_USER, Action.READ, _isolated_store)
+        assert exc.value.status_code == 404
+
 
 class TestRBACRoutes:
     """Integration tests for RBAC enforcement on campaign endpoints."""
@@ -1018,6 +1125,45 @@ class TestRBACRoutes:
         with _as_user(_OTHER_USER) as c:
             r = c.get(f"/api/campaigns/{campaign.id}")
             assert r.status_code == 404
+
+    def test_workspace_creator_can_read_campaign_via_workspace(self, _isolated_store):
+        """Builder who is workspace CREATOR can GET a campaign they are not a direct member of."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="WS Campaign", goal="WS"),
+            owner_id=_TEST_USER.id,
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._workspace_members[("ws-1", _OTHER_USER.id)] = "creator"
+        with _as_user(_OTHER_USER) as c:
+            r = c.get(f"/api/campaigns/{campaign.id}")
+            assert r.status_code == 200
+
+    def test_workspace_contributor_cannot_delete_campaign(self, _isolated_store):
+        """Builder with workspace CONTRIBUTOR role cannot DELETE a campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="WS Campaign", goal="WS"),
+            owner_id=_TEST_USER.id,
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._workspace_members[("ws-1", _OTHER_USER.id)] = "contributor"
+        with _as_user(_OTHER_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}")
+            assert r.status_code == 403
+
+    def test_platform_viewer_workspace_creator_cannot_delete(self, _isolated_store):
+        """Platform VIEWER with workspace CREATOR role still cannot DELETE."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="WS Campaign", goal="WS"),
+            owner_id=_TEST_USER.id,
+            workspace_id="ws-1",
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._workspace_members[("ws-1", _VIEWER_USER.id)] = "creator"
+        with _as_user(_VIEWER_USER) as c:
+            r = c.delete(f"/api/campaigns/{campaign.id}")
+            assert r.status_code == 403
 
 
 # ---- Member management endpoints ----
@@ -1361,3 +1507,124 @@ class TestRetryCampaign:
         with _as_user(_OTHER_USER) as c:
             r = c.post(f"/api/campaigns/{campaign.id}/retry")
         assert r.status_code == 404
+
+
+# ---- Campaign workspace assignment ----
+
+from backend.models.workspace import Workspace as _Workspace
+
+
+class TestCreateCampaignWithWorkspace:
+    """Tests for workspace_id field in POST /api/campaigns."""
+
+    _BRIEF = {"product_or_service": "Acme Widget", "goal": "Launch"}
+
+    def test_create_without_workspace_id_is_orphaned(self, authed_client, _isolated_store):
+        """Omitting workspace_id creates an orphaned campaign (workspace_id=None)."""
+        r = authed_client.post("/api/campaigns", json=self._BRIEF)
+        assert r.status_code == 201
+        cid = r.json()["id"]
+        campaign = _isolated_store._campaigns[cid]
+        assert campaign.workspace_id is None
+
+    def test_create_with_workspace_id_as_creator(self, _isolated_store):
+        """Workspace CREATOR can create a campaign in their workspace."""
+        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS", owner_id=_TEST_USER.id)
+        _isolated_store._workspace_members[("ws-1", _TEST_USER.id)] = "creator"
+
+        with _as_user(_TEST_USER) as c:
+            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "ws-1"})
+        assert r.status_code == 201
+        cid = r.json()["id"]
+        assert _isolated_store._campaigns[cid].workspace_id == "ws-1"
+
+    def test_create_with_workspace_id_as_contributor_returns_403(self, _isolated_store):
+        """Workspace CONTRIBUTOR cannot create a campaign in a workspace."""
+        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS", owner_id="other")
+        _isolated_store._workspace_members[("ws-1", _TEST_USER.id)] = "contributor"
+
+        with _as_user(_TEST_USER) as c:
+            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "ws-1"})
+        assert r.status_code == 403
+
+    def test_create_with_nonexistent_workspace_returns_404(self, _isolated_store):
+        """Specifying a workspace that doesn't exist returns 404."""
+        with _as_user(_TEST_USER) as c:
+            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "no-such-ws"})
+        assert r.status_code == 404
+
+    def test_admin_can_create_in_workspace_without_membership(self, _isolated_store):
+        """Admin can create a campaign in any workspace regardless of membership."""
+        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS", owner_id="other")
+        # Admin has no workspace membership entry
+
+        with _as_user(_ADMIN_USER) as c:
+            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "ws-1"})
+        assert r.status_code == 201
+        cid = r.json()["id"]
+        assert _isolated_store._campaigns[cid].workspace_id == "ws-1"
+
+    def test_viewer_cannot_create_campaign(self, _isolated_store):
+        """Platform VIEWER cannot create campaigns at all."""
+        with _as_user(_VIEWER_USER) as c:
+            r = c.post("/api/campaigns", json=self._BRIEF)
+        assert r.status_code == 403
+
+
+class TestAssignCampaignWorkspace:
+    """Tests for PATCH /api/campaigns/{id}/workspace."""
+
+    def _make_campaign(self, store, workspace_id=None):
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="X", goal="Y"),
+            owner_id=_TEST_USER.id,
+            workspace_id=workspace_id,
+        )
+        store._campaigns[campaign.id] = campaign
+        store._members[(campaign.id, _TEST_USER.id)] = "owner"
+        return campaign
+
+    def test_admin_can_assign_workspace(self, _isolated_store):
+        """Admin can move a campaign into a workspace."""
+        campaign = self._make_campaign(_isolated_store)
+        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS", owner_id=_TEST_USER.id)
+
+        with _as_user(_ADMIN_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": "ws-1"})
+        assert r.status_code == 200
+        assert r.json()["workspace_id"] == "ws-1"
+
+    def test_admin_can_orphan_campaign(self, _isolated_store):
+        """Admin can orphan a campaign by setting workspace_id to null."""
+        campaign = self._make_campaign(_isolated_store, workspace_id="ws-1")
+
+        with _as_user(_ADMIN_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
+        assert r.status_code == 200
+        assert r.json()["workspace_id"] is None
+
+    def test_non_admin_returns_403(self, _isolated_store):
+        """Non-admin users cannot move campaigns."""
+        campaign = self._make_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
+        assert r.status_code == 403
+
+    def test_campaign_not_found_returns_404(self, _isolated_store):
+        """Returns 404 for unknown campaign."""
+        with _as_user(_ADMIN_USER) as c:
+            r = c.patch("/api/campaigns/nonexistent/workspace", json={"workspace_id": None})
+        assert r.status_code == 404
+
+    def test_workspace_not_found_returns_404(self, _isolated_store):
+        """Returns 404 when target workspace does not exist."""
+        campaign = self._make_campaign(_isolated_store)
+        with _as_user(_ADMIN_USER) as c:
+            r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": "no-such-ws"})
+        assert r.status_code == 404
+
+    def test_auth_disabled_returns_403(self, client, _isolated_store):
+        """When auth is disabled (user=None), admin check still enforces 403."""
+        campaign = self._make_campaign(_isolated_store)
+        r = client.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
+        assert r.status_code == 403
