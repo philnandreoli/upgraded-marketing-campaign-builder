@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { createCampaign } from "../api";
 import DatePicker from "../components/DatePicker";
@@ -45,9 +45,10 @@ export default function NewCampaign() {
 
   // Workspaces where the current user can create campaigns:
   // admins see all workspaces; others see only those where their role is "creator".
-  const creatableWorkspaces = isAdmin
-    ? workspaces
-    : workspaces.filter((ws) => ws.role === "creator");
+  const creatableWorkspaces = useMemo(
+    () => (isAdmin ? workspaces : workspaces.filter((ws) => ws.role === "creator")),
+    [isAdmin, workspaces]
+  );
 
   // Pre-select workspace from ?workspace= query param, then personal workspace,
   // then the first available creatable workspace.
@@ -61,8 +62,7 @@ export default function NewCampaign() {
     } else {
       setSelectedWorkspaceId(creatableWorkspaces[0].id);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [creatableWorkspaces.length, personalWorkspace?.id, searchParams]);
+  }, [creatableWorkspaces, personalWorkspace, searchParams]);
 
   const set = (field) => (e) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -151,7 +151,7 @@ export default function NewCampaign() {
                 <option value="" disabled>Select a workspace…</option>
                 {creatableWorkspaces.map((ws) => (
                   <option key={ws.id} value={ws.id}>
-                    {ws.name}{ws.is_personal ? " (Personal)" : ""}
+                    {ws.is_personal ? `${ws.name} (Personal)` : ws.name}
                   </option>
                 ))}
               </select>
