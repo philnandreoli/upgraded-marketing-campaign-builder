@@ -2,11 +2,9 @@
 Shared test fixtures.
 """
 
-import asyncio
-import json
 import pytest
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -41,7 +39,7 @@ class InMemoryWorkflowSignalStore:
             "campaign_id": campaign_id,
             "signal_type": signal_type,
             "payload": payload,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
             "consumed_at": None,
         })
         return signal_id
@@ -59,7 +57,7 @@ class InMemoryWorkflowSignalStore:
     async def consume_signal(self, signal_id: str) -> None:
         for s in self._signals:
             if s["id"] == signal_id:
-                s["consumed_at"] = datetime.utcnow()
+                s["consumed_at"] = datetime.now(timezone.utc)
                 return
 
 

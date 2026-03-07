@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -44,7 +44,7 @@ class WorkflowSignalStore:
             campaign_id=campaign_id,
             signal_type=signal_type,
             payload=json.dumps(payload),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             consumed_at=None,
         )
         async with async_session() as session:
@@ -86,7 +86,7 @@ class WorkflowSignalStore:
             await session.execute(
                 sa_update(WorkflowSignalRow)
                 .where(WorkflowSignalRow.id == signal_id)
-                .values(consumed_at=datetime.utcnow())
+                .values(consumed_at=datetime.now(timezone.utc))
             )
             await session.commit()
 
