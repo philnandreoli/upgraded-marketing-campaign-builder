@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { createCampaign } from "../api";
 import DatePicker from "../components/DatePicker";
+import { useUser } from "../UserContext";
+import { useWorkspace } from "../WorkspaceContext";
 
 const CHANNEL_OPTIONS = [
   { value: "email", label: "Email", icon: "✉️" },
@@ -23,6 +25,9 @@ const SOCIAL_MEDIA_PLATFORMS = [
 
 export default function NewCampaign() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { isAdmin } = useUser();
+  const { workspaces, personalWorkspace } = useWorkspace();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [form, setForm] = useState({
@@ -36,6 +41,28 @@ export default function NewCampaign() {
   });
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
+
+  // Workspaces where the current user can create campaigns:
+  // admins see all workspaces; others see only those where their role is "creator".
+  const creatableWorkspaces = isAdmin
+    ? workspaces
+    : workspaces.filter((ws) => ws.role === "creator");
+
+  // Pre-select workspace from ?workspace= query param, then personal workspace,
+  // then the first available creatable workspace.
+  useEffect(() => {
+    if (creatableWorkspaces.length === 0) return;
+    const paramId = searchParams.get("workspace");
+    if (paramId && creatableWorkspaces.some((ws) => ws.id === paramId)) {
+      setSelectedWorkspaceId(paramId);
+    } else if (personalWorkspace && creatableWorkspaces.some((ws) => ws.id === personalWorkspace.id)) {
+      setSelectedWorkspaceId(personalWorkspace.id);
+    } else {
+      setSelectedWorkspaceId(creatableWorkspaces[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creatableWorkspaces.length, personalWorkspace?.id, searchParams]);
 
   const set = (field) => (e) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -67,6 +94,10 @@ export default function NewCampaign() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!selectedWorkspaceId) {
+      setError("Please select a workspace.");
+      return;
+    }
     if (selectedChannels.includes("social_media") && selectedPlatforms.length === 0) {
       setError("Please select at least one social media platform.");
       return;
@@ -86,7 +117,7 @@ export default function NewCampaign() {
           ? selectedPlatforms
           : [],
       };
-      const res = await createCampaign(brief);
+      const res = await createCampaign(brief, selectedWorkspaceId);
       navigate(`/campaign/${res.id}`);
     } catch (err) {
       setError(err.message);
@@ -100,6 +131,34 @@ export default function NewCampaign() {
       <h2 className="page-title">Create New Campaign</h2>
 
       <form onSubmit={handleSubmit} style={{ maxWidth: 640 }}>
+        {/* Workspace picker — shown before Step 1 */}
+        <fieldset className="form-section">
+          <legend className="form-section-title">Workspace</legend>
+
+          {creatableWorkspaces.length === 0 ? (
+            <p style={{ color: "var(--color-danger)", fontSize: "0.85rem" }}>
+              You don&apos;t have Creator access to any workspace. Contact an admin to get started.
+            </p>
+          ) : (
+            <div className="form-group">
+              <label htmlFor="workspace-select">Create in workspace *</label>
+              <select
+                id="workspace-select"
+                required
+                value={selectedWorkspaceId}
+                onChange={(e) => setSelectedWorkspaceId(e.target.value)}
+              >
+                <option value="" disabled>Select a workspace…</option>
+                {creatableWorkspaces.map((ws) => (
+                  <option key={ws.id} value={ws.id}>
+                    {ws.name}{ws.is_personal ? " (Personal)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </fieldset>
+
         <fieldset className="form-section">
           <legend className="form-section-title">
             <span className="form-section-number">1</span>
