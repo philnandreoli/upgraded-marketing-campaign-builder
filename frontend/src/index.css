@@ -1233,12 +1233,9 @@ a:hover { color: var(--color-primary-hover); }
 
 .dashboard-stats {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
-}
-@media (max-width: 800px) {
-  .dashboard-stats { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 640px) {
   .dashboard-stats { grid-template-columns: repeat(2, 1fr); }

@@ -277,7 +277,7 @@ export default function Dashboard({ events }) {
   const sortedWorkspaces = [...workspaces].sort((a, b) => {
     if (a.is_personal && !b.is_personal) return -1;
     if (!a.is_personal && b.is_personal) return 1;
-    return 0;
+    return a.name.localeCompare(b.name);
   });
 
   return (

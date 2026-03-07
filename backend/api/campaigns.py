@@ -347,12 +347,15 @@ async def list_campaigns(
     unique_ws_ids = {c.workspace_id for c in campaigns if c.workspace_id is not None}
     ws_names: dict[str, Optional[str]] = {}
     if unique_ws_ids:
-        workspaces = await asyncio.gather(
-            *[store.get_workspace(ws_id) for ws_id in unique_ws_ids]
+        results = await asyncio.gather(
+            *[store.get_workspace(ws_id) for ws_id in unique_ws_ids],
+            return_exceptions=True,
         )
-        for ws in workspaces:
-            if ws is not None:
-                ws_names[ws.id] = ws.name
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning("Failed to look up workspace name: %s", result)
+            elif result is not None:
+                ws_names[result.id] = result.name
 
     return [
         CampaignSummary(
