@@ -15,6 +15,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.models.workspace import WorkspaceRole, WorkspaceMember  # noqa: F401 — re-exported for convenience
+
 
 # ---------------------------------------------------------------------------
 # Enums

@@ -577,3 +577,130 @@ class TestContentApprovalRequestedEvent:
         assert data["campaign_id"] == "c5"
         assert data["content"] == content
         assert data["revision_cycle"] == 2
+
+
+# ---- Workspace models ----
+
+from backend.models.workspace import WorkspaceRole, Workspace, WorkspaceMember
+
+
+class TestWorkspaceRole:
+    def test_enum_values(self):
+        assert WorkspaceRole.CREATOR.value == "creator"
+        assert WorkspaceRole.CONTRIBUTOR.value == "contributor"
+        assert WorkspaceRole.VIEWER.value == "viewer"
+
+    def test_str_coercion(self):
+        assert WorkspaceRole("creator") == WorkspaceRole.CREATOR
+        assert WorkspaceRole("contributor") == WorkspaceRole.CONTRIBUTOR
+        assert WorkspaceRole("viewer") == WorkspaceRole.VIEWER
+
+    def test_invalid_role_raises(self):
+        with pytest.raises(ValueError):
+            WorkspaceRole("superuser")
+
+
+class TestWorkspace:
+    def test_defaults(self):
+        ws = Workspace(name="My Workspace", owner_id="user-1")
+        assert ws.name == "My Workspace"
+        assert ws.owner_id == "user-1"
+        assert ws.description is None
+        assert ws.is_personal is False
+        assert ws.id is not None
+
+    def test_id_is_uuid(self):
+        import uuid
+        ws = Workspace(name="Test", owner_id="user-1")
+        uuid.UUID(ws.id)  # should not raise
+
+    def test_personal_flag(self):
+        ws = Workspace(name="Personal", owner_id="user-2", is_personal=True)
+        assert ws.is_personal is True
+
+    def test_description(self):
+        ws = Workspace(name="Team WS", owner_id="user-3", description="A team workspace")
+        assert ws.description == "A team workspace"
+
+    def test_empty_name_raises(self):
+        with pytest.raises(ValidationError):
+            Workspace(name="", owner_id="user-1")
+
+    def test_whitespace_name_raises(self):
+        with pytest.raises(ValidationError):
+            Workspace(name="   ", owner_id="user-1")
+
+    def test_missing_name_raises(self):
+        with pytest.raises(ValidationError):
+            Workspace(owner_id="user-1")
+
+    def test_missing_owner_raises(self):
+        with pytest.raises(ValidationError):
+            Workspace(name="No Owner")
+
+    def test_roundtrip(self):
+        ws = Workspace(name="Roundtrip WS", owner_id="user-4", description="desc")
+        data = ws.model_dump(mode="json")
+        ws2 = Workspace.model_validate(data)
+        assert ws2.name == ws.name
+        assert ws2.owner_id == ws.owner_id
+        assert ws2.id == ws.id
+
+
+class TestWorkspaceMember:
+    def test_fields(self):
+        m = WorkspaceMember(workspace_id="ws-1", user_id="u-1", role=WorkspaceRole.CREATOR)
+        assert m.workspace_id == "ws-1"
+        assert m.user_id == "u-1"
+        assert m.role == WorkspaceRole.CREATOR
+
+    def test_all_roles(self):
+        for role in WorkspaceRole:
+            m = WorkspaceMember(workspace_id="ws-1", user_id="u-1", role=role)
+            assert m.role == role
+
+    def test_added_at_defaults(self):
+        from datetime import datetime
+        m = WorkspaceMember(workspace_id="ws-1", user_id="u-1", role=WorkspaceRole.VIEWER)
+        assert isinstance(m.added_at, datetime)
+
+    def test_missing_workspace_id_raises(self):
+        with pytest.raises(ValidationError):
+            WorkspaceMember(user_id="u-1", role=WorkspaceRole.VIEWER)
+
+    def test_missing_user_id_raises(self):
+        with pytest.raises(ValidationError):
+            WorkspaceMember(workspace_id="ws-1", role=WorkspaceRole.VIEWER)
+
+    def test_missing_role_raises(self):
+        with pytest.raises(ValidationError):
+            WorkspaceMember(workspace_id="ws-1", user_id="u-1")
+
+    def test_roundtrip(self):
+        m = WorkspaceMember(workspace_id="ws-2", user_id="u-2", role=WorkspaceRole.CONTRIBUTOR)
+        data = m.model_dump(mode="json")
+        m2 = WorkspaceMember.model_validate(data)
+        assert m2.workspace_id == m.workspace_id
+        assert m2.user_id == m.user_id
+        assert m2.role == m.role
+
+
+class TestWorkspaceReexport:
+    """WorkspaceRole and WorkspaceMember are re-exported from backend.models.user."""
+
+    def test_workspace_role_importable_from_user(self):
+        from backend.models.user import WorkspaceRole as WR
+        assert WR.CREATOR.value == "creator"
+
+    def test_workspace_member_importable_from_user(self):
+        from backend.models.user import WorkspaceMember as WM
+        m = WM(workspace_id="ws-1", user_id="u-1", role=WorkspaceRole.VIEWER)
+        assert m.workspace_id == "ws-1"
+
+    def test_importable_from_init(self):
+        from backend.models import WorkspaceRole as WR, Workspace as WS, WorkspaceMember as WM
+        assert WR.VIEWER.value == "viewer"
+        ws = WS(name="Init Test", owner_id="u-1")
+        assert ws.name == "Init Test"
+        m = WM(workspace_id="ws-1", user_id="u-1", role=WR.CREATOR)
+        assert m.role == WR.CREATOR
