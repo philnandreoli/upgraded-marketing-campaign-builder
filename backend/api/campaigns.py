@@ -16,43 +16,24 @@ DTOs are defined here and imported by the other two routers.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import CampaignMemberRole, User, UserRole
 from backend.services.auth import get_current_user
 from backend.services.campaign_store import get_campaign_store
 from backend.services.campaign_workflow_service import get_workflow_service
-from backend.api.websocket import manager as ws_manager
+from backend.services.workflow_executor import get_executor, WorkflowJob
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["campaigns"])
-
-# ---------------------------------------------------------------------------
-# Shared coordinator instance (reused across requests so the pending-review
-# future map survives between the POST that launches the pipeline and the
-# POST that submits the human review).
-# ---------------------------------------------------------------------------
-_coordinator: CoordinatorAgent | None = None
-
-
-def _get_coordinator() -> CoordinatorAgent:
-    global _coordinator
-    if _coordinator is None:
-        async def _broadcast(event: str, data: dict[str, Any]) -> None:
-            await ws_manager.broadcast({"event": event, **data})
-
-        _coordinator = CoordinatorAgent(on_event=_broadcast)
-    return _coordinator
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +236,6 @@ async def get_me(
 @router.post("/campaigns", status_code=201, response_model=CreateCampaignResponse)
 async def create_campaign(
     brief: CampaignBrief,
-    background_tasks: BackgroundTasks,
     user: Optional[User] = Depends(get_current_user),
 ) -> CreateCampaignResponse:
     """Create a new campaign and kick off the agent pipeline in the background."""
@@ -266,32 +246,21 @@ async def create_campaign(
 
     try:
         logger.info("Creating campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())
-        coordinator = _get_coordinator()
-        service = get_workflow_service(coordinator)
+        service = get_workflow_service()
         campaign = await service.create_campaign(brief, user)
         logger.info("Campaign %s created successfully", campaign.id)
     except Exception as exc:
         logger.exception("Failed to create campaign: %s", exc)
         raise HTTPException(status_code=500, detail=f"Campaign creation failed: {exc}")
 
-    # Run the pipeline in the background so the HTTP response returns immediately
-    background_tasks.add_task(_run_pipeline, coordinator, campaign)
+    # Dispatch the pipeline to the configured executor (runs in background)
+    await get_executor().dispatch(WorkflowJob(campaign_id=campaign.id, action="start_pipeline"))
 
     return CreateCampaignResponse(
         id=campaign.id,
         status=campaign.status.value,
         message="Campaign created. Pipeline is running — connect to WebSocket for live updates.",
     )
-
-
-async def _run_pipeline(coordinator: CoordinatorAgent, campaign: Campaign) -> None:
-    """Wrapper executed as a background task."""
-    try:
-        logger.info("Starting pipeline for campaign %s", campaign.id)
-        await coordinator.run_pipeline(campaign)
-        logger.info("Pipeline completed for campaign %s", campaign.id)
-    except Exception as exc:
-        logger.exception("Pipeline crashed for campaign %s: %s", campaign.id, exc)
 
 
 @router.get("/campaigns", response_model=list[CampaignSummary])

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -69,12 +69,14 @@ _VIEWER = User(id="rbac-viewer-001", email="viewer@rbac.test", display_name="Vie
 def _as_user(user: User, store: InMemoryCampaignStore):
     """TestClient context with *user* as the authenticated principal."""
     app.dependency_overrides[get_current_user] = lambda: user
+    mock_executor = MagicMock()
+    mock_executor.dispatch = AsyncMock()
     try:
         with patch("backend.api.campaigns.get_campaign_store", return_value=store), \
              patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=store), \
              patch("backend.services.campaign_workflow_service._workflow_service", None), \
-             patch("backend.api.campaigns._coordinator", None), \
-             patch("backend.api.campaigns._run_pipeline", new_callable=AsyncMock), \
+             patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
+             patch("backend.api.campaign_workflow.get_executor", return_value=mock_executor), \
              patch("backend.main.init_db", new_callable=AsyncMock), \
              patch("backend.main.close_db", new_callable=AsyncMock):
             yield TestClient(app, raise_server_exceptions=False)

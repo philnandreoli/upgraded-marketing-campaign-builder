@@ -9,6 +9,7 @@ from backend.models.campaign import CampaignBrief, CampaignContent, CampaignStat
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse
 from backend.models.user import User, UserRole
 from backend.services.campaign_workflow_service import CampaignWorkflowService, WorkflowConflictError, get_workflow_service
+from backend.services.workflow_signal_store import SignalType
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
@@ -18,17 +19,15 @@ def store():
 
 
 @pytest.fixture
-def coordinator():
-    mock = MagicMock()
-    mock.run_pipeline = AsyncMock()
-    mock.submit_clarification = AsyncMock()
-    mock.submit_content_approval = AsyncMock()
-    return mock
+def mock_signal_store():
+    s = MagicMock()
+    s.write_signal = AsyncMock()
+    return s
 
 
 @pytest.fixture
-def service(store, coordinator):
-    return CampaignWorkflowService(store=store, coordinator=coordinator)
+def service(store, mock_signal_store):
+    return CampaignWorkflowService(store=store, signal_store=mock_signal_store)
 
 
 @pytest.fixture
@@ -79,21 +78,6 @@ class TestCreateCampaign:
 
 
 # ---------------------------------------------------------------------------
-# start_pipeline
-# ---------------------------------------------------------------------------
-
-class TestStartPipeline:
-    async def test_start_pipeline_calls_coordinator(self, service, store, brief, builder_user, coordinator):
-        campaign = await store.create(brief, owner_id=builder_user.id)
-        await service.start_pipeline(campaign.id)
-        coordinator.run_pipeline.assert_awaited_once_with(campaign)
-
-    async def test_start_pipeline_raises_for_unknown_campaign(self, service):
-        with pytest.raises(ValueError, match="not found"):
-            await service.start_pipeline("nonexistent-id")
-
-
-# ---------------------------------------------------------------------------
 # submit_clarification
 # ---------------------------------------------------------------------------
 
@@ -110,7 +94,7 @@ class TestSubmitClarification:
         with pytest.raises(WorkflowConflictError, match="clarification"):
             await service.submit_clarification(campaign.id, response)
 
-    async def test_calls_coordinator_when_status_is_clarification(self, service, store, brief, coordinator):
+    async def test_writes_signal_when_status_is_clarification(self, service, store, brief, mock_signal_store):
         campaign = await store.create(brief, owner_id=None)
         campaign.advance_status(CampaignStatus.CLARIFICATION)
         store._campaigns[campaign.id] = campaign
@@ -118,7 +102,11 @@ class TestSubmitClarification:
         response = ClarificationResponse(campaign_id=campaign.id, answers={"q1": "B2B"})
         await service.submit_clarification(campaign.id, response)
 
-        coordinator.submit_clarification.assert_awaited_once_with(response)
+        mock_signal_store.write_signal.assert_awaited_once_with(
+            campaign.id,
+            SignalType.CLARIFICATION_RESPONSE,
+            response.model_dump(mode="json"),
+        )
         assert response.campaign_id == campaign.id
 
 
@@ -127,17 +115,19 @@ class TestSubmitClarification:
 # ---------------------------------------------------------------------------
 
 class TestGetWorkflowServiceFactory:
-    def test_raises_without_coordinator_on_first_call(self):
-        with patch("backend.services.campaign_workflow_service._workflow_service", None):
-            with pytest.raises(RuntimeError, match="coordinator"):
-                get_workflow_service(coordinator=None)
-
-    def test_returns_same_instance_on_subsequent_calls(self, coordinator):
+    def test_returns_instance_on_first_call(self):
         mock_store = InMemoryCampaignStore()
         with patch("backend.services.campaign_workflow_service._workflow_service", None), \
              patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=mock_store):
-            svc1 = get_workflow_service(coordinator=coordinator)
-            svc2 = get_workflow_service(coordinator=coordinator)
+            svc = get_workflow_service()
+            assert svc is not None
+
+    def test_returns_same_instance_on_subsequent_calls(self):
+        mock_store = InMemoryCampaignStore()
+        with patch("backend.services.campaign_workflow_service._workflow_service", None), \
+             patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=mock_store):
+            svc1 = get_workflow_service()
+            svc2 = get_workflow_service()
             assert svc1 is svc2
 
 
@@ -163,14 +153,18 @@ class TestSubmitContentApproval:
         with pytest.raises(ValueError, match="not found"):
             await service.submit_content_approval("nonexistent", response)
 
-    async def test_calls_coordinator_and_sets_campaign_id(self, service, store, brief, coordinator):
+    async def test_writes_signal_and_sets_campaign_id(self, service, store, brief, mock_signal_store):
         campaign = await store.create(brief, owner_id=None)
         response = ContentApprovalResponse(campaign_id="", pieces=[], reject_campaign=False)
 
         await service.submit_content_approval(campaign.id, response)
 
         assert response.campaign_id == campaign.id
-        coordinator.submit_content_approval.assert_awaited_once_with(response)
+        mock_signal_store.write_signal.assert_awaited_once_with(
+            campaign.id,
+            SignalType.CONTENT_APPROVAL,
+            response.model_dump(mode="json"),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -264,58 +258,3 @@ class TestUpdatePieceNotes:
         assert result["campaign_id"] == campaign.id
         saved = await store.get(campaign.id)
         assert saved.content.pieces[0].human_notes == "Ship it!"
-
-
-# ---------------------------------------------------------------------------
-# resume_pipeline
-# ---------------------------------------------------------------------------
-
-class TestResumePipeline:
-    async def test_resume_pipeline_delegates_to_coordinator(
-        self, service, store, brief, builder_user, coordinator
-    ):
-        """resume_pipeline must call coordinator.resume_pipeline with the campaign id."""
-        coordinator.resume_pipeline = AsyncMock()
-        campaign = await store.create(brief, owner_id=builder_user.id)
-        await service.resume_pipeline(campaign.id)
-        coordinator.resume_pipeline.assert_awaited_once_with(campaign.id)
-
-    async def test_resume_pipeline_propagates_value_error(self, service, coordinator):
-        """ValueError from the coordinator must propagate to the caller."""
-        coordinator.resume_pipeline = AsyncMock(
-            side_effect=ValueError("Campaign abc not found")
-        )
-        with pytest.raises(ValueError, match="not found"):
-            await service.resume_pipeline("abc")
-
-
-# ---------------------------------------------------------------------------
-# retry_current_stage
-# ---------------------------------------------------------------------------
-
-class TestRetryCurrentStage:
-    async def test_retry_delegates_to_coordinator(
-        self, service, store, brief, builder_user, coordinator
-    ):
-        """retry_current_stage must call coordinator.retry_current_stage with the campaign id."""
-        coordinator.retry_current_stage = AsyncMock()
-        campaign = await store.create(brief, owner_id=builder_user.id)
-        await service.retry_current_stage(campaign.id)
-        coordinator.retry_current_stage.assert_awaited_once_with(campaign.id)
-
-    async def test_retry_propagates_value_error(self, service, coordinator):
-        """ValueError from the coordinator must propagate to the caller."""
-        coordinator.retry_current_stage = AsyncMock(
-            side_effect=ValueError("Campaign abc not found")
-        )
-        with pytest.raises(ValueError, match="not found"):
-            await service.retry_current_stage("abc")
-
-    async def test_retry_propagates_workflow_conflict_error(self, service, coordinator):
-        """WorkflowConflictError from the coordinator must propagate to the caller."""
-        from backend.services.campaign_workflow_service import WorkflowConflictError
-        coordinator.retry_current_stage = AsyncMock(
-            side_effect=WorkflowConflictError("Stage 'strategy' has no recorded error")
-        )
-        with pytest.raises(WorkflowConflictError, match="no recorded error"):
-            await service.retry_current_stage("some-id")

@@ -1,49 +1,39 @@
 """
 Campaign Workflow Service — thin service layer between API routes and orchestration.
 
-Wraps the CampaignStore and CoordinatorAgent so that route handlers only deal
-with HTTP concerns, while business/workflow rules live here.
+Wraps the CampaignStore so that route handlers only deal with HTTP concerns,
+while business/workflow rules live here.  Pipeline execution is handled by the
+WorkflowExecutor abstraction; this service only writes signals and stores state.
 """
 
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse
 from backend.models.user import User
 from backend.services.campaign_store import CampaignStore, get_campaign_store
 from backend.services.exceptions import WorkflowConflictError
+from backend.services.workflow_signal_store import WorkflowSignalStore, SignalType, get_workflow_signal_store
 
 __all__ = ["CampaignWorkflowService", "WorkflowConflictError", "get_workflow_service"]
 
 
 class CampaignWorkflowService:
-    """Orchestrates campaign creation and pipeline execution."""
+    """Handles campaign state operations (signals, decisions, notes).
 
-    def __init__(self, store: CampaignStore, coordinator: CoordinatorAgent) -> None:
+    Pipeline execution (start / resume / retry) is handled by the
+    WorkflowExecutor layer and is no longer part of this service.
+    """
+
+    def __init__(self, store: CampaignStore, signal_store: WorkflowSignalStore | None = None) -> None:
         self._store = store
-        self._coordinator = coordinator
+        self._signal_store = signal_store if signal_store is not None else get_workflow_signal_store()
 
     async def create_campaign(self, brief: CampaignBrief, user: User | None) -> Campaign:
         """Persist a new campaign and return it."""
         return await self._store.create(brief, owner_id=user.id if user else None)
-
-    async def start_pipeline(self, campaign_id: str) -> None:
-        """Look up a campaign and hand it off to the coordinator pipeline."""
-        campaign = await self._store.get(campaign_id)
-        if campaign is None:
-            raise ValueError(f"Campaign {campaign_id} not found")
-        await self._coordinator.run_pipeline(campaign)
-
-    async def resume_pipeline(self, campaign_id: str) -> None:
-        """Resume a previously interrupted pipeline from its last checkpoint."""
-        await self._coordinator.resume_pipeline(campaign_id)
-
-    async def retry_current_stage(self, campaign_id: str) -> None:
-        """Clear the current stage error and re-run that stage."""
-        await self._coordinator.retry_current_stage(campaign_id)
 
     async def submit_clarification(
         self, campaign_id: str, response: ClarificationResponse
@@ -57,17 +47,25 @@ class CampaignWorkflowService:
                 f"Campaign is in '{campaign.status.value}', not 'clarification'"
             )
         response.campaign_id = campaign_id
-        await self._coordinator.submit_clarification(response)
+        await self._signal_store.write_signal(
+            campaign_id,
+            SignalType.CLARIFICATION_RESPONSE,
+            response.model_dump(mode="json"),
+        )
 
     async def submit_content_approval(
         self, campaign_id: str, response: ContentApprovalResponse
     ) -> None:
-        """Forward content approval decisions to the coordinator."""
+        """Write the content approval signal for the running coordinator to pick up."""
         campaign = await self._store.get(campaign_id)
         if campaign is None:
             raise ValueError(f"Campaign {campaign_id} not found")
         response.campaign_id = campaign_id
-        await self._coordinator.submit_content_approval(response)
+        await self._signal_store.write_signal(
+            campaign_id,
+            SignalType.CONTENT_APPROVAL,
+            response.model_dump(mode="json"),
+        )
 
     async def update_piece_decision(
         self,
@@ -149,22 +147,9 @@ class CampaignWorkflowService:
 _workflow_service: CampaignWorkflowService | None = None
 
 
-def get_workflow_service(coordinator: CoordinatorAgent | None = None) -> CampaignWorkflowService:
-    """Return the shared CampaignWorkflowService instance.
-
-    *coordinator* is accepted as an optional parameter so that the API layer
-    can inject its singleton coordinator without this module needing to own
-    the broadcast callback setup.
-    """
+def get_workflow_service() -> CampaignWorkflowService:
+    """Return the shared CampaignWorkflowService instance."""
     global _workflow_service
     if _workflow_service is None:
-        if coordinator is None:
-            raise RuntimeError(
-                "get_workflow_service() called without a coordinator before the service was initialised. "
-                "Pass the coordinator on first call."
-            )
-        _workflow_service = CampaignWorkflowService(
-            store=get_campaign_store(),
-            coordinator=coordinator,
-        )
+        _workflow_service = CampaignWorkflowService(store=get_campaign_store())
     return _workflow_service

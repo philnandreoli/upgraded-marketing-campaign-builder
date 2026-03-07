@@ -36,15 +36,17 @@ _OTHER_USER = User(
 def _isolated_store():
     """Give each test a fresh InMemoryCampaignStore and mock the pipeline."""
     fresh_store = InMemoryCampaignStore()
+    mock_executor = MagicMock()
+    mock_executor.dispatch = AsyncMock()
 
-    # Mock _run_pipeline to be a no-op so BackgroundTasks doesn't trigger real LLM calls
     # Mock init_db/close_db so TestClient doesn't need a real database
     # Reset _workflow_service singleton so each test gets a fresh one with the fresh store
+    # Mock get_executor so pipeline dispatch is a no-op in route tests
     with patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store), \
          patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
          patch("backend.services.campaign_workflow_service._workflow_service", None), \
-         patch("backend.api.campaigns._coordinator", None), \
-         patch("backend.api.campaigns._run_pipeline", new_callable=AsyncMock), \
+         patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
+         patch("backend.api.campaign_workflow.get_executor", return_value=mock_executor), \
          patch("backend.main.init_db", new_callable=AsyncMock), \
          patch("backend.main.close_db", new_callable=AsyncMock):
         yield fresh_store
@@ -639,15 +641,10 @@ class TestSubmitClarification:
         campaign.advance_status(CampaignStatus.CLARIFICATION)
         _isolated_store._campaigns[campaign.id] = campaign
 
-        with patch("backend.api.campaigns._get_coordinator") as mock_coord_fn:
-            mock_coord = MagicMock()
-            mock_coord.submit_clarification = AsyncMock()
-            mock_coord_fn.return_value = mock_coord
-
-            r = client.post(f"/api/campaigns/{campaign.id}/clarify", json={
-                "campaign_id": campaign.id,
-                "answers": {"q1": "B2B tech companies"},
-            })
+        r = client.post(f"/api/campaigns/{campaign.id}/clarify", json={
+            "campaign_id": campaign.id,
+            "answers": {"q1": "B2B tech companies"},
+        })
 
         assert r.status_code == 200
         data = r.json()

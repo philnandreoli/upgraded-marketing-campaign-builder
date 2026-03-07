@@ -69,6 +69,9 @@ def _in_memory_signal_store():
     with patch(
         "backend.agents.coordinator_agent.get_workflow_signal_store",
         return_value=store,
+    ), patch(
+        "backend.services.campaign_workflow_service.get_workflow_signal_store",
+        return_value=store,
     ):
         yield store
 
