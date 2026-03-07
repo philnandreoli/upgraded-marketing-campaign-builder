@@ -129,7 +129,7 @@ function AuthenticatedApp() {
           <Route path="/" element={<Dashboard events={events} />} />
           <Route path="/workspaces" element={<WorkspaceList />} />
           <Route path="/workspaces/:id" element={<WorkspaceDetail events={events} />} />
-          <Route path="/workspaces/:id/settings" element={<WorkspaceSettings />} />
+          <Route path="/workspaces/:id/settings" element={<RequireBuilder><WorkspaceSettings /></RequireBuilder>} />
           <Route path="/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
           <Route path="/campaign/:id" element={<CampaignDetail />} />
           <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
