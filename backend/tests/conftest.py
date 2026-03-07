@@ -2,7 +2,12 @@
 Shared test fixtures.
 """
 
+import asyncio
+import json
 import pytest
+import uuid
+from datetime import datetime
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.models.campaign import CampaignBrief, Campaign
@@ -19,6 +24,55 @@ def _no_foundry_agents():
     register_agents() has populated the global registry."""
     with patch("backend.agents.base_agent.get_agent_ref", return_value=None):
         yield
+
+
+# ---- In-memory WorkflowSignalStore for unit tests (no DB required) ----
+
+class InMemoryWorkflowSignalStore:
+    """Dict-backed signal store for unit tests."""
+
+    def __init__(self):
+        self._signals: list[dict] = []
+
+    async def write_signal(self, campaign_id: str, signal_type: str, payload: dict) -> str:
+        signal_id = str(uuid.uuid4())
+        self._signals.append({
+            "id": signal_id,
+            "campaign_id": campaign_id,
+            "signal_type": signal_type,
+            "payload": payload,
+            "created_at": datetime.utcnow(),
+            "consumed_at": None,
+        })
+        return signal_id
+
+    async def poll_signal(self, campaign_id: str, signal_type: str) -> Optional[dict]:
+        for s in self._signals:
+            if (
+                s["campaign_id"] == campaign_id
+                and s["signal_type"] == signal_type
+                and s["consumed_at"] is None
+            ):
+                return {"id": s["id"], "payload": s["payload"]}
+        return None
+
+    async def consume_signal(self, signal_id: str) -> None:
+        for s in self._signals:
+            if s["id"] == signal_id:
+                s["consumed_at"] = datetime.utcnow()
+                return
+
+
+@pytest.fixture(autouse=True)
+def _in_memory_signal_store():
+    """Replace the DB-backed signal store singleton with an in-memory
+    implementation so tests never need a live database connection."""
+    store = InMemoryWorkflowSignalStore()
+    with patch(
+        "backend.agents.coordinator_agent.get_workflow_signal_store",
+        return_value=store,
+    ):
+        yield store
 
 
 # ---- Role-based user fixtures ----

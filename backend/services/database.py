@@ -10,7 +10,7 @@ import os
 
 from typing import AsyncGenerator
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -68,6 +68,23 @@ class CampaignMemberRow(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     role = Column(String, nullable=False)   # "owner", "editor", "viewer"
     added_at = Column(DateTime, nullable=False)
+
+
+class WorkflowSignalRow(Base):
+    """One row per human-input signal (clarification answer or content approval)."""
+
+    __tablename__ = "workflow_signals"
+
+    id = Column(String, primary_key=True)  # UUID
+    campaign_id = Column(String, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False)
+    signal_type = Column(String, nullable=False)  # "clarification_response" | "content_approval"
+    payload = Column(Text, nullable=False)  # JSON-serialised signal data
+    created_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)  # null = pending, set = consumed
+
+    __table_args__ = (
+        Index("ix_workflow_signals_campaign_id", "campaign_id"),
+    )
 
 
 class WorkflowCheckpointRow(Base):
