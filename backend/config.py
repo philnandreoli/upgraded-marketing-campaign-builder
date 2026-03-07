@@ -113,6 +113,32 @@ class AppSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class ServiceBusSettings(BaseSettings):
+    """Azure Service Bus settings (used when WORKFLOW_EXECUTOR=azure_service_bus)."""
+
+    namespace: str = Field(
+        default="",
+        alias="AZURE_SERVICE_BUS_NAMESPACE",
+        description=(
+            "Fully-qualified Service Bus namespace hostname, e.g. "
+            "mybus.servicebus.windows.net. "
+            "Takes precedence over connection_string when both are set."
+        ),
+    )
+    connection_string: str = Field(
+        default="",
+        alias="AZURE_SERVICE_BUS_CONNECTION_STRING",
+        description="Service Bus connection string. Used when namespace is not set.",
+    )
+    queue_name: str = Field(
+        default="workflow-jobs",
+        alias="AZURE_SERVICE_BUS_QUEUE_NAME",
+        description="Name of the Service Bus queue that receives workflow jobs.",
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class Settings(BaseSettings):
     """Aggregate settings — single entry-point for the whole app."""
 
@@ -122,6 +148,7 @@ class Settings(BaseSettings):
     tracing: TracingSettings = TracingSettings()
     foundry_agents: FoundryAgentsSettings = FoundryAgentsSettings()
     oidc: OIDCSettings = OIDCSettings()
+    service_bus: ServiceBusSettings = ServiceBusSettings()
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
