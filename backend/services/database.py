@@ -102,6 +102,23 @@ class WorkflowCheckpointRow(Base):
     updated_at = Column(DateTime, nullable=False)
 
 
+class EventOverflowRow(Base):
+    """Stores event payloads that exceed the PostgreSQL NOTIFY 8 KB limit.
+
+    When an event payload is too large to send via NOTIFY directly, the full
+    payload is written here and NOTIFY carries only the ``overflow_id``
+    reference.  The subscriber resolves the reference and broadcasts the full
+    payload to WebSocket clients.
+    """
+
+    __tablename__ = "event_overflow"
+
+    id = Column(String, primary_key=True)          # UUID
+    channel = Column(String, nullable=False)       # channel name (e.g. "workflow_events")
+    payload = Column(Text, nullable=False)         # full JSON payload
+    created_at = Column(DateTime, nullable=False)
+
+
 # ---------------------------------------------------------------------------
 # Session dependency
 # ---------------------------------------------------------------------------
