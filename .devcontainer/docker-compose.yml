@@ -9,9 +9,27 @@ services:
       - "AI-Managed-AIServices.services.ai.azure.com:20.62.58.5"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/campaigns
+      # Local dev uses in-process execution — no worker service needed.
+      WORKFLOW_EXECUTOR: in_process
     depends_on:
       db:
         condition: service_healthy
+
+  # Uncomment to test the full worker topology locally (requires Azure Service Bus credentials in .env):
+  # Also change app's WORKFLOW_EXECUTOR above to azure_service_bus when enabling this.
+  # worker:
+  #   build:
+  #     context: ..
+  #     dockerfile: backend/Containerfile
+  #   command: ["python", "-m", "backend.worker"]
+  #   volumes:
+  #     - ..:/workspaces/marketing-campaign-builder
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/campaigns
+  #     WORKFLOW_EXECUTOR: azure_service_bus
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
 
   db:
     image: postgres:16

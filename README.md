@@ -121,7 +121,51 @@ Open the project in VS Code and select **Reopen in Container**, or use the GitHu
 podman-compose up --build
 ```
 
-This starts both services — the frontend on **http://localhost:3000** and the backend on **http://localhost:8000**.
+This starts three services — the frontend on **http://localhost:3000**, the backend API on **http://localhost:8000**, and a standalone **worker** process that processes pipeline jobs from Azure Service Bus.
+
+> **Note:** The worker service requires `WORKFLOW_EXECUTOR=azure_service_bus` and valid Azure Service Bus credentials in your `.env` file. See [Worker Topology](#worker-topology) for details.
+
+## Worker Topology
+
+The application supports two execution modes controlled by the `WORKFLOW_EXECUTOR` environment variable:
+
+### Local development — `in_process` (default)
+
+```
+React SPA  ──►  FastAPI Backend
+                   └─ CoordinatorAgent runs inline (no worker needed)
+```
+
+The API runs the pipeline directly in the same process. No additional services are needed. This is the default for local development and the Dev Container.
+
+### Production — `azure_service_bus` + standalone worker
+
+```
+React SPA  ──►  FastAPI API  ──►  Azure Service Bus  ──►  Worker  ──►  DB
+                   (enqueues job)       (queue)          (runs pipeline)
+```
+
+The API enqueues a `WorkflowJob` message and returns immediately. A separate worker process (`backend/worker.py`) picks up jobs from the Service Bus queue and runs the `CoordinatorAgent` pipeline, writing results back to the database.
+
+| Setting | Local dev | Production |
+|---------|-----------|------------|
+| `WORKFLOW_EXECUTOR` | `in_process` | `azure_service_bus` |
+| Worker process | Not needed | `python -m backend.worker` |
+| Azure Service Bus | Not needed | Required |
+
+**Starting the worker manually:**
+
+```bash
+WORKFLOW_EXECUTOR=azure_service_bus python -m backend.worker
+```
+
+**Worker-specific settings** (see `.env.example`):
+
+```bash
+WORKER_MAX_CONCURRENCY=3           # max simultaneous pipeline executions
+WORKER_SHUTDOWN_TIMEOUT_SECONDS=300 # graceful shutdown wait time
+WORKER_HEALTH_PORT=8001            # health endpoint port (/health/live, /health/ready)
+```
 
 ## Running Tests
 
