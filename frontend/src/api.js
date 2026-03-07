@@ -57,11 +57,12 @@ export async function getMe() {
   return res.json();
 }
 
-export async function createCampaign(brief) {
+export async function createCampaign(brief, workspaceId = null) {
+  const body = workspaceId !== null ? { ...brief, workspace_id: workspaceId } : brief;
   const res = await fetch(`${API_BASE}/api/campaigns`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(brief),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     let detail = `Create failed: ${res.status}`;
@@ -202,6 +203,16 @@ export async function listAllCampaigns() {
   return res.json();
 }
 
+export async function moveCampaign(campaignId, workspaceId) {
+  const res = await fetch(`${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/workspace`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ workspace_id: workspaceId }),
+  });
+  if (!res.ok) throw new Error(`Move campaign failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Campaign member management API
 // ---------------------------------------------------------------------------
@@ -244,6 +255,107 @@ export async function updateCampaignMemberRole(campaignId, userId, role) {
   );
   if (!res.ok) throw new Error(`Update member role failed: ${res.status}`);
   return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Workspace API
+// ---------------------------------------------------------------------------
+
+export async function listWorkspaces() {
+  const res = await fetch(`${API_BASE}/api/workspaces`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`List workspaces failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getWorkspace(id) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Get workspace failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createWorkspace(name, description) {
+  const res = await fetch(`${API_BASE}/api/workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ name, description }),
+  });
+  if (!res.ok) throw new Error(`Create workspace failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateWorkspace(id, { name, description }) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ name, description }),
+  });
+  if (!res.ok) throw new Error(`Update workspace failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteWorkspace(id) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!res.ok && res.status !== 204)
+    throw new Error(`Delete workspace failed: ${res.status}`);
+}
+
+export async function listWorkspaceCampaigns(id) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}/campaigns`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`List workspace campaigns failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Workspace membership API
+// ---------------------------------------------------------------------------
+
+export async function listWorkspaceMembers(id) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}/members`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(`List workspace members failed: ${res.status}`);
+  return res.json();
+}
+
+export async function addWorkspaceMember(id, userId, role) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}/members`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ user_id: userId, role }),
+  });
+  if (!res.ok) throw new Error(`Add workspace member failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateWorkspaceMemberRole(id, userId, role) {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify({ role }),
+    }
+  );
+  if (!res.ok) throw new Error(`Update workspace member role failed: ${res.status}`);
+  return res.json();
+}
+
+export async function removeWorkspaceMember(id, userId) {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE", headers: await authHeaders() }
+  );
+  if (!res.ok && res.status !== 204)
+    throw new Error(`Remove workspace member failed: ${res.status}`);
 }
 
 export async function getWsUrl(campaignId = null) {
