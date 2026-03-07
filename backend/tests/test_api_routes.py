@@ -87,8 +87,76 @@ class TestHealthCheck:
         r = client.get("/health")
         assert r.status_code == 200
         data = r.json()
-        assert data["status"] == "healthy"
-        assert "version" in data
+        assert data["status"] == "alive"
+
+    def test_health_live_returns_200(self, client):
+        r = client.get("/health/live")
+        assert r.status_code == 200
+        assert r.json()["status"] == "alive"
+
+    def test_health_ready_returns_200_when_db_up(self, client):
+        """Ready endpoint returns 200 when the DB check succeeds."""
+        with (
+            patch("backend.main.sqlalchemy.text", return_value=MagicMock()),
+            patch("backend.services.database.engine") as mock_engine,
+        ):
+            mock_conn = AsyncMock()
+            mock_conn.execute = AsyncMock()
+            mock_engine.connect.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_engine.connect.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            mock_executor = MagicMock()
+            mock_executor.health_check = AsyncMock(return_value=True)
+
+            with patch("backend.services.workflow_executor.get_executor", return_value=mock_executor):
+                r = client.get("/health/ready")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "ready"
+        assert data["checks"]["executor"] is True
+
+    def test_health_ready_returns_503_when_db_down(self, client):
+        """Ready endpoint returns 503 when the DB check fails."""
+        import sqlalchemy as sa
+
+        with patch("backend.services.database.engine") as mock_engine:
+            mock_engine.connect.side_effect = sa.exc.OperationalError(
+                "connection refused", None, None
+            )
+
+            mock_executor = MagicMock()
+            mock_executor.health_check = AsyncMock(return_value=True)
+
+            with patch("backend.services.workflow_executor.get_executor", return_value=mock_executor):
+                r = client.get("/health/ready")
+
+        assert r.status_code == 503
+        data = r.json()
+        assert data["status"] == "not_ready"
+        assert data["checks"]["database"] is False
+
+    def test_health_ready_returns_503_when_executor_down(self, client):
+        """Ready endpoint returns 503 when executor health_check fails."""
+        with (
+            patch("backend.main.sqlalchemy.text", return_value=MagicMock()),
+            patch("backend.services.database.engine") as mock_engine,
+        ):
+            mock_conn = AsyncMock()
+            mock_conn.execute = AsyncMock()
+            mock_engine.connect.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_engine.connect.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            mock_executor = MagicMock()
+            mock_executor.health_check = AsyncMock(return_value=False)
+
+            with patch("backend.services.workflow_executor.get_executor", return_value=mock_executor):
+                r = client.get("/health/ready")
+
+        assert r.status_code == 503
+        data = r.json()
+        assert data["status"] == "not_ready"
+        assert data["checks"]["executor"] is False
 
 
 # ---- GET /api/me ----
