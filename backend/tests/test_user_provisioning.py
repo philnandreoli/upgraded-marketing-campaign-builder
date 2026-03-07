@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from backend.services.database import Base, UserRow
+from backend.services.database import Base, UserRow, WorkspaceMemberRow, WorkspaceRow
 from backend.services.auth import _provision_user
 
 
@@ -117,3 +117,81 @@ class TestProvisionUser:
         # Returns the row with updated claims from the latest JWT
         assert row.id == "user-existing"
         assert row.email == "b@example.com"
+
+    async def test_new_user_gets_personal_workspace(self, db_session):
+        """A personal workspace is created for a new user on first provisioning."""
+        from sqlalchemy import select as sa_select
+
+        await _provision_user(db_session, "user-ws", "ws@example.com", "WS User")
+
+        result = await db_session.execute(
+            sa_select(WorkspaceRow).where(WorkspaceRow.owner_id == "user-ws")
+        )
+        workspaces = result.scalars().all()
+        assert len(workspaces) == 1
+        ws = workspaces[0]
+        assert ws.is_personal is True
+        assert ws.name == "WS User's Workspace"
+        assert ws.owner_id == "user-ws"
+
+    async def test_personal_workspace_name_falls_back_to_email(self, db_session):
+        """Workspace name falls back to email when display_name is None."""
+        from sqlalchemy import select as sa_select
+
+        await _provision_user(db_session, "user-ndn", "ndn@example.com", None)
+
+        result = await db_session.execute(
+            sa_select(WorkspaceRow).where(WorkspaceRow.owner_id == "user-ndn")
+        )
+        ws = result.scalars().first()
+        assert ws is not None
+        assert ws.name == "ndn@example.com's Workspace"
+
+    async def test_personal_workspace_name_falls_back_to_default(self, db_session):
+        """Workspace name is 'Personal Workspace' when both display_name and email are None."""
+        from sqlalchemy import select as sa_select
+
+        await _provision_user(db_session, "user-anon", None, None)
+
+        result = await db_session.execute(
+            sa_select(WorkspaceRow).where(WorkspaceRow.owner_id == "user-anon")
+        )
+        ws = result.scalars().first()
+        assert ws is not None
+        assert ws.name == "Personal Workspace"
+
+    async def test_user_added_as_creator_of_personal_workspace(self, db_session):
+        """The new user is added as CREATOR of their personal workspace."""
+        from sqlalchemy import select as sa_select
+        from backend.models.workspace import WorkspaceRole
+
+        await _provision_user(db_session, "user-creator", "creator@example.com", "Creator")
+
+        ws_result = await db_session.execute(
+            sa_select(WorkspaceRow).where(WorkspaceRow.owner_id == "user-creator")
+        )
+        ws = ws_result.scalars().first()
+        assert ws is not None
+
+        member_result = await db_session.execute(
+            sa_select(WorkspaceMemberRow).where(
+                WorkspaceMemberRow.workspace_id == ws.id,
+                WorkspaceMemberRow.user_id == "user-creator",
+            )
+        )
+        member = member_result.scalars().first()
+        assert member is not None
+        assert member.role == WorkspaceRole.CREATOR.value
+
+    async def test_no_duplicate_workspace_on_second_login(self, db_session):
+        """Subsequent logins do NOT create additional workspaces."""
+        from sqlalchemy import select as sa_select
+
+        await _provision_user(db_session, "user-dup", "dup@example.com", "Dup")
+        await _provision_user(db_session, "user-dup", "dup@example.com", "Dup Updated")
+
+        result = await db_session.execute(
+            sa_select(WorkspaceRow).where(WorkspaceRow.owner_id == "user-dup")
+        )
+        workspaces = result.scalars().all()
+        assert len(workspaces) == 1
