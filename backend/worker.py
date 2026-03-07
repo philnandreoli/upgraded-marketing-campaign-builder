@@ -24,6 +24,7 @@ from azure.servicebus.exceptions import OperationTimeoutError
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.config import get_settings
 from backend.services.campaign_store import get_campaign_store
+from backend.services.event_publisher import PostgresEventPublisher
 from backend.services.workflow_executor import WorkflowJob
 
 logger = logging.getLogger(__name__)
@@ -227,11 +228,22 @@ class Worker:
     async def _execute_job(self, job: WorkflowJob) -> None:
         """Dispatch *job* to the coordinator pipeline.
 
-        Creates a fresh ``CoordinatorAgent`` with no WebSocket callback —
-        events are delivered cross-process via the configured delivery
-        mechanism (see issue #142).
+        Creates a fresh ``CoordinatorAgent`` with a ``PostgresEventPublisher``
+        so that real-time pipeline events are forwarded to the API process via
+        PostgreSQL LISTEN/NOTIFY and then relayed to WebSocket clients.
         """
-        coordinator = CoordinatorAgent(on_event=None)
+        from backend.services.database import engine  # noqa: PLC0415
+
+        settings = get_settings()
+        publisher = PostgresEventPublisher(
+            engine,
+            channel_name=settings.events.channel_name,
+        )
+
+        async def _on_event(event: str, data: dict) -> None:
+            await publisher.publish(event, data)
+
+        coordinator = CoordinatorAgent(on_event=_on_event)
         store = get_campaign_store()
 
         if job.action == "start_pipeline":

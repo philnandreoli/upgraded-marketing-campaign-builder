@@ -15,6 +15,7 @@ from typing import Any
 from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.api.websocket import manager as ws_manager
 from backend.services.campaign_store import get_campaign_store
+from backend.services.event_publisher import InProcessEventPublisher
 from backend.services.workflow_executor import WorkflowJob
 
 logger = logging.getLogger(__name__)
@@ -75,8 +76,10 @@ class InProcessExecutor:
         ``backend/api/campaigns.py``: any exception is logged rather than
         re-raised so that a pipeline failure never kills the event loop.
         """
+        publisher = InProcessEventPublisher(ws_manager)
+
         async def _broadcast(event: str, data: dict[str, Any]) -> None:
-            await ws_manager.broadcast({"event": event, **data})
+            await publisher.publish(event, data)
 
         coordinator = CoordinatorAgent(on_event=_broadcast)
         store = get_campaign_store()

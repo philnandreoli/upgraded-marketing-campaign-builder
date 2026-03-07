@@ -75,9 +75,28 @@ from backend.services.database import init_db, close_db
 @app.on_event("startup")
 async def on_startup():
     await init_db()
+    # Start the cross-process event subscriber when the pipeline is running
+    # in an external worker process.  In in-process mode events flow directly
+    # via InProcessEventPublisher without touching Postgres LISTEN/NOTIFY.
+    if settings.app.workflow_executor != "in_process":
+        from backend.api.websocket import manager as ws_manager  # noqa: PLC0415
+        from backend.services.database import DATABASE_URL  # noqa: PLC0415
+        from backend.services.event_subscriber import EventSubscriber  # noqa: PLC0415
+
+        dsn = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+        subscriber = EventSubscriber(
+            dsn=dsn,
+            ws_manager=ws_manager,
+            channel_name=settings.events.channel_name,
+        )
+        subscriber.start()
+        app.state.event_subscriber = subscriber
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    subscriber = getattr(app.state, "event_subscriber", None)
+    if subscriber is not None:
+        await subscriber.stop()
     await close_db()
 
 

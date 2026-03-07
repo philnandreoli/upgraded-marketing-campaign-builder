@@ -149,21 +149,28 @@ class TestDispatchRouting:
         mock_store.get.assert_awaited_once_with("c-1")
         mock_coord.run_pipeline.assert_awaited_once_with(mock_campaign)
 
-    async def test_start_pipeline_coordinator_has_no_event_callback(self):
-        """Worker creates CoordinatorAgent with on_event=None (no WebSocket)."""
+    async def test_start_pipeline_coordinator_has_postgres_event_callback(self):
+        """Worker creates CoordinatorAgent with a PostgresEventPublisher-backed on_event."""
         worker, _ = _build_worker()
         mock_coord = MagicMock()
         mock_coord.run_pipeline = AsyncMock()
         mock_store = MagicMock()
         mock_store.get = AsyncMock(return_value=MagicMock())
 
+        mock_engine = MagicMock()
+
         with (
             patch("backend.worker.CoordinatorAgent", return_value=mock_coord) as coord_cls,
             patch("backend.worker.get_campaign_store", return_value=mock_store),
+            patch("backend.worker.engine", mock_engine, create=True),
         ):
             await worker._execute_job(_make_job("start_pipeline"))
 
-        coord_cls.assert_called_once_with(on_event=None)
+        # on_event must be a callable (the _on_event closure), not None
+        coord_cls.assert_called_once()
+        _, kwargs = coord_cls.call_args
+        assert kwargs.get("on_event") is not None
+        assert callable(kwargs["on_event"])
 
     async def test_resume_pipeline_calls_resume(self):
         worker, _ = _build_worker()

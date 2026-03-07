@@ -161,6 +161,22 @@ class WorkerSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class EventSettings(BaseSettings):
+    """Settings for cross-process event delivery via PostgreSQL LISTEN/NOTIFY."""
+
+    channel_name: str = Field(
+        default="workflow_events",
+        alias="EVENT_CHANNEL_NAME",
+        description=(
+            "PostgreSQL NOTIFY channel name used for cross-process event delivery. "
+            "The worker publishes to this channel; the API subscribes and forwards "
+            "events to WebSocket clients."
+        ),
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class Settings(BaseSettings):
     """Aggregate settings — single entry-point for the whole app."""
 
@@ -172,6 +188,7 @@ class Settings(BaseSettings):
     oidc: OIDCSettings = OIDCSettings()
     service_bus: ServiceBusSettings = ServiceBusSettings()
     worker: WorkerSettings = WorkerSettings()
+    events: EventSettings = EventSettings()
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
