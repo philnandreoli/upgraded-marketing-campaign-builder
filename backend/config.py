@@ -104,6 +104,11 @@ class AppSettings(BaseSettings):
     env: str = Field(default="development", alias="APP_ENV")
     port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="INFO", alias="APP_LOG_LEVEL")
+    workflow_executor: str = Field(
+        default="in_process",
+        alias="WORKFLOW_EXECUTOR",
+        description="Executor backend for pipeline jobs. One of: in_process, azure_service_bus.",
+    )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
