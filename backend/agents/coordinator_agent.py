@@ -62,6 +62,11 @@ from backend.services.workflow_checkpoint_store import (
     WorkflowCheckpointStore,
     get_workflow_checkpoint_store,
 )
+from backend.services.workflow_signal_store import (
+    SignalType,
+    WorkflowSignalStore,
+    get_workflow_signal_store,
+)
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -139,9 +144,12 @@ class CoordinatorAgent:
         on_event: EventCallback | None = None,
         checkpoint_store: WorkflowCheckpointStore | None = None,
         idle_timeout_seconds: float | None = None,
+        signal_store: WorkflowSignalStore | None = None,
+        poll_interval_seconds: float = 2.0,
     ) -> None:
         self._store = store or get_campaign_store()
         self._checkpoint_store = checkpoint_store or get_workflow_checkpoint_store()
+        self._signal_store = signal_store or get_workflow_signal_store()
 
         # Seconds to wait for human input before escalating to MANUAL_REVIEW_REQUIRED.
         # Defaults to the module-level constant (derived from PIPELINE_IDLE_TIMEOUT_DAYS).
@@ -150,6 +158,9 @@ class CoordinatorAgent:
             if idle_timeout_seconds is not None
             else _PIPELINE_IDLE_TIMEOUT_SECONDS
         )
+
+        # How often (seconds) to poll the signal store while waiting for human input.
+        self._poll_interval_seconds: float = poll_interval_seconds
 
         # Sub-agents
         self._strategy = StrategyAgent()
@@ -573,7 +584,19 @@ class CoordinatorAgent:
         return StageExecutionResult(action=WorkflowAction.COMPLETE, campaign=campaign)
 
     async def submit_clarification(self, response: ClarificationResponse) -> None:
-        """Called by the API layer when the user answers clarifying questions."""
+        """Called by the API layer when the user answers clarifying questions.
+
+        Always writes a durable signal to the DB so cross-process coordinators
+        can pick it up via poll.  If a coordinator is running in the same process
+        and has an active future, the future is resolved immediately as a fast path.
+        """
+        # Write durable signal first so the poll loop can always find it.
+        await self._signal_store.write_signal(
+            response.campaign_id,
+            SignalType.CLARIFICATION_RESPONSE,
+            response.model_dump(mode="json"),
+        )
+
         lock = self._clarification_locks.setdefault(response.campaign_id, asyncio.Lock())
         async with lock:
             future = self._pending_clarifications.get(response.campaign_id)
@@ -612,7 +635,19 @@ class CoordinatorAgent:
         self._clarification_locks.pop(response.campaign_id, None)
 
     async def submit_content_approval(self, response: ContentApprovalResponse) -> None:
-        """Called by the API layer when the human submits per-piece content approvals."""
+        """Called by the API layer when the human submits per-piece content approvals.
+
+        Always writes a durable signal to the DB.  If a coordinator is running in
+        the same process and has an active future, the future is resolved immediately
+        as a fast path and the caller waits for the gate to persist the decisions.
+        """
+        # Write durable signal first so the poll loop can always find it.
+        await self._signal_store.write_signal(
+            response.campaign_id,
+            SignalType.CONTENT_APPROVAL,
+            response.model_dump(mode="json"),
+        )
+
         lock = self._approval_locks.setdefault(response.campaign_id, asyncio.Lock())
         saved_future: asyncio.Future[None] | None = None
         no_pending = False
@@ -658,8 +693,8 @@ class CoordinatorAgent:
                 self._content_approval_saved.pop(response.campaign_id, None)
                 self._approval_locks.pop(response.campaign_id, None)
         elif no_pending:
-            logger.warning(
-                "No pending content approval for campaign %s",
+            logger.info(
+                "No pending content approval future for campaign %s — signal written to DB for poll",
                 response.campaign_id,
             )
 
@@ -868,7 +903,9 @@ class CoordinatorAgent:
                 revision_cycle=cycle,
             ).model_dump(mode="json"))
 
-            # Wait for human response
+            # Wait for human response.  Polls the DB signal store every
+            # _poll_interval_seconds; resolves immediately via in-process future
+            # when running in a single-process deployment (fast path).
             loop = asyncio.get_running_loop()
             future: asyncio.Future[ContentApprovalResponse] = loop.create_future()
             self._pending_content_approvals[campaign.id] = future
@@ -881,9 +918,45 @@ class CoordinatorAgent:
                 expires_at=expires_at,
             )
 
+            human_response: ContentApprovalResponse | None = None
+            timed_out = False
+            deadline = loop.time() + self._idle_timeout_seconds
             try:
-                human_response = await asyncio.wait_for(future, timeout=self._idle_timeout_seconds)
-            except asyncio.TimeoutError:
+                while True:
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        timed_out = True
+                        break
+
+                    # Fast path: in-process future already resolved.
+                    if future.done() and not future.cancelled():
+                        human_response = future.result()
+                        break
+
+                    # Durable path: check DB signal store.
+                    signal = await self._signal_store.poll_signal(
+                        campaign.id, SignalType.CONTENT_APPROVAL
+                    )
+                    if signal is not None:
+                        await self._signal_store.consume_signal(signal["id"])
+                        human_response = ContentApprovalResponse(**signal["payload"])
+                        if not future.done():
+                            future.set_result(human_response)
+                        break
+
+                    # Neither ready — wait up to poll_interval or until future resolves.
+                    poll_wait = min(self._poll_interval_seconds, remaining)
+                    try:
+                        human_response = await asyncio.wait_for(
+                            asyncio.shield(future), timeout=poll_wait
+                        )
+                        break
+                    except asyncio.TimeoutError:
+                        pass  # Continue polling
+            finally:
+                self._pending_content_approvals.pop(campaign.id, None)
+
+            if timed_out or human_response is None:
                 logger.warning(
                     "Content approval wait timed out for campaign %s — escalating to MANUAL_REVIEW_REQUIRED",
                     campaign.id,
@@ -896,8 +969,6 @@ class CoordinatorAgent:
                     "stage": "content_approval",
                 })
                 return campaign
-            finally:
-                self._pending_content_approvals.pop(campaign.id, None)
 
             await self._save_checkpoint(campaign, "content_approval")
 
@@ -1143,7 +1214,9 @@ class CoordinatorAgent:
             context_summary=clarification.get("context_summary", ""),
         ).model_dump(mode="json"))
 
-        # Wait for user answers (same future pattern as content approval)
+        # Wait for user answers.  Polls the DB signal store every
+        # _poll_interval_seconds; resolves immediately via in-process future
+        # when running in a single-process deployment (fast path).
         loop = asyncio.get_running_loop()
         future: asyncio.Future[ClarificationResponse] = loop.create_future()
         self._pending_clarifications[campaign.id] = future
@@ -1156,9 +1229,45 @@ class CoordinatorAgent:
             expires_at=expires_at,
         )
 
+        user_response: ClarificationResponse | None = None
+        timed_out = False
+        deadline = loop.time() + self._idle_timeout_seconds
         try:
-            user_response = await asyncio.wait_for(future, timeout=self._idle_timeout_seconds)
-        except asyncio.TimeoutError:
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+
+                # Fast path: in-process future already resolved.
+                if future.done() and not future.cancelled():
+                    user_response = future.result()
+                    break
+
+                # Durable path: check DB signal store.
+                signal = await self._signal_store.poll_signal(
+                    campaign.id, SignalType.CLARIFICATION_RESPONSE
+                )
+                if signal is not None:
+                    await self._signal_store.consume_signal(signal["id"])
+                    user_response = ClarificationResponse(**signal["payload"])
+                    if not future.done():
+                        future.set_result(user_response)
+                    break
+
+                # Neither ready — wait up to poll_interval or until future resolves.
+                poll_wait = min(self._poll_interval_seconds, remaining)
+                try:
+                    user_response = await asyncio.wait_for(
+                        asyncio.shield(future), timeout=poll_wait
+                    )
+                    break
+                except asyncio.TimeoutError:
+                    pass  # Continue polling
+        finally:
+            self._pending_clarifications.pop(campaign.id, None)
+
+        if timed_out or user_response is None:
             logger.warning(
                 "Clarification wait timed out for campaign %s — escalating to MANUAL_REVIEW_REQUIRED",
                 campaign.id,
@@ -1171,8 +1280,6 @@ class CoordinatorAgent:
                 "stage": "clarification",
             })
             return campaign
-        finally:
-            self._pending_clarifications.pop(campaign.id, None)
 
         await self._save_checkpoint(campaign, "clarification")
 
