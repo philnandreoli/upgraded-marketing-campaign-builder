@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -28,7 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
 from backend.models.user import User, UserRole, roles_from_db, roles_to_db
-from backend.services.database import UserRow, get_db
+from backend.models.workspace import WorkspaceRole
+from backend.services.database import UserRow, WorkspaceMemberRow, WorkspaceRow, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +139,35 @@ async def _provision_user(
         is_active=True,
     )
     db.add(new_user)
+    await db.flush()
+
+    # Create a personal workspace for the new user.
+    if display_name:
+        workspace_name = f"{display_name}'s Workspace"
+    elif email:
+        workspace_name = f"{email}'s Workspace"
+    else:
+        workspace_name = "Personal Workspace"
+    workspace_row = WorkspaceRow(
+        id=str(uuid.uuid4()),
+        name=workspace_name,
+        owner_id=user_id,
+        is_personal=True,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(workspace_row)
+
+    member_row = WorkspaceMemberRow(
+        workspace_id=workspace_row.id,
+        user_id=user_id,
+        role=WorkspaceRole.CREATOR.value,
+        added_at=now,
+    )
+    db.add(member_row)
     await db.commit()
     logger.info("Provisioned new user %s with role %s", user_id, role)
+    logger.info("Created personal workspace '%s' for user %s", workspace_name, user_id)
     return new_user
 
 
