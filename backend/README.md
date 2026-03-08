@@ -1,17 +1,29 @@
 # Backend — Marketing Campaign Builder
 
-The backend is a **FastAPI** application that orchestrates a pipeline of AI agents to build marketing campaigns end-to-end. It exposes a REST API and a WebSocket endpoint for real-time progress updates.
+The backend is split into two independent runtime processes:
 
-## Running the Backend
+| Process | Entry-point | Purpose |
+|---------|-------------|---------|
+| **API** | `uvicorn backend.apps.api.main:app` | Serves HTTP & WebSocket requests, enqueues workflow jobs |
+| **Worker** | `python -m backend.worker` | Runs the AI agent pipeline, writes results to DB |
+
+For local development both processes collapse into one when `WORKFLOW_EXECUTOR=in_process` (the default). See [Workflow Engine Runbook](WORKFLOW_ENGINE.md) for the worker reference.
+
+## Running the API (local development)
 
 ```bash
 # From the project root
 pip install -r requirements.txt
-uvicorn backend.main:app --reload --port 8000
+
+# Canonical entry-point
+uvicorn backend.apps.api.main:app --reload --port 8000
 ```
 
-- **API docs:** http://localhost:8000/docs
-- **Health check:** http://localhost:8000/health
+- **Interactive API docs:** http://localhost:8000/docs
+- **Liveness probe:** `GET /health/live`
+- **Readiness probe:** `GET /health/ready` (checks DB connection and executor readiness)
+
+> **Legacy shim:** `uvicorn backend.main:app` still works via `backend/main.py` but the canonical form above is preferred and aligns with the container CMD.
 
 ### Required Environment Variables
 
@@ -72,37 +84,49 @@ Each agent is a Python class that inherits from `BaseAgent` and communicates wit
 
 ```
 backend/
-├── agents/               # AI agent implementations
-│   ├── base_agent.py     # Abstract base class
-│   ├── coordinator_agent.py
+├── apps/
+│   └── api/                  # FastAPI application boundary
+│       ├── main.py           # Canonical entry-point (uvicorn backend.apps.api.main:app)
+│       ├── dependencies.py   # RBAC helpers (Action, get_campaign_for_read/write)
+│       ├── routers/          # Route handlers (campaigns, workflow, members, websocket)
+│       ├── schemas/          # Request/response DTOs (campaigns.py, workflow.py)
+│       └── startup.py        # App lifecycle hooks (DB init, executor setup)
+├── core/                     # Cross-cutting concerns
+│   ├── exceptions.py         # Domain exceptions
+│   └── tracing.py            # OpenTelemetry bootstrap
+├── infrastructure/           # External-facing adapters
+│   ├── database.py           # SQLAlchemy async engine and session factory
+│   ├── auth.py               # JWT validation (PyJWT, OIDC)
+│   ├── campaign_store.py     # Campaign persistence
+│   ├── executors/            # Workflow executor implementations (in_process, azure_service_bus)
+│   └── llm/                  # Azure AI Foundry LLM integration
+├── application/              # Use-case orchestration
+│   └── campaign_workflow_service.py
+├── orchestration/            # AI agent pipeline
+│   ├── coordinator_agent.py  # Orchestrates the full pipeline
 │   ├── strategy_agent.py
 │   ├── content_creator_agent.py
 │   ├── channel_planner_agent.py
 │   ├── analytics_agent.py
 │   └── review_qa_agent.py
-├── api/                  # FastAPI route handlers
-│   ├── campaigns.py      # REST endpoints
-│   └── websocket.py      # WebSocket endpoint
-├── models/               # Pydantic models
-│   ├── campaign.py       # Campaign, Strategy, Content, etc.
-│   └── messages.py       # Agent messages & task definitions
-├── services/             # Shared services
-│   ├── llm_service.py    # Azure AI Foundry LLM integration
-│   ├── agent_registry.py # Foundry Agent Operations registration
-│   ├── campaign_store.py # Campaign persistence
-│   ├── database.py       # SQLAlchemy async engine setup
-│   └── tracing.py        # OpenTelemetry configuration
-├── migrations/           # Alembic database migrations
-├── tests/                # pytest test suite
-├── config.py             # Pydantic-settings configuration
-└── main.py               # FastAPI app entry point
+├── agents/                   # Backward-compat shims → orchestration/
+├── api/                      # Backward-compat shims → apps/api/
+├── services/                 # Backward-compat shims → infrastructure/
+├── models/                   # Pydantic models & SQLAlchemy ORM models
+├── migrations/               # Alembic database migrations
+├── tests/                    # pytest test suite
+├── worker.py                 # Standalone worker process (python -m backend.worker)
+├── main.py                   # Compat shim → apps/api/main.py
+├── config.py                 # Pydantic-settings configuration
+├── Containerfile             # Container build definition (preferred)
+└── Dockerfile                # Docker build definition
 ```
 
 ## Running Tests
 
 ```bash
 # From the project root
-pytest
+AZURE_AI_PROJECT_ENDPOINT=https://placeholder.example.com python -m pytest backend/tests/
 ```
 
 Tests use `pytest-asyncio` and are located in `backend/tests/`. The test suite includes unit tests for agents, API routes, models, the campaign store, and the LLM service.
@@ -126,8 +150,14 @@ If registration fails for any agent, it falls back to direct LLM calls transpare
 
 All settings are loaded from environment variables (or a `.env` file) using **pydantic-settings**. A complete reference is available in `.env.example`. The configuration is defined in `config.py` and organised into:
 
-- `AzureAIProjectSettings` — AI endpoint and model deployment
-- `AgentSettings` — temperature, max tokens, retries
-- `TracingSettings` — OpenTelemetry exporter, OTLP endpoint, content recording
-- `FoundryAgentsSettings` — enable/disable Foundry Agent Operations
-- `AppSettings` — environment, port, log level
+| Settings class | Key variables |
+|----------------|---------------|
+| `AzureAIProjectSettings` | `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME` |
+| `AgentSettings` | `AGENT_TEMPERATURE`, `AGENT_MAX_TOKENS`, `AGENT_MAX_RETRIES`, `PIPELINE_IDLE_TIMEOUT_DAYS` |
+| `TracingSettings` | `TRACING_ENABLED`, `TRACING_EXPORTER`, `OTLP_ENDPOINT`, `APPLICATIONINSIGHTS_CONNECTION_STRING` |
+| `OIDCSettings` | `AUTH_ENABLED`, `OIDC_AUTHORITY`, `OIDC_CLIENT_ID` |
+| `FoundryAgentsSettings` | `FOUNDRY_AGENTS_ENABLED` |
+| `AppSettings` | `APP_ENV`, `APP_PORT`, `APP_LOG_LEVEL`, `WORKFLOW_EXECUTOR` |
+| `ServiceBusSettings` | `AZURE_SERVICE_BUS_NAMESPACE`, `AZURE_SERVICE_BUS_CONNECTION_STRING`, `AZURE_SERVICE_BUS_QUEUE_NAME` |
+| `WorkerSettings` | `WORKER_MAX_CONCURRENCY`, `WORKER_SHUTDOWN_TIMEOUT_SECONDS`, `WORKER_HEALTH_PORT` |
+| `EventSettings` | `EVENT_CHANNEL_NAME` (PostgreSQL NOTIFY channel for worker → API relay) |
