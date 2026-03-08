@@ -19,19 +19,14 @@ from fastapi.responses import Response
 from backend.models.campaign import Campaign
 from backend.models.user import CampaignMemberRole, User
 from backend.infrastructure.auth import get_current_user
+from backend.infrastructure.campaign_store import get_campaign_store
 from backend.api.websocket import manager as ws_manager
 
-# Access get_campaign_store through the campaigns module so that test patches on
-# backend.api.campaigns.get_campaign_store continue to work without modification.
-import backend.api.campaigns as _cam
-
-from backend.api.campaigns import (
-    Action,
-    _authorize,
+from backend.apps.api.dependencies import Action, _authorize, get_campaign_for_read
+from backend.apps.api.schemas.campaigns import (
     AddMemberRequest,
-    UpdateMemberRoleRequest,
     CampaignMemberResponse,
-    get_campaign_for_read,
+    UpdateMemberRoleRequest,
 )
 
 router = APIRouter(tags=["campaigns"])
@@ -42,7 +37,7 @@ async def list_campaign_members(
     campaign: Campaign = Depends(get_campaign_for_read),
 ) -> list[CampaignMemberResponse]:
     """List all members of a campaign. Requires READ access."""
-    store = _cam.get_campaign_store()
+    store = get_campaign_store()
     members = await store.list_members(campaign.id)
     return [
         CampaignMemberResponse(
@@ -62,7 +57,7 @@ async def add_campaign_member(
     user: Optional[User] = Depends(get_current_user),
 ) -> CampaignMemberResponse:
     """Add a member to a campaign. Requires MANAGE_MEMBERS access (owner or admin)."""
-    store = _cam.get_campaign_store()
+    store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -98,7 +93,7 @@ async def update_campaign_member_role(
     user: Optional[User] = Depends(get_current_user),
 ) -> CampaignMemberResponse:
     """Change a member's campaign role. Requires MANAGE_MEMBERS access."""
-    store = _cam.get_campaign_store()
+    store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -131,7 +126,7 @@ async def remove_campaign_member(
 ) -> Response:
     """Remove a member from a campaign. Requires MANAGE_MEMBERS access.
     Prevents removing the last owner."""
-    store = _cam.get_campaign_store()
+    store = get_campaign_store()
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")

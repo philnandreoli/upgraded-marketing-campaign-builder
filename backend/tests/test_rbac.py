@@ -73,6 +73,8 @@ def _as_user(user: User, store: InMemoryCampaignStore):
     mock_executor.dispatch = AsyncMock()
     try:
         with patch("backend.api.campaigns.get_campaign_store", return_value=store), \
+             patch("backend.apps.api.dependencies.get_campaign_store", return_value=store), \
+             patch("backend.api.campaign_members.get_campaign_store", return_value=store), \
              patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=store), \
              patch("backend.application.campaign_workflow_service._workflow_service", None), \
              patch("backend.api.campaigns.get_executor", return_value=mock_executor), \

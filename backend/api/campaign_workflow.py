@@ -23,20 +23,16 @@ from backend.models.campaign import Campaign
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
 from backend.models.user import User
 from backend.infrastructure.auth import get_current_user
-from backend.application.campaign_workflow_service import WorkflowConflictError
+from backend.application.campaign_workflow_service import WorkflowConflictError, get_workflow_service
 from backend.infrastructure.workflow_executor import get_executor, WorkflowJob
 
-# Access shared state through the campaigns module so that test patches on
-# backend.api.campaigns.* continue to work without modification.
-import backend.api.campaigns as _cam
-
-from backend.api.campaigns import (
-    WorkflowActionResponse,
+from backend.apps.api.dependencies import get_campaign_for_write
+from backend.apps.api.schemas.workflow import (
     PieceDecisionRequest,
     PieceDecisionResponse,
-    UpdatePieceNotesRequest,
     PieceNotesResponse,
-    get_campaign_for_write,
+    UpdatePieceNotesRequest,
+    WorkflowActionResponse,
 )
 
 router = APIRouter(tags=["campaigns"])
@@ -48,7 +44,7 @@ async def submit_clarification(
     campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Submit answers to strategy clarification questions."""
-    workflow = _cam.get_workflow_service()
+    workflow = get_workflow_service()
     try:
         await workflow.submit_clarification(campaign.id, response)
     except WorkflowConflictError as exc:
@@ -79,7 +75,7 @@ async def submit_content_approval(
     campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Submit per-piece content approval decisions."""
-    workflow = _cam.get_workflow_service()
+    workflow = get_workflow_service()
     try:
         await workflow.submit_content_approval(campaign.id, response)
     except ValueError:
@@ -105,7 +101,7 @@ async def update_piece_decision(
     not in ``content_approval`` status, or if an attempt is made to reject an
     already-approved piece (approved content is immutable).
     """
-    workflow = _cam.get_workflow_service()
+    workflow = get_workflow_service()
     try:
         result = await workflow.update_piece_decision(
             campaign.id, piece_index, body.approved, body.edited_content, body.notes
@@ -134,7 +130,7 @@ async def update_piece_notes(
     changed via this endpoint.  Returns 404 if the campaign or piece does not
     exist and 409 if the piece has not yet been approved.
     """
-    workflow = _cam.get_workflow_service()
+    workflow = get_workflow_service()
     try:
         result = await workflow.update_piece_notes(campaign.id, piece_index, body.notes)
         return PieceNotesResponse(

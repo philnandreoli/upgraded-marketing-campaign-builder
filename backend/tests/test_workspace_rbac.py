@@ -33,7 +33,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from backend.api.campaigns import Action, _authorize
+from backend.apps.api.dependencies import Action, _authorize
 from backend.main import app
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import CampaignMemberRole, User, UserRole
@@ -120,6 +120,8 @@ def _as_user(user: User, store: InMemoryCampaignStore):
     try:
         with (
             patch("backend.api.campaigns.get_campaign_store", return_value=store),
+            patch("backend.apps.api.dependencies.get_campaign_store", return_value=store),
+            patch("backend.api.campaign_members.get_campaign_store", return_value=store),
             patch("backend.api.workspaces.get_campaign_store", return_value=store),
             patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=store),
             patch("backend.application.campaign_workflow_service._workflow_service", None),
