@@ -72,10 +72,16 @@ The canonical FastAPI entry-point is `backend.apps.api.main:app`. The legacy `ba
 | Worker image | same image, different CMD | `python -m backend.worker` |
 | Frontend image | `frontend/Containerfile` | nginx serving the Vite build |
 
-### CI Workflow
+### CI Workflows
 
-- **File:** `.github/workflows/ci.yml`
-- **Jobs:** `backend-tests`, `frontend-lint-build`, `build-backend-image`, `build-frontend-image`
+The monolithic `.github/workflows/ci.yml` has been replaced by four path-filtered workflows:
+
+| File | Trigger paths | Jobs |
+|------|--------------|------|
+| `.github/workflows/backend-api.yml` | API + shared backend paths | `backend-tests`, `build-api-image` |
+| `.github/workflows/backend-worker.yml` | Worker + shared backend paths | `backend-tests`, `build-worker-image` |
+| `.github/workflows/backend-shared.yml` | Shared backend paths only | `shared-quality` |
+| `.github/workflows/frontend.yml` | `frontend/**` | `frontend-lint-build`, `build-frontend-image` |
 
 ## References
 
