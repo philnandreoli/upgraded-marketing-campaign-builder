@@ -24,6 +24,11 @@ if _DB_AUTH_MODE == "azure":
     _host = os.getenv("AZURE_POSTGRES_HOST", "")
     _database = os.getenv("AZURE_POSTGRES_DATABASE", "campaigns")
     _user = os.getenv("AZURE_POSTGRES_USER", "")
+    if not _host or not _user:
+        raise RuntimeError(
+            "DB_AUTH_MODE=azure requires non-empty AZURE_POSTGRES_HOST and "
+            "AZURE_POSTGRES_USER environment variables."
+        )
     DATABASE_URL = f"postgresql+asyncpg://{_user}@{_host}/{_database}"
 else:
     # Set the database URL from environment, falling back to default
