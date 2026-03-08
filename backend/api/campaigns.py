@@ -378,7 +378,14 @@ async def get_campaign(
     campaign: Campaign = Depends(get_campaign_for_read),
 ) -> dict[str, Any]:
     """Return the full campaign document."""
-    return campaign.model_dump(mode="json")
+    data = campaign.model_dump(mode="json")
+    # Enrich with workspace object so the frontend can display name/badge
+    if campaign.workspace_id:
+        store = get_campaign_store()
+        ws = await store.get_workspace(campaign.workspace_id)
+        if ws:
+            data["workspace"] = {"id": ws.id, "name": ws.name, "is_personal": ws.is_personal}
+    return data
 
 
 @router.delete("/campaigns/{campaign_id}")
@@ -420,4 +427,10 @@ async def assign_campaign_workspace(
             raise HTTPException(status_code=404, detail="Workspace not found")
 
     campaign = await store.move_campaign(campaign_id, body.workspace_id)
-    return campaign.model_dump(mode="json")
+    data = campaign.model_dump(mode="json")
+    # Enrich with workspace object so the frontend can display name/badge
+    if campaign.workspace_id:
+        ws = await store.get_workspace(campaign.workspace_id)
+        if ws:
+            data["workspace"] = {"id": ws.id, "name": ws.name, "is_personal": ws.is_personal}
+    return data

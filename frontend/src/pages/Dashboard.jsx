@@ -129,7 +129,7 @@ export default function Dashboard({ events }) {
         <h2>Campaigns</h2>
         {!isViewer && (
           <Link to="/new" className="btn btn-primary">
-            + New Campaign
+            + Create Campaign
           </Link>
         )}
       </div>

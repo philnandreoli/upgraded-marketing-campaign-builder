@@ -98,7 +98,7 @@ function AuthenticatedApp() {
             Dashboard
           </NavLink>
           <NavLink to="/workspaces">Workspaces</NavLink>
-          {!isViewer && <NavLink to="/new">+ New Campaign</NavLink>}
+          {!isViewer && <NavLink to="/new">+ Create Campaign</NavLink>}
           {isAdmin && <NavLink to="/admin">Admin</NavLink>}
           <ThemeToggle />
           <span style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>

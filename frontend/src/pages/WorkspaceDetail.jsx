@@ -3,7 +3,6 @@ import { Link, useParams } from "react-router-dom";
 import {
   getWorkspace,
   listWorkspaceCampaigns,
-  listWorkspaceMembers,
   deleteCampaign,
 } from "../api";
 import { useUser } from "../UserContext";
@@ -61,33 +60,14 @@ function CampaignCard({ c, isAdmin, isViewer, user, onDelete }) {
   );
 }
 
-function MemberRow({ member }) {
-  return (
-    <div className="ws-member-row">
-      <div className="ws-member-avatar" aria-hidden="true">
-        {getInitials(member.display_name ?? member.email)}
-      </div>
-      <div className="ws-member-info">
-        <span className="ws-member-name">{member.display_name ?? "—"}</span>
-        <span className="ws-member-email">{member.email ?? "—"}</span>
-      </div>
-      <span className={`workspace-role-badge workspace-role-badge--${member.role}`}>
-        {ROLE_LABELS[member.role] ?? member.role}
-      </span>
-    </div>
-  );
-}
-
 export default function WorkspaceDetail({ events = [] }) {
   const { id } = useParams();
   const { isAdmin, isViewer, user } = useUser();
 
   const [workspace, setWorkspace] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
-  const [members, setMembers] = useState([]);
   const [loadingWs, setLoadingWs] = useState(true);
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
-  const [loadingMembers, setLoadingMembers] = useState(true);
   const [error, setError] = useState(null);
 
   // Fetch workspace detail
@@ -114,15 +94,6 @@ export default function WorkspaceDetail({ events = [] }) {
     setLoadingCampaigns(true);
     loadCampaigns();
   }, [loadCampaigns]);
-
-  // Fetch members
-  useEffect(() => {
-    setLoadingMembers(true);
-    listWorkspaceMembers(id)
-      .then(setMembers)
-      .catch(() => setMembers([]))
-      .finally(() => setLoadingMembers(false));
-  }, [id]);
 
   // Poll campaigns every 3s
   useEffect(() => {
@@ -185,20 +156,12 @@ export default function WorkspaceDetail({ events = [] }) {
           </div>
           <div className="ws-detail-actions">
             {isCreatorOrAdmin && (
-              <>
-                <Link
-                  to={`/new?workspace=${workspace.id}`}
-                  className="btn btn-primary"
-                >
-                  + Create Campaign
-                </Link>
-                <Link
-                  to={`/workspaces/${workspace.id}/settings`}
-                  className="btn btn-outline"
-                >
-                  ⚙ Settings
-                </Link>
-              </>
+              <Link
+                to={`/workspaces/${workspace.id}/settings`}
+                className="btn btn-outline"
+              >
+                ⚙ Settings
+              </Link>
             )}
           </div>
         </div>
@@ -215,6 +178,11 @@ export default function WorkspaceDetail({ events = [] }) {
       {/* ── Campaigns Section ─────────────────────────────────────────── */}
       <div className="section-header" style={{ marginTop: "1.5rem" }}>
         <h2>Campaigns</h2>
+        {isCreatorOrAdmin && (
+          <Link to={`/new?workspace=${workspace.id}`} className="btn btn-primary">
+            + Create Campaign
+          </Link>
+        )}
       </div>
 
       {loadingCampaigns && campaigns.length === 0 ? (
@@ -225,11 +193,6 @@ export default function WorkspaceDetail({ events = [] }) {
       ) : campaigns.length === 0 ? (
         <div className="workspace-empty-state card">
           <p>No campaigns in this workspace yet.</p>
-          {isCreatorOrAdmin && (
-            <Link to={`/new?workspace=${workspace.id}`} className="btn btn-primary">
-              + Create Campaign
-            </Link>
-          )}
         </div>
       ) : (
         <>
@@ -257,31 +220,6 @@ export default function WorkspaceDetail({ events = [] }) {
         </>
       )}
 
-      {/* ── Members Section ───────────────────────────────────────────── */}
-      <div className="section-header" style={{ marginTop: "1.5rem" }}>
-        <h2>Members</h2>
-        {isCreatorOrAdmin && (
-          <Link to={`/workspaces/${workspace.id}/settings`} className="btn btn-outline">
-            Manage
-          </Link>
-        )}
-      </div>
-
-      {loadingMembers ? (
-        <div className="loading">
-          <span className="spinner" /> Loading members…
-        </div>
-      ) : members.length === 0 ? (
-        <div className="card">
-          <p style={{ color: "var(--color-text-muted)" }}>No members found.</p>
-        </div>
-      ) : (
-        <div className="card ws-members-list">
-          {members.map((m) => (
-            <MemberRow key={m.user_id ?? m.id} member={m} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -113,6 +113,8 @@ class WorkspaceSummary(BaseModel):
     name: str
     is_personal: bool
     role: str  # the current user's role in this workspace
+    member_count: int = 0
+    campaign_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +160,17 @@ async def list_workspaces(
         else:
             role_str = WorkspaceRole.CREATOR.value
 
+        members = await store.list_workspace_members(ws.id)
+        campaigns = await store.list_workspace_campaigns(ws.id)
+
         result.append(
             WorkspaceSummary(
                 id=ws.id,
                 name=ws.name,
                 is_personal=ws.is_personal,
                 role=role_str,
+                member_count=len(members),
+                campaign_count=len(campaigns),
             )
         )
     return result
