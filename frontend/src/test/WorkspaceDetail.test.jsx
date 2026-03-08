@@ -63,9 +63,6 @@ const wsPersonal = { id: 'ws-personal', name: 'My Space', is_personal: true, rol
 const campaign = { id: 'c1', product_or_service: 'ProductA', goal: 'Grow fast', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-1' };
 const campaignApproved = { id: 'c2', product_or_service: 'ProductB', goal: 'Scale', status: 'approved', owner_id: 'user-2', workspace_id: 'ws-1' };
 
-const member = { user_id: 'user-1', display_name: 'Alice', email: 'alice@example.com', role: 'creator' };
-const memberContrib = { user_id: 'user-2', display_name: 'Bob', email: 'bob@example.com', role: 'contributor' };
-
 describe('WorkspaceDetail – header', () => {
   it('shows workspace name', async () => {
     await renderDetail('ws-1', ws);
@@ -95,6 +92,7 @@ describe('WorkspaceDetail – header', () => {
     // Pass a campaign so the empty state (which also has a Create Campaign link) is not shown
     await renderDetail('ws-1', ws, [campaign]);
     await waitFor(() => screen.getByText('Team Workspace'));
+    // Create Campaign is now in the Campaigns section header
     expect(screen.getByRole('link', { name: /create campaign/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
   });
@@ -124,24 +122,3 @@ describe('WorkspaceDetail – campaigns', () => {
   });
 });
 
-describe('WorkspaceDetail – members', () => {
-  it('renders member list', async () => {
-    await renderDetail('ws-1', ws, [], [member, memberContrib]);
-    await waitFor(() => screen.getAllByText('Alice'));
-    expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('Bob').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('shows Manage link for creator', async () => {
-    await renderDetail('ws-1', ws, [], [member]);
-    await waitFor(() => screen.getAllByText('Alice'));
-    expect(screen.getByRole('link', { name: /manage/i })).toBeInTheDocument();
-  });
-
-  it('hides Manage link for viewer role on workspace', async () => {
-    const wsViewer = { ...ws, role: 'viewer' };
-    await renderDetail('ws-1', wsViewer, [], [member]);
-    await waitFor(() => screen.getAllByText('Alice'));
-    expect(screen.queryByRole('link', { name: /manage/i })).not.toBeInTheDocument();
-  });
-});

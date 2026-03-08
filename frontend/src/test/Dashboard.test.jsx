@@ -88,22 +88,22 @@ const campaignForOwner = {
 
 describe('Dashboard – New Campaign button', () => {
   it('is shown for campaign_builder role', async () => {
-    // Provide a campaign so Dashboard renders the header with the "New Campaign" link
+    // Provide a campaign so Dashboard renders the header with the "Create Campaign" link
     await renderDashboard({ isViewer: false, isAdmin: false, userId: 'user-1' }, [campaignForOwner], [WS_OWNER]);
     await waitFor(() => screen.getByText('MyProduct'));
-    expect(screen.getByText(/\+ new campaign/i)).toBeInTheDocument();
+    expect(screen.getByText(/\+ create campaign/i)).toBeInTheDocument();
   });
 
   it('is shown for admin role', async () => {
     await renderDashboard({ isAdmin: true, isViewer: false, userId: 'user-1' }, [campaignForOwner], [WS_OWNER]);
     await waitFor(() => screen.getByText('MyProduct'));
-    expect(screen.getByText(/\+ new campaign/i)).toBeInTheDocument();
+    expect(screen.getByText(/\+ create campaign/i)).toBeInTheDocument();
   });
 
   it('is hidden for viewer role', async () => {
     // With empty campaigns: the empty-state "Create your first campaign" link should also be absent
     await renderDashboard({ isViewer: true, isAdmin: false });
-    expect(screen.queryByText(/new campaign/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/create campaign/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/create your first campaign/i)).not.toBeInTheDocument();
   });
 

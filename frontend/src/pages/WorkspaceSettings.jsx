@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   getWorkspace,
@@ -24,6 +24,48 @@ function getInitials(name) {
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+function RoleDropdown({ value, onChange, disabled, ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div className="custom-select" ref={ref}>
+      <button
+        type="button"
+        className="custom-select-trigger"
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        aria-expanded={open}
+      >
+        <span>{ROLE_LABELS[value] ?? value}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <ul className="custom-select-menu">
+          {WORKSPACE_ROLES.map((r) => (
+            <li
+              key={r}
+              className={`custom-select-option${r === value ? " selected" : ""}`}
+              onClick={() => { onChange(r); setOpen(false); }}
+            >
+              {ROLE_LABELS[r]}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function AddMemberForm({ workspaceId, onAdded }) {
@@ -107,16 +149,11 @@ function AddMemberForm({ workspaceId, onAdded }) {
             <span className="spinner" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 14, height: 14 }} />
           )}
         </div>
-        <select
+        <RoleDropdown
           value={role}
-          onChange={(e) => setRole(e.target.value)}
-          style={{ flex: "0 0 auto" }}
-          aria-label="Role for new member"
-        >
-          {WORKSPACE_ROLES.map((r) => (
-            <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-          ))}
-        </select>
+          onChange={setRole}
+          ariaLabel="Role for new member"
+        />
         <button
           className="btn btn-primary"
           onClick={handleAdd}
@@ -181,17 +218,12 @@ function MemberTableRow({ workspaceId, member, isPersonal, onUpdated, onRemoved 
             {ROLE_LABELS[role] ?? role}
           </span>
         ) : (
-          <select
+          <RoleDropdown
             value={role}
-            onChange={(e) => handleRoleChange(e.target.value)}
+            onChange={handleRoleChange}
             disabled={saving}
-            aria-label={`Role for ${member.display_name ?? member.email}`}
-            style={{ fontSize: "0.8rem", padding: "0.2rem 0.5rem" }}
-          >
-            {WORKSPACE_ROLES.map((r) => (
-              <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-            ))}
-          </select>
+            ariaLabel={`Role for ${member.display_name ?? member.email}`}
+          />
         )}
         {error && (
           <span style={{ fontSize: "0.75rem", color: "var(--color-danger)", marginLeft: "0.5rem" }}>
@@ -418,7 +450,7 @@ export default function WorkspaceSettings() {
         ) : members.length === 0 ? (
           <p style={{ color: "var(--color-text-muted)", marginTop: isPersonal ? 0 : "1rem" }}>No members found.</p>
         ) : (
-          <div style={{ overflowX: "auto", marginTop: isPersonal ? 0 : "1.25rem" }}>
+          <div style={{ marginTop: isPersonal ? 0 : "1.25rem" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--color-border)" }}>

@@ -346,6 +346,12 @@ export default function CampaignDetail() {
       <Toast events={events} />
       <nav className="breadcrumb">
         <Link to="/">Dashboard</Link>
+        {campaign?.workspace && (
+          <>
+            <span className="breadcrumb-divider">/</span>
+            <Link to={`/workspaces/${campaign.workspace.id}`}>{campaign.workspace.name}</Link>
+          </>
+        )}
         <span className="breadcrumb-divider">/</span>
         <span>{campaign?.brief?.product_or_service}</span>
       </nav>
