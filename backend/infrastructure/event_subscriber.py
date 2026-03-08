@@ -136,8 +136,11 @@ class EventSubscriber:
 
         connect_kwargs: dict[str, Any] = {}
         if self._password is not None:
-            connect_kwargs["password"] = self._password
-            connect_kwargs["ssl"] = "require"
+            # Acquire a fresh access token for this connection
+            token = await self._password()
+            connect_kwargs["password"] = token
+            # Use SSL for Azure/remote connections
+            connect_kwargs["ssl"] = True
 
         conn: asyncpg.Connection = await asyncpg.connect(dsn=self._dsn, **connect_kwargs)
         logger.info(
