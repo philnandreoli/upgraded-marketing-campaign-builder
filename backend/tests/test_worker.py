@@ -1,5 +1,10 @@
 """
-Tests for backend.worker — standalone pipeline worker process.
+Tests for the workflow-engine worker app boundary.
+
+Covers:
+- ``backend.apps.worker.dependencies.execute_job`` — coordinator dispatch routing
+- ``backend.apps.worker.runner.QueueRunner``         — message handling and concurrency
+- ``backend.apps.worker.main.Worker``                — initialisation and shutdown
 
 All tests run fully offline: Service Bus and DB connections are mocked so
 no Azure infrastructure is required.
@@ -58,6 +63,7 @@ def _make_settings(
     settings = MagicMock()
     settings.app.log_level = "INFO"
     settings.service_bus.queue_name = "test-queue"
+    settings.events.channel_name = "workflow_events"
     settings.worker = _make_worker_settings(
         max_concurrency=max_concurrency,
         shutdown_timeout=shutdown_timeout,
@@ -82,12 +88,37 @@ def _build_worker(
         health_port=health_port,
     )
 
-    with patch("backend.worker.get_settings", return_value=mock_settings):
-        from backend.worker import Worker
+    with patch("backend.apps.worker.main.get_settings", return_value=mock_settings):
+        from backend.apps.worker.main import Worker
 
         worker = Worker(sb_client=mock_sb_client)
 
     return worker, mock_sb_client
+
+
+def _build_runner(
+    *,
+    shutdown_event: asyncio.Event | None = None,
+    max_concurrency: int = 3,
+    shutdown_timeout: int = 5,
+    execute_job_fn=None,
+) -> tuple:
+    """Return (QueueRunner, mock_sb_client, shutdown_event)."""
+    from backend.apps.worker.runner import QueueRunner
+
+    mock_sb_client = MagicMock()
+    event = shutdown_event if shutdown_event is not None else asyncio.Event()
+    mock_execute = execute_job_fn if execute_job_fn is not None else AsyncMock()
+
+    runner = QueueRunner(
+        sb_client=mock_sb_client,
+        queue_name="test-queue",
+        shutdown_event=event,
+        max_concurrency=max_concurrency,
+        shutdown_timeout_seconds=shutdown_timeout,
+        execute_job=mock_execute,
+    )
+    return runner, mock_sb_client, event
 
 
 # ---------------------------------------------------------------------------
@@ -125,13 +156,14 @@ class TestJobDeserialization:
 
 
 # ---------------------------------------------------------------------------
-# Coordinator dispatch routing (_execute_job)
+# Coordinator dispatch routing (dependencies.execute_job)
 # ---------------------------------------------------------------------------
 
 
 class TestDispatchRouting:
     async def test_start_pipeline_calls_run_pipeline(self):
-        worker, _ = _build_worker()
+        from backend.apps.worker.dependencies import execute_job
+
         mock_coord = MagicMock()
         mock_coord.run_pipeline = AsyncMock()
         mock_campaign = MagicMock()
@@ -141,30 +173,40 @@ class TestDispatchRouting:
         job = _make_job("start_pipeline", "c-1")
 
         with (
-            patch("backend.worker.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.worker.get_campaign_store", return_value=mock_store),
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                return_value=mock_coord,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
+            ),
         ):
-            await worker._execute_job(job)
+            await execute_job(job)
 
         mock_store.get.assert_awaited_once_with("c-1")
         mock_coord.run_pipeline.assert_awaited_once_with(mock_campaign)
 
     async def test_start_pipeline_coordinator_has_postgres_event_callback(self):
-        """Worker creates CoordinatorAgent with a PostgresEventPublisher-backed on_event."""
-        worker, _ = _build_worker()
+        """execute_job creates CoordinatorAgent with a callable on_event."""
+        from backend.apps.worker.dependencies import execute_job
+
         mock_coord = MagicMock()
         mock_coord.run_pipeline = AsyncMock()
         mock_store = MagicMock()
         mock_store.get = AsyncMock(return_value=MagicMock())
 
-        mock_engine = MagicMock()
-
         with (
-            patch("backend.worker.CoordinatorAgent", return_value=mock_coord) as coord_cls,
-            patch("backend.worker.get_campaign_store", return_value=mock_store),
-            patch("backend.worker.engine", mock_engine, create=True),
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                return_value=mock_coord,
+            ) as coord_cls,
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
+            ),
         ):
-            await worker._execute_job(_make_job("start_pipeline"))
+            await execute_job(_make_job("start_pipeline"))
 
         # on_event must be a callable (the _on_event closure), not None
         coord_cls.assert_called_once()
@@ -173,40 +215,56 @@ class TestDispatchRouting:
         assert callable(kwargs["on_event"])
 
     async def test_resume_pipeline_calls_resume(self):
-        worker, _ = _build_worker()
+        from backend.apps.worker.dependencies import execute_job
+
         mock_coord = MagicMock()
         mock_coord.resume_pipeline = AsyncMock()
 
-        with patch("backend.worker.CoordinatorAgent", return_value=mock_coord):
-            await worker._execute_job(_make_job("resume_pipeline", "c-2"))
+        with patch(
+            "backend.apps.worker.dependencies.CoordinatorAgent",
+            return_value=mock_coord,
+        ):
+            await execute_job(_make_job("resume_pipeline", "c-2"))
 
         mock_coord.resume_pipeline.assert_awaited_once_with("c-2")
 
     async def test_retry_stage_calls_retry(self):
-        worker, _ = _build_worker()
+        from backend.apps.worker.dependencies import execute_job
+
         mock_coord = MagicMock()
         mock_coord.retry_current_stage = AsyncMock()
 
-        with patch("backend.worker.CoordinatorAgent", return_value=mock_coord):
-            await worker._execute_job(_make_job("retry_stage", "c-3"))
+        with patch(
+            "backend.apps.worker.dependencies.CoordinatorAgent",
+            return_value=mock_coord,
+        ):
+            await execute_job(_make_job("retry_stage", "c-3"))
 
         mock_coord.retry_current_stage.assert_awaited_once_with("c-3")
 
     async def test_start_pipeline_missing_campaign_raises(self):
-        worker, _ = _build_worker()
+        from backend.apps.worker.dependencies import execute_job
+
         mock_coord = MagicMock()
         mock_store = MagicMock()
         mock_store.get = AsyncMock(return_value=None)
 
         with (
-            patch("backend.worker.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.worker.get_campaign_store", return_value=mock_store),
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                return_value=mock_coord,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
+            ),
             pytest.raises(ValueError, match="not found"),
         ):
-            await worker._execute_job(_make_job("start_pipeline", "missing"))
+            await execute_job(_make_job("start_pipeline", "missing"))
 
     async def test_unknown_action_raises(self):
-        worker, _ = _build_worker()
+        from backend.apps.worker.dependencies import execute_job
+
         mock_coord = MagicMock()
 
         job = WorkflowJob(campaign_id="c-1", action="start_pipeline")
@@ -214,20 +272,25 @@ class TestDispatchRouting:
         object.__setattr__(job, "action", "bad_action")
 
         with (
-            patch("backend.worker.CoordinatorAgent", return_value=mock_coord),
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                return_value=mock_coord,
+            ),
             pytest.raises(ValueError, match="bad_action"),
         ):
-            await worker._execute_job(job)
+            await execute_job(job)
 
 
 # ---------------------------------------------------------------------------
-# Message acknowledgement (_run_job_task)
+# Message acknowledgement (QueueRunner._run_job_task)
 # ---------------------------------------------------------------------------
 
 
 class TestMessageHandling:
     async def test_success_completes_message(self):
-        worker, _ = _build_worker()
+        mock_execute = AsyncMock()
+        runner, _, _ = _build_runner(execute_job_fn=mock_execute)
+
         job = _make_job("resume_pipeline", "c-1")
         message = _make_message(job)
 
@@ -235,17 +298,15 @@ class TestMessageHandling:
         mock_receiver.complete_message = AsyncMock()
         mock_receiver.abandon_message = AsyncMock()
 
-        mock_coord = MagicMock()
-        mock_coord.resume_pipeline = AsyncMock()
-
-        with patch("backend.worker.CoordinatorAgent", return_value=mock_coord):
-            await worker._run_job_task(mock_receiver, message, job)
+        await runner._run_job_task(mock_receiver, message, job)
 
         mock_receiver.complete_message.assert_awaited_once_with(message)
         mock_receiver.abandon_message.assert_not_awaited()
 
     async def test_failure_abandons_message(self):
-        worker, _ = _build_worker()
+        mock_execute = AsyncMock(side_effect=RuntimeError("crash"))
+        runner, _, _ = _build_runner(execute_job_fn=mock_execute)
+
         job = _make_job("resume_pipeline", "c-1")
         message = _make_message(job)
 
@@ -253,18 +314,16 @@ class TestMessageHandling:
         mock_receiver.complete_message = AsyncMock()
         mock_receiver.abandon_message = AsyncMock()
 
-        mock_coord = MagicMock()
-        mock_coord.resume_pipeline = AsyncMock(side_effect=RuntimeError("crash"))
-
-        with patch("backend.worker.CoordinatorAgent", return_value=mock_coord):
-            await worker._run_job_task(mock_receiver, message, job)
+        await runner._run_job_task(mock_receiver, message, job)
 
         mock_receiver.abandon_message.assert_awaited_once_with(message)
         mock_receiver.complete_message.assert_not_awaited()
 
     async def test_abandon_failure_does_not_raise(self):
         """If abandon itself fails, the task must not propagate the exception."""
-        worker, _ = _build_worker()
+        mock_execute = AsyncMock(side_effect=RuntimeError("job crash"))
+        runner, _, _ = _build_runner(execute_job_fn=mock_execute)
+
         job = _make_job("resume_pipeline", "c-1")
         message = _make_message(job)
 
@@ -272,28 +331,22 @@ class TestMessageHandling:
         mock_receiver.complete_message = AsyncMock()
         mock_receiver.abandon_message = AsyncMock(side_effect=RuntimeError("bus error"))
 
-        mock_coord = MagicMock()
-        mock_coord.resume_pipeline = AsyncMock(side_effect=RuntimeError("job crash"))
-
-        with patch("backend.worker.CoordinatorAgent", return_value=mock_coord):
-            # Should complete without raising
-            await worker._run_job_task(mock_receiver, message, job)
+        # Should complete without raising
+        await runner._run_job_task(mock_receiver, message, job)
 
 
 # ---------------------------------------------------------------------------
-# Concurrency control
+# Concurrency control (QueueRunner)
 # ---------------------------------------------------------------------------
 
 
 class TestConcurrencyLimiting:
     def test_semaphore_initial_value_equals_max_concurrency(self):
-        worker, _ = _build_worker(max_concurrency=5)
-        assert worker._semaphore._value == 5
+        runner, _, _ = _build_runner(max_concurrency=5)
+        assert runner._semaphore._value == 5
 
     async def test_semaphore_limits_concurrent_executions(self):
         """At most *max_concurrency* jobs run simultaneously."""
-        worker, _ = _build_worker(max_concurrency=2)
-
         active = 0
         peak = 0
         gate = asyncio.Event()
@@ -305,6 +358,8 @@ class TestConcurrencyLimiting:
             await gate.wait()
             active -= 1
 
+        runner, _, _ = _build_runner(max_concurrency=2, execute_job_fn=_slow_execute)
+
         mock_receiver = MagicMock()
         mock_receiver.complete_message = AsyncMock()
         mock_receiver.abandon_message = AsyncMock()
@@ -312,28 +367,28 @@ class TestConcurrencyLimiting:
         jobs = [_make_job("retry_stage", f"c-{i}", f"j-{i}") for i in range(4)]
         messages = [_make_message(j) for j in jobs]
 
-        with patch.object(worker, "_execute_job", side_effect=_slow_execute):
-            tasks = [
-                asyncio.create_task(worker._run_job_task(mock_receiver, msg, job))
-                for job, msg in zip(jobs, messages)
-            ]
-            # Let tasks acquire the semaphore
-            await asyncio.sleep(0.05)
+        tasks = [
+            asyncio.create_task(runner._run_job_task(mock_receiver, msg, job))
+            for job, msg in zip(jobs, messages)
+        ]
+        # Let tasks acquire the semaphore
+        await asyncio.sleep(0.05)
 
-            assert active <= 2  # no more than max_concurrency concurrently
+        assert active <= 2  # no more than max_concurrency concurrently
 
-            gate.set()
-            await asyncio.gather(*tasks, return_exceptions=True)
+        gate.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         assert peak <= 2
 
     async def test_all_jobs_eventually_complete(self):
         """All jobs run even when max_concurrency < total jobs."""
-        worker, _ = _build_worker(max_concurrency=2)
         ran: list[str] = []
 
         async def _track(job: WorkflowJob) -> None:
             ran.append(job.campaign_id)
+
+        runner, _, _ = _build_runner(max_concurrency=2, execute_job_fn=_track)
 
         mock_receiver = MagicMock()
         mock_receiver.complete_message = AsyncMock()
@@ -342,18 +397,17 @@ class TestConcurrencyLimiting:
         jobs = [_make_job("retry_stage", f"c-{i}", f"j-{i}") for i in range(5)]
         messages = [_make_message(j) for j in jobs]
 
-        with patch.object(worker, "_execute_job", side_effect=_track):
-            tasks = [
-                asyncio.create_task(worker._run_job_task(mock_receiver, msg, job))
-                for job, msg in zip(jobs, messages)
-            ]
-            await asyncio.gather(*tasks)
+        tasks = [
+            asyncio.create_task(runner._run_job_task(mock_receiver, msg, job))
+            for job, msg in zip(jobs, messages)
+        ]
+        await asyncio.gather(*tasks)
 
         assert sorted(ran) == [f"c-{i}" for i in range(5)]
 
 
 # ---------------------------------------------------------------------------
-# Graceful shutdown
+# Graceful shutdown (QueueRunner + Worker)
 # ---------------------------------------------------------------------------
 
 
@@ -366,7 +420,12 @@ class TestGracefulShutdown:
 
     async def test_receiver_loop_waits_for_active_task(self):
         """_run_receiver_loop waits for in-flight tasks before returning."""
-        worker, _ = _build_worker(max_concurrency=1, shutdown_timeout=5)
+        event = asyncio.Event()
+        runner, _, _ = _build_runner(
+            shutdown_event=event,
+            max_concurrency=1,
+            shutdown_timeout=5,
+        )
 
         task_started = asyncio.Event()
         task_finished = asyncio.Event()
@@ -384,11 +443,11 @@ class TestGracefulShutdown:
                 # Subsequent calls block until shutdown
                 await asyncio.sleep(10)
 
-        with patch.object(worker, "_process_next_session", side_effect=_mock_session):
-            loop_task = asyncio.create_task(worker._run_receiver_loop())
+        with patch.object(runner, "_process_next_session", side_effect=_mock_session):
+            loop_task = asyncio.create_task(runner._run_receiver_loop())
 
             await task_started.wait()
-            worker.request_shutdown()
+            event.set()  # trigger shutdown
 
             await asyncio.wait_for(loop_task, timeout=3)
 
@@ -396,7 +455,12 @@ class TestGracefulShutdown:
 
     async def test_shutdown_timeout_cancels_remaining_tasks(self):
         """Tasks are cancelled when shutdown_timeout_seconds is exceeded."""
-        worker, _ = _build_worker(max_concurrency=1, shutdown_timeout=0)
+        event = asyncio.Event()
+        runner, _, _ = _build_runner(
+            shutdown_event=event,
+            max_concurrency=1,
+            shutdown_timeout=0,
+        )
 
         task_started = asyncio.Event()
         task_cancelled = asyncio.Event()
@@ -416,11 +480,11 @@ class TestGracefulShutdown:
             else:
                 await asyncio.sleep(999)
 
-        with patch.object(worker, "_process_next_session", side_effect=_hanging_session):
-            loop_task = asyncio.create_task(worker._run_receiver_loop())
+        with patch.object(runner, "_process_next_session", side_effect=_hanging_session):
+            loop_task = asyncio.create_task(runner._run_receiver_loop())
 
             await task_started.wait()
-            worker.request_shutdown()
+            event.set()  # trigger shutdown
 
             await asyncio.wait_for(loop_task, timeout=5)
 
@@ -433,20 +497,14 @@ class TestGracefulShutdown:
 
 
 class TestWorkerInit:
-    def test_default_semaphore_value(self):
-        worker, _ = _build_worker(max_concurrency=3)
-        assert worker._semaphore._value == 3
-
-    def test_receiver_inactive_before_run(self):
+    def test_runner_is_none_before_run(self):
         worker, _ = _build_worker()
-        assert worker._receiver_active is False
+        assert worker._runner is None
 
     def test_shutdown_event_clear_on_init(self):
         worker, _ = _build_worker()
         assert not worker._shutdown_event.is_set()
 
     def test_custom_sb_client_stored(self):
-        _, mock_sb = _build_worker()
-        # The injected mock client is stored internally
         worker, sb = _build_worker()
         assert worker._sb_client is sb
