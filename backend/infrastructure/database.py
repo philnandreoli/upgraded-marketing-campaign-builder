@@ -329,7 +329,11 @@ async def init_db() -> None:
 async def close_db() -> None:
     """Dispose of the connection pool and close the Entra credential if open."""
     global _entra_credential
-    await engine.dispose()
-    if _entra_credential is not None:
-        await _entra_credential.close()
-        _entra_credential = None
+    try:
+        await engine.dispose()
+    finally:
+        if _entra_credential is not None:
+            try:
+                await _entra_credential.close()
+            finally:
+                _entra_credential = None
