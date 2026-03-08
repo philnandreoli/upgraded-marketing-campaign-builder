@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Callable, Coroutine
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,12 @@ class EventSubscriber:
         The ``ConnectionManager`` singleton from ``backend.api.websocket``.
     channel_name:
         The NOTIFY channel to subscribe to (default ``"workflow_events"``).
+    password:
+        Optional coroutine function that returns an access token string.
+        When provided (azure mode), it is passed to ``asyncpg.connect()`` as
+        the ``password`` argument so that a fresh Entra token is acquired for
+        each new connection.  Pass ``None`` (default) for password-in-DSN
+        (local mode).
     """
 
     def __init__(
@@ -58,10 +64,12 @@ class EventSubscriber:
         dsn: str,
         ws_manager: Any,
         channel_name: str = "workflow_events",
+        password: "Callable[[], Coroutine[Any, Any, str]] | None" = None,
     ) -> None:
         self._dsn = dsn
         self._ws_manager = ws_manager
         self._channel_name = channel_name
+        self._password = password
         self._stop_event: asyncio.Event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
 
@@ -126,7 +134,12 @@ class EventSubscriber:
         """Connect to Postgres, LISTEN, and dispatch notifications."""
         import asyncpg  # noqa: PLC0415
 
-        conn: asyncpg.Connection = await asyncpg.connect(dsn=self._dsn)
+        connect_kwargs: dict[str, Any] = {}
+        if self._password is not None:
+            connect_kwargs["password"] = self._password
+            connect_kwargs["ssl"] = "require"
+
+        conn: asyncpg.Connection = await asyncpg.connect(dsn=self._dsn, **connect_kwargs)
         logger.info(
             "EventSubscriber connected, listening on channel=%s",
             self._channel_name,

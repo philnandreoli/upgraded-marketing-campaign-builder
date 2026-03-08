@@ -1,25 +1,160 @@
 """
 SQLAlchemy async engine & session factory for PostgreSQL.
 
-The DATABASE_URL is read from the environment (set in docker-compose.yml).
+Two authentication modes are supported, controlled by the ``DB_AUTH_MODE``
+environment variable:
+
+``local`` (default)
+    Traditional ``DATABASE_URL`` / password-based connection.  Set
+    ``DATABASE_URL`` to point at your local PostgreSQL instance.
+
+``azure``
+    Microsoft Entra token-based authentication for Azure Database for
+    PostgreSQL Flexible Server.  A short-lived access token is acquired via
+    ``DefaultAzureCredential`` (managed identity / workload identity) and
+    supplied to asyncpg as the connection password on each new connection.
+    Configure ``AZURE_POSTGRES_HOST``, ``AZURE_POSTGRES_DATABASE``, and
+    ``AZURE_POSTGRES_USER`` instead of ``DATABASE_URL``.
 """
 
 from __future__ import annotations
 
+import logging
 import os
-
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
+if TYPE_CHECKING:
+    from azure.identity.aio import DefaultAzureCredential
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Authentication-mode constants
+# ---------------------------------------------------------------------------
+
+_DB_AUTH_MODE_LOCAL = "local"
+_DB_AUTH_MODE_AZURE = "azure"
+
+# OAuth 2.0 scope required for Azure Database for PostgreSQL token auth.
+_ENTRA_TOKEN_SCOPE = "https://ossrdbms-aad.database.windows.net/.default"
+
+# ---------------------------------------------------------------------------
+# Backward-compatible DATABASE_URL
+# ---------------------------------------------------------------------------
+
+# Kept as a module-level constant so that legacy imports and shims continue
+# to work.  In azure mode this reflects the local-development default and
+# should not be used directly; use get_connection_dsn() instead.
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@db:5432/campaigns",
 )
 
-engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+# ---------------------------------------------------------------------------
+# Azure credential (lazy, module-level singleton)
+# ---------------------------------------------------------------------------
+
+# Initialised on first call to _fetch_entra_db_token(); closed in close_db().
+_entra_credential: "DefaultAzureCredential | None" = None
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def _get_auth_mode() -> str:
+    """Return the current database authentication mode (lower-cased)."""
+    return os.getenv("DB_AUTH_MODE", _DB_AUTH_MODE_LOCAL).lower()
+
+
+def _build_azure_db_url() -> str:
+    """Build the asyncpg SQLAlchemy URL for Azure Database for PostgreSQL."""
+    host = os.getenv("AZURE_POSTGRES_HOST", "")
+    database = os.getenv("AZURE_POSTGRES_DATABASE", "campaigns")
+    user = os.getenv("AZURE_POSTGRES_USER", "")
+    return f"postgresql+asyncpg://{user}@{host}/{database}"
+
+
+async def _fetch_entra_db_token() -> str:
+    """Acquire a Microsoft Entra access token for Azure Database for PostgreSQL.
+
+    asyncpg calls this coroutine on each new connection when it is supplied as
+    the ``password`` connect argument.  ``DefaultAzureCredential`` handles
+    token caching and refresh internally, so there is no need to re-create the
+    credential object per call.
+    """
+    global _entra_credential
+    if _entra_credential is None:
+        from azure.identity.aio import DefaultAzureCredential  # noqa: PLC0415
+
+        _entra_credential = DefaultAzureCredential()
+        logger.debug("Initialised DefaultAzureCredential for PostgreSQL Entra auth")
+
+    token = await _entra_credential.get_token(_ENTRA_TOKEN_SCOPE)
+    return token.token
+
+
+def _create_engine():
+    """Create the async SQLAlchemy engine, choosing auth mode from DB_AUTH_MODE."""
+    mode = _get_auth_mode()
+    if mode == _DB_AUTH_MODE_AZURE:
+        url = _build_azure_db_url()
+        logger.info(
+            "Database engine: azure Entra mode (host=%s)",
+            os.getenv("AZURE_POSTGRES_HOST", "<unset>"),
+        )
+        return create_async_engine(
+            url,
+            echo=False,
+            future=True,
+            connect_args={
+                "password": _fetch_entra_db_token,
+                "ssl": "require",
+            },
+        )
+
+    # Local / default: password-based DATABASE_URL.
+    logger.debug("Database engine: local mode")
+    return create_async_engine(DATABASE_URL, echo=False, future=True)
+
+
+def get_connection_dsn() -> str:
+    """Return an asyncpg-compatible DSN for direct asyncpg connections.
+
+    In local mode this is derived from ``DATABASE_URL``.  In azure mode it is
+    built from ``AZURE_POSTGRES_HOST``, ``AZURE_POSTGRES_DATABASE``, and
+    ``AZURE_POSTGRES_USER`` (no password embedded — use
+    :func:`get_connection_password` to supply the token callback).
+    """
+    if _get_auth_mode() == _DB_AUTH_MODE_AZURE:
+        host = os.getenv("AZURE_POSTGRES_HOST", "")
+        database = os.getenv("AZURE_POSTGRES_DATABASE", "campaigns")
+        user = os.getenv("AZURE_POSTGRES_USER", "")
+        return f"postgresql://{user}@{host}/{database}"
+    return DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def get_connection_password() -> "Callable[[], Coroutine[Any, Any, str]] | None":
+    """Return the asyncpg password callable for azure mode, or ``None`` for local.
+
+    The returned coroutine function acquires a fresh Microsoft Entra access
+    token each time it is awaited.  Pass it to ``asyncpg.connect()`` as the
+    ``password`` keyword argument so that asyncpg calls it on each new
+    connection.
+
+    Returns ``None`` in local mode (asyncpg uses the password embedded in the
+    DSN instead).
+    """
+    if _get_auth_mode() == _DB_AUTH_MODE_AZURE:
+        return _fetch_entra_db_token
+    return None
+
+
+engine = _create_engine()
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -165,6 +300,10 @@ async def init_db() -> None:
     Running migrations (rather than plain create_all) ensures that both
     fresh databases and existing ones that pre-date the owner_id column
     are handled correctly.
+
+    In azure mode the Alembic URL is set to the Azure URL (without an
+    embedded password); ``migrations/env.py`` acquires a fresh Entra token
+    per connection at runtime.
     """
     import asyncio
     from alembic import command
@@ -174,7 +313,12 @@ async def init_db() -> None:
     alembic_cfg.set_main_option("script_location", str(
         os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "migrations"))
     ))
-    alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL.replace("+asyncpg", ""))
+
+    if _get_auth_mode() == _DB_AUTH_MODE_AZURE:
+        # migrations/env.py will acquire the Entra token per connection.
+        alembic_cfg.set_main_option("sqlalchemy.url", _build_azure_db_url())
+    else:
+        alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL.replace("+asyncpg", ""))
 
     # Alembic's command.upgrade is synchronous — run it in a thread executor
     # so we don't block the event loop.
@@ -183,5 +327,9 @@ async def init_db() -> None:
 
 
 async def close_db() -> None:
-    """Dispose of the connection pool."""
+    """Dispose of the connection pool and close the Entra credential if open."""
+    global _entra_credential
     await engine.dispose()
+    if _entra_credential is not None:
+        await _entra_credential.close()
+        _entra_credential = None
