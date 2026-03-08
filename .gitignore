@@ -36,3 +36,18 @@ htmlcov/
 
 # Logs
 *.log
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+tfplan
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# Note: .terraform.lock.hcl is intentionally NOT ignored — commit it to pin provider versions.
