@@ -22,9 +22,9 @@ from fastapi.responses import Response
 from backend.models.campaign import Campaign
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
 from backend.models.user import User
-from backend.services.auth import get_current_user
-from backend.services.campaign_workflow_service import WorkflowConflictError
-from backend.services.workflow_executor import get_executor, WorkflowJob
+from backend.infrastructure.auth import get_current_user
+from backend.application.campaign_workflow_service import WorkflowConflictError
+from backend.infrastructure.workflow_executor import get_executor, WorkflowJob
 
 # Access shared state through the campaigns module so that test patches on
 # backend.api.campaigns.* continue to work without modification.

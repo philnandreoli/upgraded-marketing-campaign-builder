@@ -21,9 +21,9 @@ from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.user import User, UserRole, roles_from_db, roles_to_db
-from backend.services.auth import require_admin
-from backend.services.campaign_store import get_campaign_store
-from backend.services.database import CampaignMemberRow, UserRow, get_db
+from backend.infrastructure.auth import require_admin
+from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.database import CampaignMemberRow, UserRow, get_db
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

@@ -16,7 +16,7 @@ import logging
 from typing import Callable
 
 from backend.config import get_settings
-from backend.services.database import close_db, init_db
+from backend.infrastructure.database import close_db, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ def make_startup_handler(app: object) -> Callable[[], None]:
         # LISTEN/NOTIFY.
         if settings.app.workflow_executor != "in_process":
             from backend.api.websocket import manager as ws_manager  # noqa: PLC0415
-            from backend.services.database import DATABASE_URL  # noqa: PLC0415
-            from backend.services.event_subscriber import EventSubscriber  # noqa: PLC0415
+            from backend.infrastructure.database import DATABASE_URL  # noqa: PLC0415
+            from backend.infrastructure.event_subscriber import EventSubscriber  # noqa: PLC0415
 
             dsn = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
             subscriber = EventSubscriber(

@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.config import get_settings
-from backend.services.tracing import setup_tracing
+from backend.core.tracing import setup_tracing
 
 # ------------------------------------------------------------------
 # Logging — must be configured first so all subsequent log calls
@@ -79,8 +79,8 @@ async def health_live():
 @app.get("/health/ready")
 async def health_ready():
     """Readiness probe — dependencies (DB + executor) are reachable."""
-    from backend.services.database import engine  # noqa: PLC0415
-    from backend.services.workflow_executor import get_executor  # noqa: PLC0415
+    from backend.infrastructure.database import engine  # noqa: PLC0415
+    from backend.infrastructure.workflow_executor import get_executor  # noqa: PLC0415
 
     # Check DB connectivity
     db_ok = False

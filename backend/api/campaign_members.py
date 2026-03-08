@@ -18,7 +18,7 @@ from fastapi.responses import Response
 
 from backend.models.campaign import Campaign
 from backend.models.user import CampaignMemberRole, User
-from backend.services.auth import get_current_user
+from backend.infrastructure.auth import get_current_user
 from backend.api.websocket import manager as ws_manager
 
 # Access get_campaign_store through the campaigns module so that test patches on

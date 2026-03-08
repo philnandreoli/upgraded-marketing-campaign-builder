@@ -26,7 +26,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # -- Import our models so autogenerate can detect changes --------------------
-from backend.services.database import Base  # noqa: E402
+from backend.infrastructure.database import Base  # noqa: E402
 
 target_metadata = Base.metadata
 

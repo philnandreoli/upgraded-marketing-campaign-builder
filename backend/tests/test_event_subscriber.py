@@ -59,7 +59,7 @@ class TestHandleNotification:
 
         subscriber, ws = _make_subscriber()
 
-        with caplog.at_level(logging.WARNING, logger="backend.services.event_subscriber"):
+        with caplog.at_level(logging.WARNING, logger="backend.infrastructure.event_subscriber"):
             await subscriber._handle_notification("not valid json {{")
 
         ws.broadcast.assert_not_awaited()
@@ -73,7 +73,7 @@ class TestHandleNotification:
         ws.broadcast = AsyncMock(side_effect=RuntimeError("ws error"))
         payload = json.dumps({"event": "x", "campaign_id": "c-1"})
 
-        with caplog.at_level(logging.ERROR, logger="backend.services.event_subscriber"):
+        with caplog.at_level(logging.ERROR, logger="backend.infrastructure.event_subscriber"):
             await subscriber._handle_notification(payload)
 
         assert "ws_manager.broadcast" in caplog.text
@@ -126,7 +126,7 @@ class TestResolveOverflow:
         mock_engine = MagicMock()
         mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        with patch("backend.services.database.engine", mock_engine):
+        with patch("backend.infrastructure.database.engine", mock_engine):
             result = await subscriber._resolve_overflow("some-uuid")
 
         assert result == full
@@ -149,8 +149,8 @@ class TestResolveOverflow:
         mock_engine.connect = MagicMock(return_value=mock_conn)
 
         with (
-            patch("backend.services.database.engine", mock_engine),
-            caplog.at_level(logging.WARNING, logger="backend.services.event_subscriber"),
+            patch("backend.infrastructure.database.engine", mock_engine),
+            caplog.at_level(logging.WARNING, logger="backend.infrastructure.event_subscriber"),
         ):
             result = await subscriber._resolve_overflow("missing-uuid")
 
@@ -167,8 +167,8 @@ class TestResolveOverflow:
         mock_engine.connect = MagicMock(side_effect=RuntimeError("db down"))
 
         with (
-            patch("backend.services.database.engine", mock_engine),
-            caplog.at_level(logging.ERROR, logger="backend.services.event_subscriber"),
+            patch("backend.infrastructure.database.engine", mock_engine),
+            caplog.at_level(logging.ERROR, logger="backend.infrastructure.event_subscriber"),
         ):
             result = await subscriber._resolve_overflow("err-uuid")
 
@@ -248,7 +248,7 @@ class TestReconnect:
         with (
             patch.object(subscriber, "_listen_loop", side_effect=_failing_then_stop),
             patch(
-                "backend.services.event_subscriber._INITIAL_BACKOFF", 0.01
+                "backend.infrastructure.event_subscriber._INITIAL_BACKOFF", 0.01
             ),
         ):
             subscriber.start()
@@ -269,7 +269,7 @@ class TestReconnect:
 
         with (
             patch.object(subscriber, "_listen_loop", side_effect=_always_fail),
-            patch("backend.services.event_subscriber._INITIAL_BACKOFF", 60.0),
+            patch("backend.infrastructure.event_subscriber._INITIAL_BACKOFF", 60.0),
         ):
             subscriber.start()
             await called.wait()

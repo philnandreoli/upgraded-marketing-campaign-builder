@@ -161,7 +161,7 @@ class TestCoordinatorPipeline:
         """Run the full pipeline and approve all pieces at the content-approval gate."""
         campaign = await store.create(brief)
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -228,7 +228,7 @@ class TestCoordinatorPipeline:
         """Run the pipeline and reject the entire campaign at the content-approval gate."""
         campaign = await store.create(brief)
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -257,7 +257,7 @@ class TestCoordinatorPipeline:
 
         call_count = 0
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             # Normal pipeline + content revision + piece re-revision
             responses = _stage_responses() + [PIECE_REVISION_RESPONSE]
@@ -321,7 +321,7 @@ class TestCoordinatorPipeline:
 
         campaign = await store.create(brief)
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             # Normal pipeline stages + one piece-revision response per approval cycle
             responses = _stage_responses() + [PIECE_REVISION_RESPONSE] * MAX_CONTENT_REVISION_CYCLES
@@ -370,7 +370,7 @@ class TestCoordinatorPipeline:
         """If strategy fails, the pipeline should stop — no downstream stages should run."""
         campaign = await store.create(brief)
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             # Clarification skipped, strategy fails immediately
             mock_llm.chat_json = AsyncMock(
@@ -437,7 +437,7 @@ class TestStatusTransitions:
             if c:
                 statuses_seen.append(c.status.value)
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -502,7 +502,7 @@ class TestCoordinatorClarificationResume:
             CONTENT_REVISION_RESPONSE,
         ]
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=responses)
             mock_get_llm.return_value = mock_llm
@@ -567,7 +567,7 @@ class TestCoordinatorClarificationResume:
             if event == "pipeline_completed":
                 pipeline_completed.set()
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=responses)
             mock_get_llm.return_value = mock_llm
@@ -885,7 +885,7 @@ class TestCoordinatorCheckpoints:
         campaign = await store.create(brief)
         checkpoint_store = _InMemoryCheckpointStore()
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -934,7 +934,7 @@ class TestCoordinatorCheckpoints:
         """A failing checkpoint store must not break the pipeline — checkpoints are additive."""
         campaign = await store.create(brief)
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -985,7 +985,7 @@ class TestCoordinatorCheckpoints:
             "questions": [{"text": "What is your target market?", "id": "q1"}],
         })
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=[
                 clarification_needed,
@@ -1055,7 +1055,7 @@ class TestCoordinatorCheckpoints:
         campaign = await store.create(brief)
         checkpoint_store = _InMemoryCheckpointStore()
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -1130,7 +1130,7 @@ class TestCoordinatorWaitTimeouts:
             "questions": [{"text": "What is your target market?", "id": "q1"}],
         })
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(return_value=clarification_needed)
             mock_get_llm.return_value = mock_llm
@@ -1166,7 +1166,7 @@ class TestCoordinatorWaitTimeouts:
             "questions": [{"text": "What is your target market?", "id": "q1"}],
         })
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(return_value=clarification_needed)
             mock_get_llm.return_value = mock_llm
@@ -1199,7 +1199,7 @@ class TestCoordinatorWaitTimeouts:
             )
         )
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -1230,7 +1230,7 @@ class TestCoordinatorWaitTimeouts:
             )
         )
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -1263,7 +1263,7 @@ class TestCoordinatorWaitTimeouts:
         )
         checkpoint_store = _InMemoryCheckpointStore()
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -1344,7 +1344,7 @@ class TestCoordinatorResume:
 
         llm_call_count = 0
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
 
             original_side_effect = [
@@ -1434,7 +1434,7 @@ class TestCoordinatorResume:
             updated_at=datetime.utcnow(),
         )
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             # gather_clarifications + all 6 pipeline stages
             mock_llm.chat_json = AsyncMock(side_effect=[
@@ -1487,7 +1487,7 @@ class TestCoordinatorResume:
         # No checkpoint saved for this campaign
         checkpoint_store = _InMemoryCheckpointStore()
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
             mock_get_llm.return_value = mock_llm
@@ -1602,7 +1602,7 @@ class TestCoordinatorResume:
             updated_at=datetime.utcnow(),
         )
 
-        with patch("backend.agents.base_agent.get_llm_service") as mock_get_llm:
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
             mock_llm.chat_json = AsyncMock()
             mock_get_llm.return_value = mock_llm

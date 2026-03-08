@@ -1,1 +1,1 @@
-"""Executor implementations package."""
+# Compatibility shim package — executors have moved to backend.infrastructure.executors

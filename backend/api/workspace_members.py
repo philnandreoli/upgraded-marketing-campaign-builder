@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from backend.models.user import User
 from backend.models.workspace import WorkspaceRole
-from backend.services.auth import get_current_user
+from backend.infrastructure.auth import get_current_user
 
 # Access get_campaign_store through the workspaces module so that test patches on
 # backend.api.workspaces.get_campaign_store continue to work without modification.
