@@ -35,14 +35,17 @@ def make_startup_handler(app: object) -> Callable[[], None]:
         # LISTEN/NOTIFY.
         if settings.app.workflow_executor != "in_process":
             from backend.api.websocket import manager as ws_manager  # noqa: PLC0415
-            from backend.infrastructure.database import DATABASE_URL  # noqa: PLC0415
+            from backend.infrastructure.database import (  # noqa: PLC0415
+                get_connection_dsn,
+                get_connection_password,
+            )
             from backend.infrastructure.event_subscriber import EventSubscriber  # noqa: PLC0415
 
-            dsn = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
             subscriber = EventSubscriber(
-                dsn=dsn,
+                dsn=get_connection_dsn(),
                 ws_manager=ws_manager,
                 channel_name=settings.events.channel_name,
+                password=get_connection_password(),
             )
             subscriber.start()
             app.state.event_subscriber = subscriber  # type: ignore[union-attr]
