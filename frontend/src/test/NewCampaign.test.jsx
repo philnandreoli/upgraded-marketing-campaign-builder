@@ -94,9 +94,13 @@ describe('NewCampaign — workspace picker', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /My Space/i })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: /Team WS/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/create in workspace/i)).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByLabelText(/create in workspace/i));
+
+    expect(screen.getByRole('option', { name: /My Space/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Team WS/i })).toBeInTheDocument();
 
     expect(screen.queryByRole('option', { name: /View Only/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Contrib WS/i })).not.toBeInTheDocument();
@@ -109,9 +113,13 @@ describe('NewCampaign — workspace picker', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /View Only/i })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: /Contrib WS/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/create in workspace/i)).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByLabelText(/create in workspace/i));
+
+    expect(screen.getByRole('option', { name: /View Only/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Contrib WS/i })).toBeInTheDocument();
   });
 
   it('pre-selects personal workspace by default', async () => {
@@ -120,8 +128,7 @@ describe('NewCampaign — workspace picker', () => {
     });
 
     await waitFor(() => {
-      const select = screen.getByLabelText(/create in workspace/i);
-      expect(select.value).toBe(PERSONAL_WS.id);
+      expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/My Space \(Personal\)/i);
     });
   });
 
@@ -132,8 +139,7 @@ describe('NewCampaign — workspace picker', () => {
     });
 
     await waitFor(() => {
-      const select = screen.getByLabelText(/create in workspace/i);
-      expect(select.value).toBe(TEAM_WS_CREATOR.id);
+      expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/Team WS/i);
     });
   });
 
@@ -144,9 +150,7 @@ describe('NewCampaign — workspace picker', () => {
     });
 
     await waitFor(() => {
-      const select = screen.getByLabelText(/create in workspace/i);
-      // personal workspace is still available and should be pre-selected
-      expect(select.value).toBe(PERSONAL_WS.id);
+      expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/My Space \(Personal\)/i);
     });
   });
 
@@ -169,7 +173,7 @@ describe('NewCampaign — workspace picker', () => {
 
     // Wait for workspace to be selected
     await waitFor(() => {
-      expect(screen.getByLabelText(/create in workspace/i).value).toBe(PERSONAL_WS.id);
+      expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/My Space \(Personal\)/i);
     });
 
     // Fill required fields
@@ -196,8 +200,10 @@ describe('NewCampaign — workspace picker', () => {
     });
 
     await waitFor(() => {
-      const option = screen.getByRole('option', { name: /My Space \(Personal\)/i });
-      expect(option).toBeInTheDocument();
+      expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/My Space \(Personal\)/i);
     });
+
+    fireEvent.click(screen.getByLabelText(/create in workspace/i));
+    expect(screen.getByRole('option', { name: /My Space \(Personal\)/i })).toBeInTheDocument();
   });
 });

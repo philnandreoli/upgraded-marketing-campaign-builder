@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { createCampaign } from "../api";
 import DatePicker from "../components/DatePicker";
@@ -23,9 +23,85 @@ const SOCIAL_MEDIA_PLATFORMS = [
   { value: "linkedin", label: "LinkedIn" },
 ];
 
+function WorkspaceDropdown({ value, options, onChange, labelId }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  const selectedOption = options.find((option) => option.id === value);
+
+  return (
+    <div className="custom-select custom-select--full" ref={ref}>
+      <button
+        type="button"
+        id="workspace-select"
+        className="custom-select-trigger custom-select-trigger--full"
+        onClick={() => setOpen((current) => !current)}
+        aria-labelledby={labelId}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+      >
+        <span>
+          {selectedOption
+            ? selectedOption.is_personal
+              ? `${selectedOption.name} (Personal)`
+              : selectedOption.name
+            : "Select a workspace..."}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+
+      {open && (
+        <ul className="custom-select-menu custom-select-menu--full" role="listbox" aria-labelledby={labelId}>
+          {options.map((ws) => {
+            const optionLabel = ws.is_personal ? `${ws.name} (Personal)` : ws.name;
+            const isSelected = ws.id === value;
+            return (
+              <li
+                key={ws.id}
+                role="option"
+                aria-selected={isSelected}
+                className={`custom-select-option${isSelected ? " selected" : ""}`}
+                onClick={() => {
+                  onChange(ws.id);
+                  setOpen(false);
+                }}
+              >
+                {optionLabel}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function NewCampaign() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const workspaceLabelId = useId();
   const { isAdmin } = useUser();
   const { workspaces, personalWorkspace } = useWorkspace();
   const [loading, setLoading] = useState(false);
@@ -141,20 +217,13 @@ export default function NewCampaign() {
             </p>
           ) : (
             <div className="form-group">
-              <label htmlFor="workspace-select">Create in workspace *</label>
-              <select
-                id="workspace-select"
-                required
+              <label id={workspaceLabelId} htmlFor="workspace-select">Create in workspace *</label>
+              <WorkspaceDropdown
                 value={selectedWorkspaceId}
-                onChange={(e) => setSelectedWorkspaceId(e.target.value)}
-              >
-                <option value="" disabled>Select a workspace…</option>
-                {creatableWorkspaces.map((ws) => (
-                  <option key={ws.id} value={ws.id}>
-                    {ws.is_personal ? `${ws.name} (Personal)` : ws.name}
-                  </option>
-                ))}
-              </select>
+                options={creatableWorkspaces}
+                onChange={setSelectedWorkspaceId}
+                labelId={workspaceLabelId}
+              />
             </div>
           )}
         </fieldset>

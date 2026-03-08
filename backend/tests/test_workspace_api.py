@@ -303,7 +303,14 @@ class TestListWorkspaceCampaigns:
 
         r = creator_client.get("/api/workspaces/ws-1/campaigns")
         assert r.status_code == 200
-        assert len(r.json()) == 1
+        items = r.json()
+        assert len(items) == 1
+        assert items[0]["id"] == campaign.id
+        assert items[0]["product_or_service"] == "Prod"
+        assert items[0]["goal"] == "Goal"
+        assert items[0]["workspace_id"] == "ws-1"
+        assert items[0]["workspace_name"] == "WS"
+        assert "brief" not in items[0]
 
     def test_non_member_gets_404(self, _isolated_store):
         _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", "owner")

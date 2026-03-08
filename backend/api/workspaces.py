@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from backend.apps.api.schemas.campaigns import CampaignSummary
 from backend.models.user import User, UserRole
 from backend.models.workspace import Workspace, WorkspaceRole
 from backend.infrastructure.auth import get_current_user
@@ -231,11 +232,11 @@ async def delete_workspace(
     return Response(status_code=204)
 
 
-@router.get("/workspaces/{workspace_id}/campaigns")
+@router.get("/workspaces/{workspace_id}/campaigns", response_model=list[CampaignSummary])
 async def list_workspace_campaigns(
     workspace_id: str,
     user: Optional[User] = Depends(get_current_user),
-) -> list[dict]:
+) -> list[CampaignSummary]:
     """List campaigns in a workspace. Requires workspace membership or admin."""
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
@@ -243,7 +244,20 @@ async def list_workspace_campaigns(
         raise HTTPException(status_code=404, detail="Workspace not found")
     await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
     campaigns = await store.list_workspace_campaigns(workspace_id)
-    return [c.model_dump(mode="json") for c in campaigns]
+    return [
+        CampaignSummary(
+            id=c.id,
+            status=c.status.value,
+            product_or_service=c.brief.product_or_service,
+            goal=c.brief.goal,
+            owner_id=c.owner_id,
+            workspace_id=c.workspace_id,
+            workspace_name=workspace.name,
+            created_at=c.created_at.isoformat(),
+            updated_at=c.updated_at.isoformat(),
+        )
+        for c in campaigns
+    ]
 
 
 # ---------------------------------------------------------------------------
