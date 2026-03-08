@@ -18,4 +18,5 @@ resource_group_name  = "rg-mcb-tfstate"
 storage_account_name = "mcbtfstate" # set to actual name from bootstrap-state.sh
 container_name       = "tfstate"
 key                  = "environments/dev/terraform.tfstate"
-use_oidc             = true
+use_azuread_auth     = true  # for local `az login` usage
+use_oidc             = false # override to true in CI via `-backend-config`
