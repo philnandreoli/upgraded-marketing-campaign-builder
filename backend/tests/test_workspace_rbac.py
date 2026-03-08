@@ -121,8 +121,8 @@ def _as_user(user: User, store: InMemoryCampaignStore):
         with (
             patch("backend.api.campaigns.get_campaign_store", return_value=store),
             patch("backend.api.workspaces.get_campaign_store", return_value=store),
-            patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=store),
-            patch("backend.services.campaign_workflow_service._workflow_service", None),
+            patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=store),
+            patch("backend.application.campaign_workflow_service._workflow_service", None),
             patch("backend.api.campaigns.get_executor", return_value=mock_executor),
             patch("backend.api.campaign_workflow.get_executor", return_value=mock_executor),
             patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),

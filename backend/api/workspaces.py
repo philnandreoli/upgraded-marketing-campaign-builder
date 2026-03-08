@@ -26,8 +26,8 @@ from pydantic import BaseModel
 
 from backend.models.user import User, UserRole
 from backend.models.workspace import Workspace, WorkspaceRole
-from backend.services.auth import get_current_user
-from backend.services.campaign_store import get_campaign_store
+from backend.infrastructure.auth import get_current_user
+from backend.infrastructure.campaign_store import get_campaign_store
 
 router = APIRouter(tags=["workspaces"])
 

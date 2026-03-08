@@ -13,9 +13,9 @@ from backend.services.llm_service import LLMService
 def llm_service():
     """Create an LLMService with a mocked Azure AI Projects client."""
     with (
-        patch("backend.services.llm_service.get_settings") as mock_settings,
-        patch("backend.services.llm_service.DefaultAzureCredential") as mock_cred,
-        patch("backend.services.llm_service.AIProjectClient") as mock_project,
+        patch("backend.infrastructure.llm_service.get_settings") as mock_settings,
+        patch("backend.infrastructure.llm_service.DefaultAzureCredential") as mock_cred,
+        patch("backend.infrastructure.llm_service.AIProjectClient") as mock_project,
     ):
         mock_settings.return_value = MagicMock(
             azure_ai_project=MagicMock(

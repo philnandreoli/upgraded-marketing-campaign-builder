@@ -28,10 +28,10 @@ from pydantic import BaseModel
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import CampaignMemberRole, User, UserRole
 from backend.models.workspace import WorkspaceRole
-from backend.services.auth import get_current_user
-from backend.services.campaign_store import get_campaign_store
-from backend.services.campaign_workflow_service import get_workflow_service
-from backend.services.workflow_executor import get_executor, WorkflowJob
+from backend.infrastructure.auth import get_current_user
+from backend.infrastructure.campaign_store import get_campaign_store
+from backend.application.campaign_workflow_service import get_workflow_service
+from backend.infrastructure.workflow_executor import get_executor, WorkflowJob
 import asyncio
 
 logger = logging.getLogger(__name__)

@@ -46,9 +46,9 @@ class TestDispatch:
         mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             job = _make_job("start_pipeline")
             await executor.dispatch(job)
@@ -73,9 +73,9 @@ class TestDispatch:
         mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             await executor.dispatch(_make_job("start_pipeline"))
             # The task has been scheduled but not completed yet
@@ -93,9 +93,9 @@ class TestDispatch:
         mock_store.get = AsyncMock(return_value=campaign_mock)
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             await executor.dispatch(_make_job("start_pipeline", "c-1"))
             await asyncio.sleep(0)
@@ -108,9 +108,9 @@ class TestDispatch:
         mock_store = MagicMock()
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             await executor.dispatch(_make_job("resume_pipeline", "c-2"))
             await asyncio.sleep(0)
@@ -123,9 +123,9 @@ class TestDispatch:
         mock_store = MagicMock()
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             await executor.dispatch(_make_job("retry_stage", "c-3"))
             await asyncio.sleep(0)
@@ -141,10 +141,10 @@ class TestDispatch:
         mock_store.get = AsyncMock(return_value=None)  # campaign not found
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
-            caplog.at_level(logging.ERROR, logger="backend.services.executors.in_process"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
+            caplog.at_level(logging.ERROR, logger="backend.infrastructure.executors.in_process"),
         ):
             await executor.dispatch(_make_job("start_pipeline", "missing-id"))
             await asyncio.sleep(0)
@@ -184,9 +184,9 @@ class TestClose:
         mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             await executor.dispatch(_make_job("start_pipeline"))
             await started.wait()  # Ensure the task is actually running before we close
@@ -212,9 +212,9 @@ class TestClose:
         mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             await executor.dispatch(_make_job("start_pipeline"))
             await asyncio.sleep(0)  # let the task start
@@ -253,10 +253,10 @@ class TestErrorHandling:
         mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", return_value=mock_coord),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
-            caplog.at_level(logging.ERROR, logger="backend.services.executors.in_process"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
+            caplog.at_level(logging.ERROR, logger="backend.infrastructure.executors.in_process"),
         ):
             await executor.dispatch(_make_job("start_pipeline", "err-camp"))
             await asyncio.sleep(0)
@@ -288,9 +288,9 @@ class TestErrorHandling:
         mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
-            patch("backend.services.executors.in_process.CoordinatorAgent", _CoordFactory),
-            patch("backend.services.executors.in_process.get_campaign_store", return_value=mock_store),
-            patch("backend.services.executors.in_process.ws_manager"),
+            patch("backend.infrastructure.executors.in_process.CoordinatorAgent", _CoordFactory),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager"),
         ):
             await executor.dispatch(_make_job("start_pipeline", "c-fail"))
             await executor.dispatch(_make_job("start_pipeline", "c-ok"))

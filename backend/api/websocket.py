@@ -22,9 +22,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.config import get_settings
 from backend.models.user import User, UserRole
-from backend.services.auth import validate_token
-from backend.services.campaign_store import get_campaign_store
-from backend.services.database import async_session
+from backend.infrastructure.auth import validate_token
+from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.database import async_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])

@@ -117,15 +117,15 @@ class TestSubmitClarification:
 class TestGetWorkflowServiceFactory:
     def test_returns_instance_on_first_call(self):
         mock_store = InMemoryCampaignStore()
-        with patch("backend.services.campaign_workflow_service._workflow_service", None), \
-             patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=mock_store):
+        with patch("backend.application.campaign_workflow_service._workflow_service", None), \
+             patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=mock_store):
             svc = get_workflow_service()
             assert svc is not None
 
     def test_returns_same_instance_on_subsequent_calls(self):
         mock_store = InMemoryCampaignStore()
-        with patch("backend.services.campaign_workflow_service._workflow_service", None), \
-             patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=mock_store):
+        with patch("backend.application.campaign_workflow_service._workflow_service", None), \
+             patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=mock_store):
             svc1 = get_workflow_service()
             svc2 = get_workflow_service()
             assert svc1 is svc2

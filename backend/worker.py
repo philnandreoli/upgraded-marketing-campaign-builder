@@ -21,11 +21,11 @@ from aiohttp import web
 from azure.servicebus import NEXT_AVAILABLE_SESSION
 from azure.servicebus.exceptions import OperationTimeoutError
 
-from backend.agents.coordinator_agent import CoordinatorAgent
+from backend.orchestration.coordinator_agent import CoordinatorAgent
 from backend.config import get_settings
-from backend.services.campaign_store import get_campaign_store
-from backend.services.event_publisher import PostgresEventPublisher
-from backend.services.workflow_executor import WorkflowJob
+from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.event_publisher import PostgresEventPublisher
+from backend.infrastructure.workflow_executor import WorkflowJob
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +232,7 @@ class Worker:
         so that real-time pipeline events are forwarded to the API process via
         PostgreSQL LISTEN/NOTIFY and then relayed to WebSocket clients.
         """
-        from backend.services.database import engine  # noqa: PLC0415
+        from backend.infrastructure.database import engine  # noqa: PLC0415
 
         settings = get_settings()
         publisher = PostgresEventPublisher(
@@ -313,7 +313,7 @@ class Worker:
         """Return ``True`` when the database is reachable."""
         try:
             import sqlalchemy  # noqa: PLC0415
-            from backend.services.database import engine  # noqa: PLC0415
+            from backend.infrastructure.database import engine  # noqa: PLC0415
 
             async with engine.connect() as conn:
                 await conn.execute(sqlalchemy.text("SELECT 1"))
@@ -369,7 +369,7 @@ class Worker:
             except Exception as exc:
                 logger.warning("Error closing credential: %s", exc)
 
-        from backend.services.database import close_db  # noqa: PLC0415
+        from backend.infrastructure.database import close_db  # noqa: PLC0415
 
         await close_db()
         logger.info("Worker shutdown complete")
@@ -392,15 +392,15 @@ async def _async_main() -> None:
 
     logger.info("Starting worker process")
 
-    from backend.services.tracing import setup_tracing  # noqa: PLC0415
+    from backend.core.tracing import setup_tracing  # noqa: PLC0415
 
     setup_tracing()
 
-    from backend.services.database import init_db  # noqa: PLC0415
+    from backend.infrastructure.database import init_db  # noqa: PLC0415
 
     await init_db()
 
-    from backend.services.agent_registry import register_agents  # noqa: PLC0415
+    from backend.infrastructure.agent_registry import register_agents  # noqa: PLC0415
 
     register_agents()
 

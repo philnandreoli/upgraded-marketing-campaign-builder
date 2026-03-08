@@ -43,8 +43,8 @@ def _isolated_store():
     # Reset _workflow_service singleton so each test gets a fresh one with the fresh store
     # Mock get_executor so pipeline dispatch is a no-op in route tests
     with patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store), \
-         patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
-         patch("backend.services.campaign_workflow_service._workflow_service", None), \
+         patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
+         patch("backend.application.campaign_workflow_service._workflow_service", None), \
          patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
          patch("backend.api.campaign_workflow.get_executor", return_value=mock_executor), \
          patch("backend.apps.api.startup.init_db", new_callable=AsyncMock), \
@@ -98,7 +98,7 @@ class TestHealthCheck:
         """Ready endpoint returns 200 when the DB check succeeds."""
         with (
             patch("backend.apps.api.main.sqlalchemy.text", return_value=MagicMock()),
-            patch("backend.services.database.engine") as mock_engine,
+            patch("backend.infrastructure.database.engine") as mock_engine,
         ):
             mock_conn = AsyncMock()
             mock_conn.execute = AsyncMock()
@@ -108,7 +108,7 @@ class TestHealthCheck:
             mock_executor = MagicMock()
             mock_executor.health_check = AsyncMock(return_value=True)
 
-            with patch("backend.services.workflow_executor.get_executor", return_value=mock_executor):
+            with patch("backend.infrastructure.workflow_executor.get_executor", return_value=mock_executor):
                 r = client.get("/health/ready")
 
         assert r.status_code == 200
@@ -120,7 +120,7 @@ class TestHealthCheck:
         """Ready endpoint returns 503 when the DB check fails."""
         import sqlalchemy as sa
 
-        with patch("backend.services.database.engine") as mock_engine:
+        with patch("backend.infrastructure.database.engine") as mock_engine:
             mock_engine.connect.side_effect = sa.exc.OperationalError(
                 "connection refused", None, None
             )
@@ -128,7 +128,7 @@ class TestHealthCheck:
             mock_executor = MagicMock()
             mock_executor.health_check = AsyncMock(return_value=True)
 
-            with patch("backend.services.workflow_executor.get_executor", return_value=mock_executor):
+            with patch("backend.infrastructure.workflow_executor.get_executor", return_value=mock_executor):
                 r = client.get("/health/ready")
 
         assert r.status_code == 503
@@ -140,7 +140,7 @@ class TestHealthCheck:
         """Ready endpoint returns 503 when executor health_check fails."""
         with (
             patch("backend.apps.api.main.sqlalchemy.text", return_value=MagicMock()),
-            patch("backend.services.database.engine") as mock_engine,
+            patch("backend.infrastructure.database.engine") as mock_engine,
         ):
             mock_conn = AsyncMock()
             mock_conn.execute = AsyncMock()
@@ -150,7 +150,7 @@ class TestHealthCheck:
             mock_executor = MagicMock()
             mock_executor.health_check = AsyncMock(return_value=False)
 
-            with patch("backend.services.workflow_executor.get_executor", return_value=mock_executor):
+            with patch("backend.infrastructure.workflow_executor.get_executor", return_value=mock_executor):
                 r = client.get("/health/ready")
 
         assert r.status_code == 503

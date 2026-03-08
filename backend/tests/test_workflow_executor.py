@@ -87,11 +87,11 @@ class TestGetExecutor:
     def test_in_process_executor_returned(self):
         from backend.services.executors.in_process import InProcessExecutor
 
-        with patch("backend.services.workflow_executor.get_settings", return_value=_make_settings("in_process")):
+        with patch("backend.infrastructure.workflow_executor.get_settings", return_value=_make_settings("in_process")):
             executor = get_executor()
         assert isinstance(executor, InProcessExecutor)
 
     def test_unknown_executor_raises(self):
-        with patch("backend.services.workflow_executor.get_settings", return_value=_make_settings("unsupported_backend")):
+        with patch("backend.infrastructure.workflow_executor.get_settings", return_value=_make_settings("unsupported_backend")):
             with pytest.raises(ValueError, match="Unknown WORKFLOW_EXECUTOR"):
                 get_executor()
