@@ -99,7 +99,7 @@ All worker settings are loaded from environment variables (or `.env`).
 
 ## Container Deployment
 
-The worker is built from the same container image as the API (`backend/Containerfile`). In `podman-compose.yml` it is started as a separate service with `WORKFLOW_EXECUTOR=azure_service_bus` and the appropriate Service Bus credentials.
+The worker is built from its own dedicated container image (`deploy/worker.Dockerfile`). In `podman-compose.yml` it is started as a separate service with `WORKFLOW_EXECUTOR=azure_service_bus` and the appropriate Service Bus credentials.
 
 ```bash
 # Build and run all services (frontend + api + worker)
@@ -109,11 +109,10 @@ podman-compose up --build
 To run only the worker container:
 
 ```bash
-podman build -f backend/Containerfile -t backend:local .
+podman build -f deploy/worker.Dockerfile -t marketing-worker:local .
 podman run --env-file .env \
   -e WORKFLOW_EXECUTOR=azure_service_bus \
-  backend:local \
-  python -m backend.worker
+  marketing-worker:local
 ```
 
 ---

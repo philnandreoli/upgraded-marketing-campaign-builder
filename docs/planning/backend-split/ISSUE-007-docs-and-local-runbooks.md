@@ -68,8 +68,8 @@ The canonical FastAPI entry-point is `backend.apps.api.main:app`. The legacy `ba
 
 | Artifact | Path | CMD |
 |----------|------|-----|
-| API image | `backend/Containerfile` | `uvicorn backend.apps.api.main:app --host 0.0.0.0 --port 8000` |
-| Worker image | same image, different CMD | `python -m backend.worker` |
+| API image | `deploy/api.Dockerfile` | `uvicorn backend.apps.api.main:app --host 0.0.0.0 --port 8000` |
+| Worker image | `deploy/worker.Dockerfile` | `python -m backend.worker` |
 | Frontend image | `frontend/Containerfile` | nginx serving the Vite build |
 
 ### CI Workflows

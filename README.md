@@ -50,7 +50,7 @@ For local development the two processes collapse into one: the API runs the pipe
 | AI | Azure AI Foundry SDK, GPT-4 (configurable) |
 | Database | PostgreSQL via SQLAlchemy (async) + Alembic migrations |
 | Observability | OpenTelemetry, Azure Monitor (optional) |
-| Containers | Podman / Docker — `backend/Containerfile`, `frontend/Containerfile` |
+| Containers | Podman / Docker — `deploy/api.Dockerfile`, `deploy/worker.Dockerfile`, `frontend/Containerfile` |
 | CI | GitHub Actions — `.github/workflows/ci.yml` |
 | Dev Container | VS Code Dev Container with PostgreSQL sidecar |
 
@@ -229,9 +229,7 @@ marketing-campaign-builder/
 │   ├── tests/                # pytest test suite
 │   ├── worker.py             # Standalone worker process (python -m backend.worker)
 │   ├── main.py               # Compat shim → apps/api/main.py
-│   ├── config.py             # Pydantic-settings configuration
-│   ├── Containerfile         # Container build definition (preferred)
-│   └── Dockerfile            # Docker build definition
+│   └── config.py             # Pydantic-settings configuration
 ├── frontend/                 # React SPA
 │   ├── src/
 │   │   ├── components/       # UI components (strategy, content, review, etc.)
@@ -239,6 +237,9 @@ marketing-campaign-builder/
 │   │   └── pages/            # Route-level page components
 │   ├── Containerfile         # Container build definition (preferred)
 │   └── Dockerfile            # Docker build definition
+├── deploy/
+│   ├── api.Dockerfile        # API container build definition
+│   └── worker.Dockerfile     # Worker container build definition
 ├── docs/
 │   └── planning/
 │       └── backend-split/    # Architecture planning documents
