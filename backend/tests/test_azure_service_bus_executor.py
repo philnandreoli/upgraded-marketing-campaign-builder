@@ -61,10 +61,10 @@ class TestAzureServiceBusExecutorInit:
         mock_client = _make_mock_client(mock_sender)
         mock_credential = AsyncMock()
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings(namespace="mybus.servicebus.windows.net")),
-            patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
-            patch("backend.services.executors.azure_service_bus.DefaultAzureCredential",
+            patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+            patch("backend.infrastructure.executors.azure_service_bus.DefaultAzureCredential",
                   return_value=mock_credential) as mock_cred_cls,
         ):
             mock_cls.return_value = mock_client
@@ -83,9 +83,9 @@ class TestAzureServiceBusExecutorInit:
         mock_sender = _make_mock_sender()
         mock_client = _make_mock_client(mock_sender)
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings(connection_string="Endpoint=sb://test/;...")),
-            patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+            patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
         ):
             mock_cls.from_connection_string.return_value = mock_client
             from backend.services.executors.azure_service_bus import AzureServiceBusExecutor
@@ -99,13 +99,13 @@ class TestAzureServiceBusExecutorInit:
         mock_sender = _make_mock_sender()
         mock_client = _make_mock_client(mock_sender)
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings(
                       namespace="mybus.servicebus.windows.net",
                       connection_string="Endpoint=sb://test/;...",
                   )),
-            patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
-            patch("backend.services.executors.azure_service_bus.DefaultAzureCredential"),
+            patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+            patch("backend.infrastructure.executors.azure_service_bus.DefaultAzureCredential"),
         ):
             mock_cls.return_value = mock_client
             from backend.services.executors.azure_service_bus import AzureServiceBusExecutor
@@ -118,7 +118,7 @@ class TestAzureServiceBusExecutorInit:
     def test_missing_config_raises_value_error(self):
         """ValueError is raised when neither namespace nor connection string is configured."""
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings()),
             pytest.raises(ValueError, match="AZURE_SERVICE_BUS_NAMESPACE"),
         ):
@@ -130,12 +130,12 @@ class TestAzureServiceBusExecutorInit:
         mock_sender = _make_mock_sender()
         mock_client = _make_mock_client(mock_sender)
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings(
                       connection_string="Endpoint=sb://test/;...",
                       queue_name="my-custom-queue",
                   )),
-            patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+            patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
         ):
             mock_cls.from_connection_string.return_value = mock_client
             from backend.services.executors.azure_service_bus import AzureServiceBusExecutor
@@ -163,9 +163,9 @@ def mock_client(mock_sender):
 def executor(mock_client):
     """An AzureServiceBusExecutor wired to mock_client via connection-string path."""
     with (
-        patch("backend.services.executors.azure_service_bus.get_settings",
+        patch("backend.infrastructure.executors.azure_service_bus.get_settings",
               return_value=_make_settings(connection_string="Endpoint=sb://test/;...")),
-        patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+        patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
     ):
         mock_cls.from_connection_string.return_value = mock_client
         from backend.services.executors.azure_service_bus import AzureServiceBusExecutor
@@ -262,10 +262,10 @@ class TestClose:
         mock_sender = _make_mock_sender()
         mock_client = _make_mock_client(mock_sender)
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings(namespace="mybus.servicebus.windows.net")),
-            patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
-            patch("backend.services.executors.azure_service_bus.DefaultAzureCredential",
+            patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+            patch("backend.infrastructure.executors.azure_service_bus.DefaultAzureCredential",
                   return_value=mock_credential),
         ):
             mock_cls.return_value = mock_client
@@ -292,9 +292,9 @@ class TestHealthCheck:
         closed_sender = _make_mock_sender(is_closed=True)
         mock_client = _make_mock_client(closed_sender)
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings(connection_string="Endpoint=sb://test/;...")),
-            patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+            patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
         ):
             mock_cls.from_connection_string.return_value = mock_client
             from backend.services.executors.azure_service_bus import AzureServiceBusExecutor
@@ -309,9 +309,9 @@ class TestHealthCheck:
         failing_client.get_queue_sender.side_effect = Exception("connection refused")
         failing_client.close = AsyncMock()
         with (
-            patch("backend.services.executors.azure_service_bus.get_settings",
+            patch("backend.infrastructure.executors.azure_service_bus.get_settings",
                   return_value=_make_settings(connection_string="Endpoint=sb://test/;...")),
-            patch("backend.services.executors.azure_service_bus.ServiceBusClient") as mock_cls,
+            patch("backend.infrastructure.executors.azure_service_bus.ServiceBusClient") as mock_cls,
         ):
             mock_cls.from_connection_string.return_value = failing_client
             from backend.services.executors.azure_service_bus import AzureServiceBusExecutor

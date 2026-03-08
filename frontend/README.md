@@ -10,7 +10,18 @@ npm install
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-Open **http://localhost:5173** in your browser. The backend API must be running on port 8000 (see the [backend README](../backend/README.md)).
+Open **http://localhost:5173** in your browser. The backend API must be running on port 8000 (see the [API runbook](../backend/README.md)).
+
+### Environment Variables
+
+The frontend reads optional `VITE_*` variables from a `.env` file inside the `frontend/` directory. These are only needed when `AUTH_ENABLED=true` on the backend:
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_AZURE_CLIENT_ID` | Azure AD application (client) ID for MSAL browser auth |
+| `VITE_AZURE_TENANT_ID` | Azure AD tenant ID |
+
+When auth is disabled (the default) the variables are ignored and no login prompt is shown.
 
 ### Available Scripts
 

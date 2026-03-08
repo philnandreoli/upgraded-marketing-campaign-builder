@@ -73,12 +73,14 @@ def _as_user(user: User, store: InMemoryCampaignStore):
     mock_executor.dispatch = AsyncMock()
     try:
         with patch("backend.api.campaigns.get_campaign_store", return_value=store), \
-             patch("backend.services.campaign_workflow_service.get_campaign_store", return_value=store), \
-             patch("backend.services.campaign_workflow_service._workflow_service", None), \
+             patch("backend.apps.api.dependencies.get_campaign_store", return_value=store), \
+             patch("backend.api.campaign_members.get_campaign_store", return_value=store), \
+             patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=store), \
+             patch("backend.application.campaign_workflow_service._workflow_service", None), \
              patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
              patch("backend.api.campaign_workflow.get_executor", return_value=mock_executor), \
-             patch("backend.main.init_db", new_callable=AsyncMock), \
-             patch("backend.main.close_db", new_callable=AsyncMock):
+             patch("backend.apps.api.startup.init_db", new_callable=AsyncMock), \
+             patch("backend.apps.api.startup.close_db", new_callable=AsyncMock):
             yield TestClient(app, raise_server_exceptions=False)
     finally:
         app.dependency_overrides.pop(get_current_user, None)
@@ -360,8 +362,8 @@ class TestUnauthenticatedAccess:
 
         try:
             with (
-                patch("backend.main.init_db", new_callable=AsyncMock),
-                patch("backend.main.close_db", new_callable=AsyncMock),
+                patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+                patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
             ):
                 transport = ASGITransport(app=app)
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -393,8 +395,8 @@ class TestUnauthenticatedAccess:
 
         try:
             with (
-                patch("backend.main.init_db", new_callable=AsyncMock),
-                patch("backend.main.close_db", new_callable=AsyncMock),
+                patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+                patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
             ):
                 transport = ASGITransport(app=app)
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -413,8 +415,8 @@ class TestUnauthenticatedAccess:
         try:
             with (
                 patch("backend.api.admin.get_campaign_store", return_value=store),
-                patch("backend.main.init_db", new_callable=AsyncMock),
-                patch("backend.main.close_db", new_callable=AsyncMock),
+                patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+                patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
             ):
                 transport = ASGITransport(app=app)
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

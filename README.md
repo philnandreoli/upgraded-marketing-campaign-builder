@@ -4,32 +4,54 @@ An AI-powered multi-agent system that helps you build comprehensive marketing ca
 
 ## Architecture Overview
 
+### Split Backend Model
+
+The backend is split into two independently deployable runtime processes:
+
+- **API process** (`backend.apps.api.main:app`) — handles HTTP and WebSocket requests, enqueues workflow jobs, and relays real-time pipeline events back to the browser.
+- **Worker process** (`python -m backend.worker`) — picks up workflow jobs from Azure Service Bus and runs the `CoordinatorAgent` pipeline, writing results back to the database.
+
+For local development the two processes collapse into one: the API runs the pipeline inline (`WORKFLOW_EXECUTOR=in_process`, the default). No worker or Service Bus is required.
+
 ```
-┌──────────────┐        WebSocket / REST        ┌──────────────────┐
-│   React SPA  │  ◄──────────────────────────►  │  FastAPI Backend  │
-│  (Vite)      │        :5173 ► :8000           │                  │
-└──────────────┘                                 │  Coordinator     │
-                                                 │   ├─ Strategy    │
-                                                 │   ├─ Content     │
-                                                 │   ├─ Channel     │
-                                                 │   ├─ Analytics   │
-                                                 │   └─ Review/QA   │
-                                                 └────────┬─────────┘
-                                                          │
-                                                 ┌────────▼─────────┐
-                                                 │  Azure AI Foundry │
-                                                 │  (LLM endpoint)   │
-                                                 └──────────────────┘
+┌──────────────┐      WebSocket / REST      ┌──────────────────────────┐
+│   React SPA  │  ◄────────────────────►    │   FastAPI API Process    │
+│  (Vite)      │      :5173 ► :8000         │  (backend.apps.api.main) │
+└──────────────┘                            └──────────┬───────────────┘
+                                                       │ azure_service_bus mode
+                                                       │ (enqueues WorkflowJob)
+                                            ┌──────────▼───────────────┐
+                                            │   Azure Service Bus      │
+                                            │   (workflow-jobs queue)  │
+                                            └──────────┬───────────────┘
+                                                       │
+                                            ┌──────────▼───────────────┐
+                                            │   Worker Process         │
+                                            │   (backend.worker)       │
+                                            │   Coordinator            │
+                                            │    ├─ Strategy           │
+                                            │    ├─ Content            │
+                                            │    ├─ Channel            │
+                                            │    ├─ Analytics          │
+                                            │    └─ Review/QA          │
+                                            └──────────┬───────────────┘
+                                                       │
+                                            ┌──────────▼───────────────┐
+                                            │   Azure AI Foundry       │
+                                            │   (LLM endpoint)         │
+                                            └──────────────────────────┘
 ```
 
 | Layer | Tech |
 |-------|------|
 | Frontend | React 19, React Router 7, Vite 7 |
-| Backend | Python 3, FastAPI, Pydantic v2 |
+| API process | Python 3, FastAPI, Pydantic v2 (`backend.apps.api.main:app`) |
+| Worker process | Python 3 (`python -m backend.worker`) |
 | AI | Azure AI Foundry SDK, GPT-4 (configurable) |
 | Database | PostgreSQL via SQLAlchemy (async) + Alembic migrations |
 | Observability | OpenTelemetry, Azure Monitor (optional) |
-| Containers | Podman / Docker via `podman-compose.yml` |
+| Containers | Podman / Docker — `deploy/api.Dockerfile`, `deploy/worker.Dockerfile`, `frontend/Containerfile` |
+| CI | GitHub Actions — `.github/workflows/ci.yml` |
 | Dev Container | VS Code Dev Container with PostgreSQL sidecar |
 
 ## Prerequisites
@@ -83,17 +105,19 @@ DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/campaigns
 
 ## Quick Start
 
-### 1. Backend
+### 1. Backend (API process)
 
 ```bash
-# Install Python dependencies
+# Install Python dependencies (from the project root)
 pip install -r requirements.txt
 
-# Run the API server
-uvicorn backend.main:app --reload --port 8000
+# Run the API server — canonical entry-point
+uvicorn backend.apps.api.main:app --reload --port 8000
 ```
 
-The API is available at **http://localhost:8000** with docs at `/docs`.
+The API is available at **http://localhost:8000** with interactive docs at `/docs`.
+
+Health probes: `GET /health/live` (liveness) and `GET /health/ready` (readiness).
 
 ### 2. Frontend
 
@@ -103,7 +127,7 @@ npm install
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-Open **http://localhost:5173** in your browser.
+Open **http://localhost:5173** in your browser. The API must be running on port 8000.
 
 ### 3. Dev Container
 
@@ -132,7 +156,7 @@ The application supports two execution modes controlled by the `WORKFLOW_EXECUTO
 ### Local development — `in_process` (default)
 
 ```
-React SPA  ──►  FastAPI Backend
+React SPA  ──►  FastAPI API (backend.apps.api.main:app)
                    └─ CoordinatorAgent runs inline (no worker needed)
 ```
 
@@ -145,59 +169,85 @@ React SPA  ──►  FastAPI API  ──►  Azure Service Bus  ──►  Work
                    (enqueues job)       (queue)          (runs pipeline)
 ```
 
-The API enqueues a `WorkflowJob` message and returns immediately. A separate worker process (`backend/worker.py`) picks up jobs from the Service Bus queue and runs the `CoordinatorAgent` pipeline, writing results back to the database.
+The API enqueues a `WorkflowJob` message and returns immediately. A separate worker process (`backend/worker.py`) picks up jobs from the Service Bus queue and runs the `CoordinatorAgent` pipeline, writing results back to the database. Events are relayed back to the API via a PostgreSQL `NOTIFY` channel.
 
 | Setting | Local dev | Production |
 |---------|-----------|------------|
 | `WORKFLOW_EXECUTOR` | `in_process` | `azure_service_bus` |
 | Worker process | Not needed | `python -m backend.worker` |
 | Azure Service Bus | Not needed | Required |
+| Event relay | In-process `asyncio.Future` | PostgreSQL NOTIFY (`workflow_events`) |
 
 **Starting the worker manually:**
 
 ```bash
-WORKFLOW_EXECUTOR=azure_service_bus python -m backend.worker
+export WORKFLOW_EXECUTOR=azure_service_bus
+python -m backend.worker
 ```
 
 **Worker-specific settings** (see `.env.example`):
 
 ```bash
-WORKER_MAX_CONCURRENCY=3           # max simultaneous pipeline executions
+WORKER_MAX_CONCURRENCY=3            # max simultaneous pipeline executions
 WORKER_SHUTDOWN_TIMEOUT_SECONDS=300 # graceful shutdown wait time
-WORKER_HEALTH_PORT=8001            # health endpoint port (/health/live, /health/ready)
+WORKER_HEALTH_PORT=8001             # health endpoint port (/health/live, /health/ready)
 ```
+
+See the [workflow-engine runbook](backend/WORKFLOW_ENGINE.md) for a full operator reference.
 
 ## Running Tests
 
 ```bash
-# Backend tests
-pytest
+# Backend tests (from the project root)
+AZURE_AI_PROJECT_ENDPOINT=https://placeholder.example.com python -m pytest backend/tests/
 
-# Frontend linting
-cd frontend && npm run lint
+# Frontend linting and build validation
+cd frontend && npm run lint && npm run build
 ```
 
 ## Project Structure
 
 ```
 marketing-campaign-builder/
-├── backend/              # FastAPI application & AI agents
-│   ├── agents/           # Specialised AI agents (strategy, content, etc.)
-│   ├── api/              # REST & WebSocket endpoints
-│   ├── models/           # Pydantic models & DB schemas
-│   ├── services/         # LLM service, campaign store, tracing
-│   ├── migrations/       # Alembic database migrations
-│   └── tests/            # pytest test suite
-├── frontend/             # React SPA
-│   └── src/
-│       ├── components/   # UI components (strategy, content, review, etc.)
-│       ├── hooks/        # Custom React hooks (WebSocket, theme)
-│       └── pages/        # Route-level page components
-├── .devcontainer/        # VS Code Dev Container config + Postgres sidecar
-├── .env.example          # Reference environment variables
-├── podman-compose.yml    # Container orchestration
-├── requirements.txt      # Python dependencies
-└── pytest.ini            # Test configuration
+├── backend/                  # Python backend (API + worker)
+│   ├── apps/
+│   │   └── api/              # FastAPI application boundary
+│   │       ├── main.py       # Canonical entry-point (uvicorn backend.apps.api.main:app)
+│   │       ├── dependencies.py
+│   │       ├── routers/      # Route handlers
+│   │       ├── schemas/      # Request/response DTOs
+│   │       └── startup.py    # App lifecycle hooks
+│   ├── core/                 # Cross-cutting concerns (exceptions, tracing)
+│   ├── infrastructure/       # DB, auth, campaign store, executors, LLM
+│   ├── application/          # Campaign workflow service
+│   ├── orchestration/        # CoordinatorAgent and pipeline agents
+│   ├── agents/               # Backward-compat shims → orchestration/
+│   ├── api/                  # Backward-compat shims → apps/api/
+│   ├── services/             # Backward-compat shims → infrastructure/
+│   ├── models/               # Pydantic models & DB schemas
+│   ├── migrations/           # Alembic database migrations
+│   ├── tests/                # pytest test suite
+│   ├── worker.py             # Standalone worker process (python -m backend.worker)
+│   ├── main.py               # Compat shim → apps/api/main.py
+│   └── config.py             # Pydantic-settings configuration
+├── frontend/                 # React SPA
+│   ├── src/
+│   │   ├── components/       # UI components (strategy, content, review, etc.)
+│   │   ├── hooks/            # Custom React hooks (WebSocket, theme)
+│   │   └── pages/            # Route-level page components
+│   ├── Containerfile         # Container build definition (preferred)
+│   └── Dockerfile            # Docker build definition
+├── deploy/
+│   ├── api.Dockerfile        # API container build definition
+│   └── worker.Dockerfile     # Worker container build definition
+├── docs/
+│   └── planning/
+│       └── backend-split/    # Architecture planning documents
+├── .devcontainer/            # VS Code Dev Container config + Postgres sidecar
+├── .env.example              # Reference environment variables
+├── podman-compose.yml        # Container orchestration (frontend + api + worker)
+├── requirements.txt          # Python dependencies
+└── pytest.ini                # Test configuration
 ```
 
-See the [backend README](backend/README.md) and [frontend README](frontend/README.md) for more details on each layer.
+See the [backend README](backend/README.md), [workflow-engine runbook](backend/WORKFLOW_ENGINE.md), and [frontend README](frontend/README.md) for per-layer details.

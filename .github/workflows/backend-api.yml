@@ -1,0 +1,76 @@
+name: Backend API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # API-specific paths
+      - 'backend/apps/api/**'
+      - 'backend/api/**'
+      - 'backend/main.py'
+      # Shared backend paths that affect the API
+      - 'backend/core/**'
+      - 'backend/infrastructure/**'
+      - 'backend/application/**'
+      - 'backend/models/**'
+      - 'backend/services/**'
+      - 'backend/config.py'
+      - 'backend/migrations/**'
+      - 'backend/tests/**'
+      - 'requirements.txt'
+      - 'pytest.ini'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/apps/api/**'
+      - 'backend/api/**'
+      - 'backend/main.py'
+      - 'backend/core/**'
+      - 'backend/infrastructure/**'
+      - 'backend/application/**'
+      - 'backend/models/**'
+      - 'backend/services/**'
+      - 'backend/config.py'
+      - 'backend/migrations/**'
+      - 'backend/tests/**'
+      - 'requirements.txt'
+      - 'pytest.ini'
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Run pytest
+        env:
+          APP_ENV: test
+          AUTH_ENABLED: "false"
+          TRACING_ENABLED: "false"
+          FOUNDRY_AGENTS_ENABLED: "false"
+          AZURE_AI_PROJECT_ENDPOINT: "https://dummy.services.ai.azure.com/api/projects/test"
+        run: pytest
+
+  build-api-image:
+    name: Build API Container Image
+    runs-on: ubuntu-latest
+    needs: backend-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f deploy/api.Dockerfile -t marketing-api:ci .

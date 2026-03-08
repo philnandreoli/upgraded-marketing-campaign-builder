@@ -112,8 +112,8 @@ async def admin_client(db_engine):
 
     with (
         patch("backend.api.admin.get_campaign_store", return_value=fresh_store),
-        patch("backend.main.init_db", new_callable=AsyncMock),
-        patch("backend.main.close_db", new_callable=AsyncMock),
+        patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+        patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
     ):
         transport = ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -193,8 +193,8 @@ class TestListUsers:
         app.dependency_overrides[get_db] = override_get_db
 
         with (
-            patch("backend.main.init_db", new_callable=AsyncMock),
-            patch("backend.main.close_db", new_callable=AsyncMock),
+            patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+            patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
         ):
             transport = ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -425,8 +425,8 @@ class TestListAllCampaigns:
         app.dependency_overrides[get_db] = override_get_db
 
         with (
-            patch("backend.main.init_db", new_callable=AsyncMock),
-            patch("backend.main.close_db", new_callable=AsyncMock),
+            patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+            patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
         ):
             transport = ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
