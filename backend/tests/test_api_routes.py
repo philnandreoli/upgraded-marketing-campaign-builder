@@ -43,6 +43,8 @@ def _isolated_store():
     # Reset _workflow_service singleton so each test gets a fresh one with the fresh store
     # Mock get_executor so pipeline dispatch is a no-op in route tests
     with patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store), \
+         patch("backend.apps.api.dependencies.get_campaign_store", return_value=fresh_store), \
+         patch("backend.api.campaign_members.get_campaign_store", return_value=fresh_store), \
          patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
          patch("backend.application.campaign_workflow_service._workflow_service", None), \
          patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
@@ -840,7 +842,7 @@ class TestAuthorizeFunction:
 
     async def test_none_user_allows_all(self, _isolated_store):
         """Auth disabled (user=None) allows all actions."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id=None)
         _isolated_store._campaigns[campaign.id] = campaign
         for action in Action:
@@ -848,7 +850,7 @@ class TestAuthorizeFunction:
 
     async def test_admin_allows_all(self, _isolated_store):
         """Admin user can perform any action regardless of membership."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id="other")
         _isolated_store._campaigns[campaign.id] = campaign
         # admin has no membership — should still be allowed
@@ -857,7 +859,7 @@ class TestAuthorizeFunction:
 
     async def test_campaign_builder_owner_allows_all(self, _isolated_store):
         """campaign_builder with owner membership can perform all actions."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id=_TEST_USER.id)
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
@@ -866,7 +868,7 @@ class TestAuthorizeFunction:
 
     async def test_campaign_builder_editor_allows_read_write(self, _isolated_store):
         """campaign_builder with editor membership can READ and WRITE only."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id="other")
         _isolated_store._campaigns[campaign.id] = campaign
@@ -884,7 +886,7 @@ class TestAuthorizeFunction:
 
     async def test_campaign_builder_viewer_allows_read_only(self, _isolated_store):
         """campaign_builder with viewer membership can only READ."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id="other")
         _isolated_store._campaigns[campaign.id] = campaign
@@ -899,7 +901,7 @@ class TestAuthorizeFunction:
 
     async def test_campaign_builder_no_membership_returns_404(self, _isolated_store):
         """campaign_builder with no membership gets 404 (existence leak prevention)."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id="other")
         _isolated_store._campaigns[campaign.id] = campaign
@@ -910,7 +912,7 @@ class TestAuthorizeFunction:
 
     async def test_viewer_member_allows_read_only(self, _isolated_store):
         """Platform viewer with any membership can only READ."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id="other")
         _isolated_store._campaigns[campaign.id] = campaign
@@ -925,7 +927,7 @@ class TestAuthorizeFunction:
 
     async def test_viewer_no_membership_returns_404(self, _isolated_store):
         """Platform viewer with no membership gets 404."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(brief=CampaignBrief(product_or_service="X", goal="Y"), owner_id="other")
         _isolated_store._campaigns[campaign.id] = campaign
@@ -935,7 +937,7 @@ class TestAuthorizeFunction:
 
     async def test_workspace_creator_gets_full_access_without_campaign_membership(self, _isolated_store):
         """Builder with workspace CREATOR role gets full access when no campaign membership."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
             owner_id="other",
@@ -948,7 +950,7 @@ class TestAuthorizeFunction:
 
     async def test_workspace_contributor_allows_read_write(self, _isolated_store):
         """Builder with workspace CONTRIBUTOR role can READ and WRITE only."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
@@ -966,7 +968,7 @@ class TestAuthorizeFunction:
 
     async def test_workspace_viewer_allows_read_only(self, _isolated_store):
         """Builder with workspace VIEWER role can only READ."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
@@ -983,7 +985,7 @@ class TestAuthorizeFunction:
 
     async def test_platform_viewer_workspace_creator_read_only(self, _isolated_store):
         """Platform VIEWER role caps at READ even if workspace role is CREATOR."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
@@ -1000,7 +1002,7 @@ class TestAuthorizeFunction:
 
     async def test_orphaned_campaign_without_membership_returns_404(self, _isolated_store):
         """Orphaned campaign (no workspace_id) with no campaign membership → 404."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
@@ -1014,7 +1016,7 @@ class TestAuthorizeFunction:
 
     async def test_owner_id_fallback_for_orphaned_campaign(self, _isolated_store):
         """User matching owner_id gets full access even without campaign membership."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
             owner_id=_TEST_USER.id,
@@ -1027,7 +1029,7 @@ class TestAuthorizeFunction:
 
     async def test_workspace_member_not_in_workspace_returns_404(self, _isolated_store):
         """Builder with no campaign or workspace membership gets 404."""
-        from backend.api.campaigns import _authorize, Action
+        from backend.apps.api.dependencies import _authorize, Action
         from fastapi import HTTPException
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
@@ -1410,12 +1412,7 @@ class TestResumeCampaign:
         })
         cid = r.json()["id"]
 
-        with patch("backend.api.campaigns.get_workflow_service") as mock_get_svc:
-            mock_svc = MagicMock()
-            mock_svc.resume_pipeline = AsyncMock()
-            mock_get_svc.return_value = mock_svc
-
-            r = authed_client.post(f"/api/campaigns/{cid}/resume")
+        r = authed_client.post(f"/api/campaigns/{cid}/resume")
 
         assert r.status_code == 200
         data = r.json()
@@ -1467,12 +1464,7 @@ class TestRetryCampaign:
         })
         cid = r.json()["id"]
 
-        with patch("backend.api.campaigns.get_workflow_service") as mock_get_svc:
-            mock_svc = MagicMock()
-            mock_svc.retry_current_stage = AsyncMock()
-            mock_get_svc.return_value = mock_svc
-
-            r = authed_client.post(f"/api/campaigns/{cid}/retry")
+        r = authed_client.post(f"/api/campaigns/{cid}/retry")
 
         assert r.status_code == 200
         data = r.json()
