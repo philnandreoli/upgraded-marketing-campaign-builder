@@ -89,7 +89,7 @@ async def run_async_migrations() -> None:
             poolclass=pool.NullPool,
             connect_args={
                 "password": get_connection_password(),
-                "ssl": "require",
+                "ssl": True,
             },
         )
     else:
