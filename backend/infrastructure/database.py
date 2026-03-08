@@ -73,9 +73,15 @@ def _get_auth_mode() -> str:
 
 def _build_azure_db_url() -> str:
     """Build the asyncpg SQLAlchemy URL for Azure Database for PostgreSQL."""
-    host = os.getenv("AZURE_POSTGRES_HOST", "")
+    host = os.getenv("AZURE_POSTGRES_HOST")
     database = os.getenv("AZURE_POSTGRES_DATABASE", "campaigns")
-    user = os.getenv("AZURE_POSTGRES_USER", "")
+    user = os.getenv("AZURE_POSTGRES_USER")
+
+    if not host or not host.strip() or not user or not user.strip():
+        raise RuntimeError(
+            "Invalid Azure PostgreSQL configuration: AZURE_POSTGRES_HOST and "
+            "AZURE_POSTGRES_USER must be set and non-empty when DB_AUTH_MODE=azure."
+        )
     return f"postgresql+asyncpg://{user}@{host}/{database}"
 
 
