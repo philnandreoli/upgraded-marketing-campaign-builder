@@ -65,7 +65,7 @@ environments. This means:
 | State key (test) | `environments/test/terraform.tfstate` |
 | State key (prod) | `environments/prod/terraform.tfstate` |
 | Locking | Blob lease (built into `azurerm` backend — no DynamoDB needed) |
-| Versioning | Blob soft-delete + versioning enabled |
+| Versioning | Blob versioning enabled |
 
 > All three environments share the **same storage account** to keep the
 > bootstrap surface small. Each environment has its own blob (state file),
