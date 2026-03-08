@@ -42,8 +42,8 @@ _CAMPAIGN_ID = "campaign-abc"
 @pytest.fixture(autouse=True)
 def _patch_db_lifecycle():
     """Prevent TestClient from calling real init_db / close_db."""
-    with patch("backend.main.init_db", new_callable=AsyncMock), \
-         patch("backend.main.close_db", new_callable=AsyncMock):
+    with patch("backend.apps.api.startup.init_db", new_callable=AsyncMock), \
+         patch("backend.apps.api.startup.close_db", new_callable=AsyncMock):
         yield
 
 

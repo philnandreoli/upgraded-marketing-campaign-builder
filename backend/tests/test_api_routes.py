@@ -47,8 +47,8 @@ def _isolated_store():
          patch("backend.services.campaign_workflow_service._workflow_service", None), \
          patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
          patch("backend.api.campaign_workflow.get_executor", return_value=mock_executor), \
-         patch("backend.main.init_db", new_callable=AsyncMock), \
-         patch("backend.main.close_db", new_callable=AsyncMock):
+         patch("backend.apps.api.startup.init_db", new_callable=AsyncMock), \
+         patch("backend.apps.api.startup.close_db", new_callable=AsyncMock):
         yield fresh_store
 
 
@@ -97,7 +97,7 @@ class TestHealthCheck:
     def test_health_ready_returns_200_when_db_up(self, client):
         """Ready endpoint returns 200 when the DB check succeeds."""
         with (
-            patch("backend.main.sqlalchemy.text", return_value=MagicMock()),
+            patch("backend.apps.api.main.sqlalchemy.text", return_value=MagicMock()),
             patch("backend.services.database.engine") as mock_engine,
         ):
             mock_conn = AsyncMock()
@@ -139,7 +139,7 @@ class TestHealthCheck:
     def test_health_ready_returns_503_when_executor_down(self, client):
         """Ready endpoint returns 503 when executor health_check fails."""
         with (
-            patch("backend.main.sqlalchemy.text", return_value=MagicMock()),
+            patch("backend.apps.api.main.sqlalchemy.text", return_value=MagicMock()),
             patch("backend.services.database.engine") as mock_engine,
         ):
             mock_conn = AsyncMock()
