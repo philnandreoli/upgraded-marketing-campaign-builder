@@ -132,7 +132,9 @@ jobs:
             -input=false \
             -out=tfplan \
             -no-color 2>&1 | tee plan_output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          status=${PIPESTATUS[0]}
+          echo "exit_code=${status}" >> "$GITHUB_OUTPUT"
+          exit "${status}"
 
       - name: Post plan summary (PR only)
         if: github.event_name == 'pull_request'
