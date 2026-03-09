@@ -394,6 +394,24 @@ async def _verify_schema_at_head() -> None:
     logger.info("Schema validation passed (revision=%s)", current_rev)
 
 
+async def check_schema_compatibility() -> None:
+    """Verify the database schema is at the expected Alembic head revision.
+
+    Unlike :func:`init_db`, this function **never** applies migrations — it
+    only reads the current schema version and raises :class:`RuntimeError` if
+    the recorded revision does not match the application's expected head.
+
+    Intended for use by process entry-points (e.g. the worker) that must
+    validate prerequisites without mutating shared infrastructure.  The API
+    startup path and the dedicated migration job remain responsible for
+    applying schema changes.
+
+    Raises :class:`RuntimeError` if the database is unreachable or the schema
+    revision does not match the expected head.
+    """
+    await _verify_schema_at_head()
+
+
 async def close_db() -> None:
     """Dispose of the connection pool and close the Entra credential if open."""
     global _entra_credential

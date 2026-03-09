@@ -508,3 +508,174 @@ class TestWorkerInit:
     def test_custom_sb_client_stored(self):
         worker, sb = _build_worker()
         assert worker._sb_client is sb
+
+
+# ---------------------------------------------------------------------------
+# HealthServer — readiness endpoint
+# ---------------------------------------------------------------------------
+
+
+def _make_health_server(
+    *,
+    db_ok: bool = True,
+    schema_ok: bool = True,
+    receiver_active: bool = True,
+    sb_client: object = object(),
+) -> "HealthServer":
+    """Build a HealthServer wired with simple mock callbacks."""
+    from backend.apps.worker.health import HealthServer
+
+    shutdown_event = asyncio.Event()
+    server = HealthServer(
+        port=19998,
+        shutdown_event=shutdown_event,
+        get_receiver_active=lambda: receiver_active,
+        get_sb_client=lambda: sb_client,
+    )
+    return server
+
+
+class TestHealthServerReady:
+    """HealthServer._handle_health_ready returns correct status codes."""
+
+    async def _get_ready(self, server: "HealthServer"):
+        """Invoke _handle_health_ready and return the aiohttp Response."""
+        from unittest.mock import MagicMock
+
+        return await server._handle_health_ready(MagicMock())
+
+    async def test_ready_when_all_checks_pass(self):
+        from unittest.mock import AsyncMock, patch
+
+        server = _make_health_server()
+
+        with (
+            patch.object(server, "_check_db_health", new=AsyncMock(return_value=True)),
+            patch.object(server, "_check_schema_health", new=AsyncMock(return_value=True)),
+        ):
+            response = await self._get_ready(server)
+
+        assert response.status == 200
+        import json
+        body = json.loads(response.body)
+        assert body["status"] == "ready"
+        assert body["schema"] is True
+        assert body["db"] is True
+        assert body["receiver"] is True
+
+    async def test_not_ready_when_db_fails(self):
+        from unittest.mock import AsyncMock, patch
+
+        server = _make_health_server()
+
+        with (
+            patch.object(server, "_check_db_health", new=AsyncMock(return_value=False)),
+            patch.object(server, "_check_schema_health", new=AsyncMock(return_value=True)),
+        ):
+            response = await self._get_ready(server)
+
+        assert response.status == 503
+        import json
+        body = json.loads(response.body)
+        assert body["status"] == "not_ready"
+        assert body["db"] is False
+
+    async def test_not_ready_when_schema_fails(self):
+        from unittest.mock import AsyncMock, patch
+
+        server = _make_health_server()
+
+        with (
+            patch.object(server, "_check_db_health", new=AsyncMock(return_value=True)),
+            patch.object(server, "_check_schema_health", new=AsyncMock(return_value=False)),
+        ):
+            response = await self._get_ready(server)
+
+        assert response.status == 503
+        import json
+        body = json.loads(response.body)
+        assert body["status"] == "not_ready"
+        assert body["schema"] is False
+
+    async def test_not_ready_when_receiver_inactive(self):
+        from unittest.mock import AsyncMock, patch
+
+        server = _make_health_server(receiver_active=False)
+
+        with (
+            patch.object(server, "_check_db_health", new=AsyncMock(return_value=True)),
+            patch.object(server, "_check_schema_health", new=AsyncMock(return_value=True)),
+        ):
+            response = await self._get_ready(server)
+
+        assert response.status == 503
+        import json
+        body = json.loads(response.body)
+        assert body["status"] == "not_ready"
+        assert body["receiver"] is False
+
+    async def test_schema_health_returns_true_on_success(self):
+        from unittest.mock import AsyncMock, patch
+
+        server = _make_health_server()
+
+        with patch(
+            "backend.infrastructure.database.check_schema_compatibility",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await server._check_schema_health()
+
+        assert result is True
+
+    async def test_schema_health_returns_false_on_failure(self):
+        from unittest.mock import AsyncMock, patch
+
+        server = _make_health_server()
+
+        with patch(
+            "backend.infrastructure.database.check_schema_compatibility",
+            new=AsyncMock(side_effect=RuntimeError("Schema mismatch")),
+        ):
+            result = await server._check_schema_health()
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Worker startup — no migrations, schema check only
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerStartupNomigrations:
+    """_async_main must call check_schema_compatibility, never init_db."""
+
+    async def test_async_main_calls_check_schema_compatibility(self):
+        """Worker startup invokes check_schema_compatibility (not init_db)."""
+        import backend.apps.worker.main as worker_main
+
+        called = []
+
+        async def _fake_check():
+            called.append("check_schema_compatibility")
+
+        def _fake_register():
+            pass
+
+        mock_worker = MagicMock()
+        mock_worker.run = AsyncMock()
+
+        with (
+            patch("backend.apps.worker.main.get_settings", return_value=_make_settings()),
+            patch("backend.core.tracing.setup_tracing"),
+            patch(
+                "backend.infrastructure.database.check_schema_compatibility",
+                new=_fake_check,
+            ),
+            patch("backend.infrastructure.agent_registry.register_agents", new=_fake_register),
+            patch("backend.apps.worker.main.Worker", return_value=mock_worker),
+        ):
+            await worker_main._async_main()
+
+        assert "check_schema_compatibility" in called, (
+            "check_schema_compatibility must be called during worker startup"
+        )

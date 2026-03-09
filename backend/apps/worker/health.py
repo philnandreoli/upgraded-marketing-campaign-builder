@@ -4,7 +4,7 @@ Health HTTP server for the workflow-engine worker.
 Exposes two endpoints on a dedicated TCP port:
 
 - ``GET /health/live``  — process is running.
-- ``GET /health/ready`` — DB reachable and queue receiver active.
+- ``GET /health/ready`` — DB reachable, schema compatible, and queue receiver active.
 """
 
 from __future__ import annotations
@@ -75,13 +75,15 @@ class HealthServer:
 
     async def _handle_health_ready(self, _request: web.Request) -> web.Response:
         db_ok = await self._check_db_health()
+        schema_ok = await self._check_schema_health()
         receiver_ok = self._get_receiver_active() and self._get_sb_client() is not None
 
-        if db_ok and receiver_ok:
-            return web.json_response({"status": "ready", "db": True, "receiver": True})
+        checks = {"db": db_ok, "schema": schema_ok, "receiver": receiver_ok}
+        if db_ok and schema_ok and receiver_ok:
+            return web.json_response({"status": "ready", **checks})
 
         return web.json_response(
-            {"status": "not_ready", "db": db_ok, "receiver": receiver_ok},
+            {"status": "not_ready", **checks},
             status=503,
         )
 
@@ -95,4 +97,15 @@ class HealthServer:
             return True
         except Exception as exc:
             logger.warning("DB health check failed: %s", exc)
+            return False
+
+    async def _check_schema_health(self) -> bool:
+        """Return ``True`` when the database schema is at the expected Alembic head."""
+        try:
+            from backend.infrastructure.database import check_schema_compatibility  # noqa: PLC0415
+
+            await check_schema_compatibility()
+            return True
+        except Exception as exc:
+            logger.warning("Schema compatibility check failed: %s", exc)
             return False
