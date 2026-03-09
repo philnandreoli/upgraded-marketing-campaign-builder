@@ -1,0 +1,79 @@
+name: Run migration job
+description: >
+  Triggers an Azure Container Apps Job (the Alembic migration runner) and
+  polls its execution until it reports success, failure, or the maximum
+  polling time is exceeded.  A non-Succeeded terminal status causes this
+  action to exit non-zero, which blocks all downstream deployment jobs.
+
+  Prerequisites: an `azure/login` step must have run in the parent job
+  before this action is invoked.
+
+inputs:
+  resource-group:
+    description: Azure resource group that owns the Container Apps Job.
+    required: true
+  migration-job:
+    description: Name of the Container Apps Job (e.g. caj-dev-migration).
+    required: true
+  poll-interval-seconds:
+    description: Seconds to wait between status checks.
+    required: false
+    default: "15"
+  poll-max-attempts:
+    description: >
+      Maximum number of polling attempts before the action gives up.
+      Default 60 × 15 s = 15 min, which exceeds the job's
+      replica_timeout_in_seconds (600 s, configured in
+      infra/modules/container_apps/main.tf) to account for scheduling
+      and container-startup overhead.
+    required: false
+    default: "60"
+
+runs:
+  using: composite
+  steps:
+    - name: Trigger migration job
+      id: trigger
+      shell: bash
+      run: |
+        EXECUTION_NAME=$(az containerapp job start \
+          --name "${{ inputs.migration-job }}" \
+          --resource-group "${{ inputs.resource-group }}" \
+          --query "name" -o tsv)
+        echo "execution-name=${EXECUTION_NAME}" >> "$GITHUB_OUTPUT"
+        echo "Triggered migration execution: ${EXECUTION_NAME}"
+
+    - name: Wait for migration to complete
+      shell: bash
+      run: |
+        EXECUTION="${{ steps.trigger.outputs.execution-name }}"
+        INTERVAL="${{ inputs.poll-interval-seconds }}"
+        MAX="${{ inputs.poll-max-attempts }}"
+
+        echo "Polling execution '${EXECUTION}' every ${INTERVAL}s (max ${MAX} attempts)..."
+
+        for i in $(seq 1 "${MAX}"); do
+          STATUS=$(az containerapp job execution show \
+            --name "${EXECUTION}" \
+            --job-name "${{ inputs.migration-job }}" \
+            --resource-group "${{ inputs.resource-group }}" \
+            --query "properties.status" -o tsv 2>/dev/null || echo "Unknown")
+
+          echo "Attempt ${i}/${MAX} — status: ${STATUS}"
+
+          case "${STATUS}" in
+            Succeeded)
+              echo "Migration completed successfully."
+              exit 0
+              ;;
+            Failed|Stopped|Degraded)
+              echo "Migration failed with status: ${STATUS}. Aborting rollout."
+              exit 1
+              ;;
+          esac
+
+          sleep "${INTERVAL}"
+        done
+
+        echo "Migration did not complete within the allotted time. Aborting rollout."
+        exit 1

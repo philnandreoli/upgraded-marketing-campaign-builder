@@ -161,6 +161,36 @@ class WorkerSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class CORSSettings(BaseSettings):
+    """Cross-Origin Resource Sharing (CORS) configuration.
+
+    In development the default ``["*"]`` is intentionally permissive.
+    In production set ``CORS_ALLOWED_ORIGINS`` to the explicit list of
+    frontend origins that are allowed to make cross-origin requests, e.g.
+    ``["https://app.example.com"]``.  The value must be a JSON array string.
+
+    When the React frontend is served by the same nginx reverse-proxy that
+    proxies API traffic (the default production topology), the browser sees
+    a single origin so CORS is not exercised at all.  Restricting allowed
+    origins is most important when the API is accessed directly from a
+    different origin (e.g. a separate staging frontend or a developer
+    machine).
+    """
+
+    allowed_origins: list[str] = Field(
+        default=["*"],
+        alias="CORS_ALLOWED_ORIGINS",
+        description=(
+            'JSON array of origins allowed to make cross-origin requests, e.g. '
+            '["https://app.example.com","https://admin.example.com"]. '
+            'Defaults to ["*"] (all origins) which is appropriate for local '
+            "development only. Always set explicit origins in production."
+        ),
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class EventSettings(BaseSettings):
     """Settings for cross-process event delivery via PostgreSQL LISTEN/NOTIFY."""
 
@@ -230,6 +260,18 @@ class DatabaseSettings(BaseSettings):
             "(azure mode only)."
         ),
     )
+    auto_migrate: bool | None = Field(
+        default=None,
+        alias="API_AUTO_MIGRATE",
+        description=(
+            "Whether to run Alembic migrations automatically on API startup. "
+            "When true (local dev default), the API migrates the schema on startup. "
+            "When false (azure mode default), the API validates the schema is at the "
+            "expected head revision and refuses to start if mismatched — schema changes "
+            "are applied exclusively by the dedicated migration job. "
+            "Defaults to true when DB_AUTH_MODE=local and false when DB_AUTH_MODE=azure."
+        ),
+    )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
@@ -243,6 +285,7 @@ class Settings(BaseSettings):
     tracing: TracingSettings = TracingSettings()
     foundry_agents: FoundryAgentsSettings = FoundryAgentsSettings()
     oidc: OIDCSettings = OIDCSettings()
+    cors: CORSSettings = CORSSettings()
     service_bus: ServiceBusSettings = ServiceBusSettings()
     worker: WorkerSettings = WorkerSettings()
     events: EventSettings = EventSettings()

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
@@ -69,6 +70,23 @@ _entra_credential: "DefaultAzureCredential | None" = None
 def _get_auth_mode() -> str:
     """Return the current database authentication mode (lower-cased)."""
     return os.getenv("DB_AUTH_MODE", _DB_AUTH_MODE_LOCAL).lower()
+
+
+def _should_auto_migrate() -> bool:
+    """Return True if the API should apply Alembic migrations on startup.
+
+    Reads the ``API_AUTO_MIGRATE`` environment variable.  When not set,
+    defaults to ``True`` in local mode (convenience for developers) and
+    ``False`` in azure mode (schema changes are owned by the migration job).
+
+    Explicit values take priority over the mode-derived default, allowing
+    operators to override the behaviour for testing or exceptional deployments.
+    """
+    raw = os.getenv("API_AUTO_MIGRATE")
+    if raw is not None:
+        return raw.strip().lower() in ("true", "1", "yes")
+    # Default: auto-migrate in local mode only.
+    return _get_auth_mode() != _DB_AUTH_MODE_AZURE
 
 
 def _build_azure_db_url() -> str:
@@ -300,36 +318,116 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 # Lifecycle helpers
 # ---------------------------------------------------------------------------
 
-async def init_db() -> None:
-    """Apply Alembic migrations to bring the schema up to date.
+def _make_alembic_config():
+    """Return an Alembic :class:`~alembic.config.Config` pointed at our ini file."""
+    from alembic.config import Config  # noqa: PLC0415
 
-    Running migrations (rather than plain create_all) ensures that both
-    fresh databases and existing ones that pre-date the owner_id column
-    are handled correctly.
-
-    In azure mode the Alembic URL is set to the Azure URL (without an
-    embedded password); ``migrations/env.py`` acquires a fresh Entra token
-    per connection at runtime.
-    """
-    import asyncio
-    from alembic import command
-    from alembic.config import Config
-
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
-    alembic_cfg.set_main_option("script_location", str(
-        os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "migrations"))
-    ))
-
+    # backend/infrastructure/database.py → two parents up = backend/
+    _backend_dir = Path(__file__).resolve().parent.parent
+    alembic_cfg = Config(str(_backend_dir / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(_backend_dir / "migrations"))
     if _get_auth_mode() == _DB_AUTH_MODE_AZURE:
         # migrations/env.py will acquire the Entra token per connection.
         alembic_cfg.set_main_option("sqlalchemy.url", _build_azure_db_url())
     else:
         alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL.replace("+asyncpg", ""))
+    return alembic_cfg
 
-    # Alembic's command.upgrade is synchronous — run it in a thread executor
-    # so we don't block the event loop.
+
+async def init_db() -> None:
+    """Initialise the database at process startup.
+
+    Behaviour is controlled by the ``API_AUTO_MIGRATE`` environment variable
+    (see :func:`_should_auto_migrate`):
+
+    **Auto-migrate** (``API_AUTO_MIGRATE=true``, default in local mode)
+        Applies all pending Alembic migrations via ``alembic upgrade head``.
+        Preserves local-development convenience — no separate migration step
+        is needed.
+
+    **Validate-only** (``API_AUTO_MIGRATE=false``, default in azure mode)
+        Schema mutations are owned by the dedicated migration job
+        (``backend.apps.migrate.main``) which runs *before* the API and
+        worker containers are started.  This function therefore only
+        **validates** that the database is already at the expected head
+        revision and raises :class:`RuntimeError` if it is not, preventing
+        the service from starting with an incompatible schema.
+    """
+    if _should_auto_migrate():
+        await _run_migrations()
+    else:
+        await _verify_schema_at_head()
+
+
+async def _run_migrations() -> None:
+    """Apply Alembic migrations synchronously in a thread executor.
+
+    Used in ``local`` mode only.  In azure mode schema changes are applied
+    by the dedicated migration job; use :func:`_verify_schema_at_head`
+    instead.
+    """
+    import asyncio  # noqa: PLC0415
+    from alembic import command  # noqa: PLC0415
+
+    alembic_cfg = _make_alembic_config()
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, lambda: command.upgrade(alembic_cfg, "head"))
+
+
+async def _verify_schema_at_head() -> None:
+    """Verify the database schema is already at the expected head revision.
+
+    This is called by :func:`init_db` in ``azure`` mode.  It queries the
+    ``alembic_version`` table and compares the recorded revision against
+    the head revision declared in the migration scripts.
+
+    Raises :class:`RuntimeError` if the schema is behind (or ahead of) the
+    expected revision, which prevents the service from starting with an
+    incompatible database schema.
+    """
+    from alembic.script import ScriptDirectory  # noqa: PLC0415
+    from sqlalchemy import text  # noqa: PLC0415
+
+    alembic_cfg = _make_alembic_config()
+    script = ScriptDirectory.from_config(alembic_cfg)
+    expected_head = script.get_current_head()
+
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
+            row = result.fetchone()
+            current_rev = row[0] if row else None
+    except Exception as exc:
+        raise RuntimeError(
+            "Unable to read schema version from the database. "
+            "Ensure the migration job has completed successfully before starting this service."
+        ) from exc
+
+    if current_rev != expected_head:
+        raise RuntimeError(
+            f"Database schema mismatch: current revision is {current_rev!r} but the "
+            f"application expects {expected_head!r}. "
+            "Run the migration job before starting this service."
+        )
+    logger.info("Schema validation passed (revision=%s)", current_rev)
+
+
+async def check_schema_compatibility() -> None:
+    """Verify the database schema is at the expected Alembic head revision.
+
+    Unlike :func:`init_db`, this function **never** applies migrations — it
+    only reads the current schema version and raises :class:`RuntimeError` if
+    the recorded revision does not match the application's expected head.
+
+    Intended for use by process entry-points (e.g. the worker) that must
+    validate prerequisites without mutating shared infrastructure.  The API
+    startup path and the dedicated migration job remain responsible for
+    applying schema changes.
+
+    Raises :class:`RuntimeError` if the database is unreachable or the schema
+    revision does not match the expected head.
+    """
+    await _verify_schema_at_head()
 
 
 async def close_db() -> None:

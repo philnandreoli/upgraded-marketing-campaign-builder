@@ -325,3 +325,21 @@ class TestDatabaseSettings:
         from backend.config import DatabaseSettings, Settings
         settings = Settings()
         assert isinstance(settings.database, DatabaseSettings)
+
+    def test_auto_migrate_defaults_to_none(self, monkeypatch):
+        monkeypatch.delenv("API_AUTO_MIGRATE", raising=False)
+        from backend.config import DatabaseSettings
+        settings = DatabaseSettings()
+        assert settings.auto_migrate is None
+
+    def test_auto_migrate_true_from_env(self, monkeypatch):
+        monkeypatch.setenv("API_AUTO_MIGRATE", "true")
+        from backend.config import DatabaseSettings
+        settings = DatabaseSettings()
+        assert settings.auto_migrate is True
+
+    def test_auto_migrate_false_from_env(self, monkeypatch):
+        monkeypatch.setenv("API_AUTO_MIGRATE", "false")
+        from backend.config import DatabaseSettings
+        settings = DatabaseSettings()
+        assert settings.auto_migrate is False

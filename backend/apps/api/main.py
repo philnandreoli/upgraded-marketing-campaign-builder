@@ -54,10 +54,17 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS — allow the React frontend during development
+# CORS — restrict cross-origin access to configured origins.
+# In development the default ["*"] is permissive for convenience.
+# Set CORS_ALLOWED_ORIGINS in production to an explicit list of frontend
+# origins, e.g. '["https://app.example.com"]'.
+# When the frontend is served by the same nginx reverse-proxy that proxies
+# API traffic (the default production topology), CORS is not exercised by
+# the browser, so this setting mainly guards direct API access from other
+# origins.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten in production
+    allow_origins=settings.cors.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
