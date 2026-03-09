@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getCampaign, listWorkspaces, moveCampaign } from "../api";
+import { getCampaign } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import StrategySection from "../components/StrategySection.jsx";
 import ContentSection from "../components/ContentSection.jsx";
@@ -58,10 +58,6 @@ export default function CampaignDetail() {
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
   const [badgePulse, setBadgePulse] = useState(false);
-  const [workspaces, setWorkspaces] = useState([]);
-  const [movingWorkspace, setMovingWorkspace] = useState(false);
-  const [moveError, setMoveError] = useState(null);
-  const [moveSuccess, setMoveSuccess] = useState(false);
   const { events } = useWebSocket(id);
   const { isViewer, isAdmin, user } = useUser();
   const prevStatusRef = useRef(null);
@@ -82,12 +78,6 @@ export default function CampaignDetail() {
       setError(err.message);
     }
   }, [id]);
-
-  // Load workspace list for admin move-to-workspace
-  useEffect(() => {
-    if (!isAdmin) return;
-    listWorkspaces().then(setWorkspaces).catch(() => {});
-  }, [isAdmin]);
 
   // Set up polling; defer initial fetch so setState isn't synchronous in the effect
   useEffect(() => {
@@ -113,23 +103,6 @@ export default function CampaignDetail() {
       clearInterval(pollRef.current);
     }
   }, [status]);
-
-  const handleMoveToWorkspace = async (workspaceId) => {
-    if (!workspaceId) return;
-    setMovingWorkspace(true);
-    setMoveError(null);
-    setMoveSuccess(false);
-    try {
-      await moveCampaign(id, workspaceId);
-      await load();
-      setMoveSuccess(true);
-      setTimeout(() => setMoveSuccess(false), 3000);
-    } catch (err) {
-      setMoveError(err.message);
-    } finally {
-      setMovingWorkspace(false);
-    }
-  };
 
   // Pulse the status badge whenever the campaign status changes
   useEffect(() => {
@@ -437,42 +410,6 @@ export default function CampaignDetail() {
               <div style={{ marginBottom: "0.5rem" }}>
                 <WorkspaceBadge workspace={campaign.workspace} orphaned={!campaign.workspace_id} linkTo={true} />
               </div>
-              {isAdmin && (
-                <div style={{ marginTop: "0.5rem" }}>
-                  <label style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", display: "block", marginBottom: "0.25rem" }}>
-                    Move to Workspace
-                  </label>
-                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
-                    <select
-                      style={{
-                        padding: "0.3rem 0.5rem",
-                        fontSize: "0.8rem",
-                        background: "var(--color-surface-2)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "var(--radius)",
-                        color: "var(--color-text)",
-                        flex: 1,
-                        minWidth: 0,
-                      }}
-                      defaultValue=""
-                      onChange={(e) => handleMoveToWorkspace(e.target.value)}
-                      disabled={movingWorkspace}
-                    >
-                      <option value="" disabled>Select workspace…</option>
-                      {workspaces.map((ws) => (
-                        <option key={ws.id} value={ws.id}>{ws.name}</option>
-                      ))}
-                    </select>
-                    {movingWorkspace && <span className="spinner" style={{ width: 14, height: 14 }} />}
-                  </div>
-                  {moveError && (
-                    <p style={{ color: "var(--color-danger)", fontSize: "0.75rem", marginTop: "0.25rem" }}>{moveError}</p>
-                  )}
-                  {moveSuccess && (
-                    <p style={{ color: "var(--color-success)", fontSize: "0.75rem", marginTop: "0.25rem" }}>✓ Moved successfully</p>
-                  )}
-                </div>
-              )}
               {campaign.brief.selected_channels?.length > 0 && (
                 <div className="sidebar-meta-channels">
                   {campaign.brief.selected_channels.map((ch) => (
