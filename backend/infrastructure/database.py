@@ -72,6 +72,23 @@ def _get_auth_mode() -> str:
     return os.getenv("DB_AUTH_MODE", _DB_AUTH_MODE_LOCAL).lower()
 
 
+def _should_auto_migrate() -> bool:
+    """Return True if the API should apply Alembic migrations on startup.
+
+    Reads the ``API_AUTO_MIGRATE`` environment variable.  When not set,
+    defaults to ``True`` in local mode (convenience for developers) and
+    ``False`` in azure mode (schema changes are owned by the migration job).
+
+    Explicit values take priority over the mode-derived default, allowing
+    operators to override the behaviour for testing or exceptional deployments.
+    """
+    raw = os.getenv("API_AUTO_MIGRATE")
+    if raw is not None:
+        return raw.strip().lower() in ("true", "1", "yes")
+    # Default: auto-migrate in local mode only.
+    return _get_auth_mode() != _DB_AUTH_MODE_AZURE
+
+
 def _build_azure_db_url() -> str:
     """Build the asyncpg SQLAlchemy URL for Azure Database for PostgreSQL."""
     host = os.getenv("AZURE_POSTGRES_HOST")
@@ -320,25 +337,26 @@ def _make_alembic_config():
 async def init_db() -> None:
     """Initialise the database at process startup.
 
-    Behaviour depends on ``DB_AUTH_MODE``:
+    Behaviour is controlled by the ``API_AUTO_MIGRATE`` environment variable
+    (see :func:`_should_auto_migrate`):
 
-    ``local`` (default)
+    **Auto-migrate** (``API_AUTO_MIGRATE=true``, default in local mode)
         Applies all pending Alembic migrations via ``alembic upgrade head``.
-        This preserves the local-development convenience of a self-migrating
-        service and requires no separate migration step.
+        Preserves local-development convenience — no separate migration step
+        is needed.
 
-    ``azure``
+    **Validate-only** (``API_AUTO_MIGRATE=false``, default in azure mode)
         Schema mutations are owned by the dedicated migration job
         (``backend.apps.migrate.main``) which runs *before* the API and
-        worker are started.  This function therefore only **validates** that
-        the database is already at the expected head revision and raises
-        :class:`RuntimeError` if it is not, preventing the service from
-        starting with an incompatible schema.
+        worker containers are started.  This function therefore only
+        **validates** that the database is already at the expected head
+        revision and raises :class:`RuntimeError` if it is not, preventing
+        the service from starting with an incompatible schema.
     """
-    if _get_auth_mode() == _DB_AUTH_MODE_AZURE:
-        await _verify_schema_at_head()
-    else:
+    if _should_auto_migrate():
         await _run_migrations()
+    else:
+        await _verify_schema_at_head()
 
 
 async def _run_migrations() -> None:
