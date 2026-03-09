@@ -1,0 +1,48 @@
+name: Push images to ACR
+description: >
+  Downloads the container-image artifacts built in the build job, loads them
+  into the local Docker daemon, authenticates to Azure Container Registry via
+  the already-established Azure login session, and pushes all three images.
+
+inputs:
+  image-tag:
+    description: Short commit SHA used as the image tag (e.g. a1b2c3d).
+    required: true
+  acr-name:
+    description: Azure Container Registry name (e.g. acrdevmarketing).
+    required: true
+  acr-server:
+    description: ACR login server hostname (e.g. acrdevmarketing.azurecr.io).
+    required: true
+  artifact-name:
+    description: Name of the GitHub Actions artifact that contains the image tarballs.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download image artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: /tmp
+
+    - name: Load images
+      shell: bash
+      run: |
+        docker load < /tmp/marketing-api.tar.gz
+        docker load < /tmp/marketing-worker.tar.gz
+        docker load < /tmp/marketing-frontend.tar.gz
+
+    - name: Log in to ACR
+      shell: bash
+      run: az acr login --name "${{ inputs.acr-name }}"
+
+    - name: Tag and push images
+      shell: bash
+      run: |
+        for IMAGE in marketing-api marketing-worker marketing-frontend; do
+          docker tag "${IMAGE}:${{ inputs.image-tag }}" \
+            "${{ inputs.acr-server }}/${IMAGE}:${{ inputs.image-tag }}"
+          docker push "${{ inputs.acr-server }}/${IMAGE}:${{ inputs.image-tag }}"
+        done
