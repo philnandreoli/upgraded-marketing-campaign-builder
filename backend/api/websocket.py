@@ -10,6 +10,33 @@ When AUTH_ENABLED=True, a ``token`` query parameter is required:
 The connection is rejected with close code 4001 (Unauthorized) if the token
 is missing or invalid, and with 4003 (Forbidden) if the user does not have
 READ access to the requested campaign.
+
+Security characteristics of the query-string token model
+---------------------------------------------------------
+Passing the bearer token as a query parameter is the only mechanism
+available at the browser WebSocket API boundary — the ``WebSocket``
+constructor does not support custom request headers.  The implications are:
+
+* **Nginx access logs**: By default nginx logs the full request URI,
+  including the query string.  The ``/ws`` location in ``nginx.conf``
+  sets ``access_log off`` to prevent tokens from being recorded.  Any
+  additional reverse-proxy or ingress layer in front of nginx must be
+  configured equivalently (e.g. Azure Application Gateway path rules,
+  Container App ingress log settings).
+
+* **Browser history / referrer**: The WebSocket URL is not stored in
+  browser history, and the ``Referer`` header is not sent for WebSocket
+  upgrades, so token leakage via those vectors is not a concern.
+
+* **TLS**: All production traffic must use ``wss://`` (TLS) so the token
+  is encrypted in transit.
+
+Follow-up (TODO): Replace query-string tokens with a short-lived,
+single-use ticket issued by a ``POST /ws/ticket`` endpoint.  The client
+exchanges a full bearer token for a ticket (opaque, short TTL, stored
+server-side) and then passes ``?ticket=<value>`` to the WebSocket
+upgrade.  This limits exposure because the ticket has no value outside
+the single upgrade request.  See issue #07 for details.
 """
 
 from __future__ import annotations
