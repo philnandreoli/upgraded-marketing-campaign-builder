@@ -155,9 +155,11 @@ async def _async_main() -> None:
 
     setup_tracing()
 
-    from backend.infrastructure.database import init_db  # noqa: PLC0415
+    from backend.infrastructure.database import check_schema_compatibility  # noqa: PLC0415
 
-    await init_db()
+    logger.info("Checking schema compatibility before starting worker")
+    await check_schema_compatibility()
+    logger.info("Schema compatibility check passed")
 
     from backend.infrastructure.agent_registry import register_agents  # noqa: PLC0415
 
