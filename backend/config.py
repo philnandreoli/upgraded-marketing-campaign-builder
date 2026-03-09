@@ -177,6 +177,63 @@ class EventSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class DatabaseSettings(BaseSettings):
+    """Database connection settings.
+
+    Two authentication modes are supported, controlled by ``DB_AUTH_MODE``:
+
+    ``local`` (default)
+        Traditional DATABASE_URL / password-based connection.  Set
+        ``DATABASE_URL`` to point at your local PostgreSQL instance.
+
+    ``azure``
+        Microsoft Entra token-based authentication for Azure Database for
+        PostgreSQL Flexible Server.  Access tokens are obtained via
+        ``DefaultAzureCredential`` (managed identity / workload identity).
+        Configure ``AZURE_POSTGRES_HOST``, ``AZURE_POSTGRES_DATABASE``, and
+        ``AZURE_POSTGRES_USER`` instead of ``DATABASE_URL``.
+    """
+
+    mode: str = Field(
+        default="local",
+        alias="DB_AUTH_MODE",
+        description=(
+            "Database authentication mode. "
+            "'local' uses DATABASE_URL/password; "
+            "'azure' uses Microsoft Entra managed identity."
+        ),
+    )
+    url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@db:5432/campaigns",
+        alias="DATABASE_URL",
+        description="Database connection URL (local mode only).",
+    )
+    azure_host: str = Field(
+        default="",
+        alias="AZURE_POSTGRES_HOST",
+        description=(
+            "Fully-qualified hostname of the Azure Database for PostgreSQL "
+            "Flexible Server, e.g. myserver.postgres.database.azure.com "
+            "(azure mode only)."
+        ),
+    )
+    azure_database: str = Field(
+        default="campaigns",
+        alias="AZURE_POSTGRES_DATABASE",
+        description="Database name on the Azure PostgreSQL server (azure mode only).",
+    )
+    azure_user: str = Field(
+        default="",
+        alias="AZURE_POSTGRES_USER",
+        description=(
+            "PostgreSQL username mapped to the managed identity principal "
+            "(azure mode only)."
+        ),
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class Settings(BaseSettings):
     """Aggregate settings — single entry-point for the whole app."""
 
@@ -189,6 +246,7 @@ class Settings(BaseSettings):
     service_bus: ServiceBusSettings = ServiceBusSettings()
     worker: WorkerSettings = WorkerSettings()
     events: EventSettings = EventSettings()
+    database: DatabaseSettings = DatabaseSettings()
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

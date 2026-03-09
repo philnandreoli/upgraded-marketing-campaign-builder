@@ -7,18 +7,36 @@ import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 
 from alembic import context
 
 # -- Alembic Config object ---------------------------------------------------
 config = context.config
 
-# Set the database URL from environment, falling back to default
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@db:5432/campaigns",
-)
+# ---------------------------------------------------------------------------
+# Database URL — honour DB_AUTH_MODE
+# ---------------------------------------------------------------------------
+
+_DB_AUTH_MODE = os.getenv("DB_AUTH_MODE", "local").lower()
+
+if _DB_AUTH_MODE == "azure":
+    _host = os.getenv("AZURE_POSTGRES_HOST", "")
+    _database = os.getenv("AZURE_POSTGRES_DATABASE", "campaigns")
+    _user = os.getenv("AZURE_POSTGRES_USER", "")
+    if not _host or not _user:
+        raise RuntimeError(
+            "DB_AUTH_MODE=azure requires non-empty AZURE_POSTGRES_HOST and "
+            "AZURE_POSTGRES_USER environment variables."
+        )
+    DATABASE_URL = f"postgresql+asyncpg://{_user}@{_host}/{_database}"
+else:
+    # Set the database URL from environment, falling back to default
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://postgres:postgres@db:5432/campaigns",
+    )
+
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # Logging
@@ -61,11 +79,25 @@ def do_run_migrations(connection) -> None:
 
 async def run_async_migrations() -> None:
     """Create an async engine and run migrations within a connection."""
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    if _DB_AUTH_MODE == "azure":
+        # Azure mode: acquire an Entra token for the migration connection.
+        # get_connection_password() returns the token coroutine callable.
+        from backend.infrastructure.database import get_connection_password  # noqa: PLC0415
+
+        connectable = create_async_engine(
+            DATABASE_URL,
+            poolclass=pool.NullPool,
+            connect_args={
+                "password": get_connection_password(),
+                "ssl": True,
+            },
+        )
+    else:
+        connectable = async_engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
