@@ -3,6 +3,8 @@ Tests for the schema migration boundary separation.
 
 Covers:
   - init_db() dispatches to the correct strategy based on DB_AUTH_MODE
+  - init_db() honours the explicit API_AUTO_MIGRATE override
+  - _should_auto_migrate() — default derivation and explicit override
   - _verify_schema_at_head() passes when DB is at head and raises when not
   - backend.apps.migrate.main — run_migrations() and main() entrypoint
 """
@@ -16,14 +18,68 @@ import backend.infrastructure.database as db_module
 
 
 # ---------------------------------------------------------------------------
+# _should_auto_migrate()
+# ---------------------------------------------------------------------------
+
+class TestShouldAutoMigrate:
+    """_should_auto_migrate() derives the correct default and respects overrides."""
+
+    def test_local_mode_defaults_to_true(self, monkeypatch):
+        monkeypatch.setenv("DB_AUTH_MODE", "local")
+        monkeypatch.delenv("API_AUTO_MIGRATE", raising=False)
+        assert db_module._should_auto_migrate() is True
+
+    def test_azure_mode_defaults_to_false(self, monkeypatch):
+        monkeypatch.setenv("DB_AUTH_MODE", "azure")
+        monkeypatch.delenv("API_AUTO_MIGRATE", raising=False)
+        assert db_module._should_auto_migrate() is False
+
+    def test_unset_db_auth_mode_defaults_to_true(self, monkeypatch):
+        monkeypatch.delenv("DB_AUTH_MODE", raising=False)
+        monkeypatch.delenv("API_AUTO_MIGRATE", raising=False)
+        assert db_module._should_auto_migrate() is True
+
+    def test_explicit_true_overrides_azure_mode(self, monkeypatch):
+        monkeypatch.setenv("DB_AUTH_MODE", "azure")
+        monkeypatch.setenv("API_AUTO_MIGRATE", "true")
+        assert db_module._should_auto_migrate() is True
+
+    def test_explicit_false_overrides_local_mode(self, monkeypatch):
+        monkeypatch.setenv("DB_AUTH_MODE", "local")
+        monkeypatch.setenv("API_AUTO_MIGRATE", "false")
+        assert db_module._should_auto_migrate() is False
+
+    def test_accepts_1_as_true(self, monkeypatch):
+        monkeypatch.setenv("API_AUTO_MIGRATE", "1")
+        assert db_module._should_auto_migrate() is True
+
+    def test_accepts_yes_as_true(self, monkeypatch):
+        monkeypatch.setenv("API_AUTO_MIGRATE", "yes")
+        assert db_module._should_auto_migrate() is True
+
+    def test_accepts_0_as_false(self, monkeypatch):
+        monkeypatch.setenv("API_AUTO_MIGRATE", "0")
+        assert db_module._should_auto_migrate() is False
+
+    def test_explicit_flag_is_case_insensitive(self, monkeypatch):
+        monkeypatch.setenv("API_AUTO_MIGRATE", "TRUE")
+        assert db_module._should_auto_migrate() is True
+
+    def test_explicit_flag_strips_whitespace(self, monkeypatch):
+        monkeypatch.setenv("API_AUTO_MIGRATE", "  false  ")
+        assert db_module._should_auto_migrate() is False
+
+
+# ---------------------------------------------------------------------------
 # init_db() dispatch
 # ---------------------------------------------------------------------------
 
 class TestInitDbDispatch:
-    """init_db() must call the correct helper based on DB_AUTH_MODE."""
+    """init_db() must call the correct helper based on _should_auto_migrate()."""
 
     async def test_local_mode_runs_migrations(self, monkeypatch):
         monkeypatch.setenv("DB_AUTH_MODE", "local")
+        monkeypatch.delenv("API_AUTO_MIGRATE", raising=False)
         with patch.object(db_module, "_run_migrations", new_callable=AsyncMock) as mock_run, \
              patch.object(db_module, "_verify_schema_at_head", new_callable=AsyncMock) as mock_verify:
             await db_module.init_db()
@@ -32,6 +88,7 @@ class TestInitDbDispatch:
 
     async def test_azure_mode_verifies_schema(self, monkeypatch):
         monkeypatch.setenv("DB_AUTH_MODE", "azure")
+        monkeypatch.delenv("API_AUTO_MIGRATE", raising=False)
         with patch.object(db_module, "_run_migrations", new_callable=AsyncMock) as mock_run, \
              patch.object(db_module, "_verify_schema_at_head", new_callable=AsyncMock) as mock_verify:
             await db_module.init_db()
@@ -40,6 +97,27 @@ class TestInitDbDispatch:
 
     async def test_default_mode_runs_migrations(self, monkeypatch):
         monkeypatch.delenv("DB_AUTH_MODE", raising=False)
+        monkeypatch.delenv("API_AUTO_MIGRATE", raising=False)
+        with patch.object(db_module, "_run_migrations", new_callable=AsyncMock) as mock_run, \
+             patch.object(db_module, "_verify_schema_at_head", new_callable=AsyncMock) as mock_verify:
+            await db_module.init_db()
+        mock_run.assert_awaited_once()
+        mock_verify.assert_not_called()
+
+    async def test_explicit_false_disables_migration_in_local_mode(self, monkeypatch):
+        """API_AUTO_MIGRATE=false must disable auto-migration even in local DB mode."""
+        monkeypatch.setenv("DB_AUTH_MODE", "local")
+        monkeypatch.setenv("API_AUTO_MIGRATE", "false")
+        with patch.object(db_module, "_run_migrations", new_callable=AsyncMock) as mock_run, \
+             patch.object(db_module, "_verify_schema_at_head", new_callable=AsyncMock) as mock_verify:
+            await db_module.init_db()
+        mock_verify.assert_awaited_once()
+        mock_run.assert_not_called()
+
+    async def test_explicit_true_enables_migration_in_azure_mode(self, monkeypatch):
+        """API_AUTO_MIGRATE=true must enable auto-migration even in azure DB mode."""
+        monkeypatch.setenv("DB_AUTH_MODE", "azure")
+        monkeypatch.setenv("API_AUTO_MIGRATE", "true")
         with patch.object(db_module, "_run_migrations", new_callable=AsyncMock) as mock_run, \
              patch.object(db_module, "_verify_schema_at_head", new_callable=AsyncMock) as mock_verify:
             await db_module.init_db()

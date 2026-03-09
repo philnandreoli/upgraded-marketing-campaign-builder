@@ -34,6 +34,47 @@ uvicorn backend.apps.api.main:app --reload --port 8000
 
 See the root [README](../README.md) for the full list of optional environment variables.
 
+## API Startup Modes
+
+The API supports two distinct startup behaviours controlled by the `API_AUTO_MIGRATE` environment variable.
+
+### Local development (auto-migrate)
+
+When `API_AUTO_MIGRATE=true` (the default when `DB_AUTH_MODE=local`), the API automatically applies any pending Alembic migrations via `alembic upgrade head` before accepting traffic.
+
+**Expected local startup sequence:**
+
+1. Start PostgreSQL (e.g. `docker compose up db`)
+2. Start the API — migrations are applied automatically on startup
+3. The API is ready to serve requests
+
+No separate migration step is required. This makes the local feedback loop fast and self-contained.
+
+### Cloud deployment (validate-only)
+
+When `API_AUTO_MIGRATE=false` (the default when `DB_AUTH_MODE=azure`), the API does **not** mutate the schema. Instead it validates that the database is already at the expected Alembic head revision and **refuses to start** if the schema is mismatched.
+
+Schema changes are applied exclusively by the dedicated migration job (`backend.apps.migrate.main`) which runs *before* the API and worker containers are started.
+
+**Expected cloud deployment sequence:**
+
+1. Build and push new container images
+2. Run the migration job (`backend.apps.migrate.main`) — applies `alembic upgrade head`
+3. Start / restart API and worker containers — startup validates schema compatibility
+4. If schema validation fails the container exits with an error, preventing traffic from reaching an incompatible service
+
+This separation keeps production schema changes auditable, repeatable, and decoupled from process restarts.
+
+### Configuration reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_AUTO_MIGRATE` | derived from `DB_AUTH_MODE` | `true` = migrate on startup; `false` = validate only |
+
+When `API_AUTO_MIGRATE` is not set the default is derived automatically:
+- `DB_AUTH_MODE=local` (or unset) → `API_AUTO_MIGRATE` behaves as `true`
+- `DB_AUTH_MODE=azure` → `API_AUTO_MIGRATE` behaves as `false`
+
 ## Agent Pipeline
 
 When a new campaign is created, the **Coordinator Agent** orchestrates the following pipeline:
@@ -161,3 +202,4 @@ All settings are loaded from environment variables (or a `.env` file) using **py
 | `ServiceBusSettings` | `AZURE_SERVICE_BUS_NAMESPACE`, `AZURE_SERVICE_BUS_CONNECTION_STRING`, `AZURE_SERVICE_BUS_QUEUE_NAME` |
 | `WorkerSettings` | `WORKER_MAX_CONCURRENCY`, `WORKER_SHUTDOWN_TIMEOUT_SECONDS`, `WORKER_HEALTH_PORT` |
 | `EventSettings` | `EVENT_CHANNEL_NAME` (PostgreSQL NOTIFY channel for worker → API relay) |
+| `DatabaseSettings` | `DB_AUTH_MODE`, `DATABASE_URL`, `AZURE_POSTGRES_HOST/DATABASE/USER`, `API_AUTO_MIGRATE` |

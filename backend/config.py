@@ -230,6 +230,18 @@ class DatabaseSettings(BaseSettings):
             "(azure mode only)."
         ),
     )
+    auto_migrate: bool | None = Field(
+        default=None,
+        alias="API_AUTO_MIGRATE",
+        description=(
+            "Whether to run Alembic migrations automatically on API startup. "
+            "When true (local dev default), the API migrates the schema on startup. "
+            "When false (azure mode default), the API validates the schema is at the "
+            "expected head revision and refuses to start if mismatched — schema changes "
+            "are applied exclusively by the dedicated migration job. "
+            "Defaults to true when DB_AUTH_MODE=local and false when DB_AUTH_MODE=azure."
+        ),
+    )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
