@@ -314,8 +314,11 @@ resource "azurerm_container_app_job" "migration" {
       cpu    = var.migration_cpu
       memory = var.migration_memory
 
-      # Run Alembic migrations
-      command = ["python", "-m", "alembic", "upgrade", "head"]
+      # Run the dedicated migration entry point.
+      # Using the Python module (rather than calling alembic directly) ensures
+      # alembic.ini is resolved relative to the source tree regardless of the
+      # container working directory, and provides structured logging output.
+      command = ["python", "-m", "backend.apps.migrate.main"]
 
       env {
         name  = "APP_ENV"

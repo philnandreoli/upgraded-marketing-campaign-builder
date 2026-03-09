@@ -1,1 +1,66 @@
-Generic single-database configuration.
+Database Migrations
+===================
+
+This directory contains Alembic migration scripts for the marketing campaign
+builder database.
+
+Local development
+-----------------
+The API and Worker processes automatically apply all pending migrations at
+startup when ``DB_AUTH_MODE=local`` (the default).  No separate migration step
+is required for day-to-day development.
+
+    # Start the local stack — migrations run automatically on API startup
+    podman-compose up
+
+Cloud deployments (azure mode)
+-------------------------------
+In cloud deployments (``DB_AUTH_MODE=azure``), schema mutations are
+**not** performed by the API or Worker at startup.  Instead, schema
+changes are owned by the dedicated **migration job** that runs before the
+new application revisions are activated.
+
+The migration job is an Azure Container Apps Job
+(``caj-<env>-migration``) that runs::
+
+    python -m backend.apps.migrate.main
+
+It uses its own user-assigned managed identity which has been granted
+DDL permissions on the database, keeping those elevated privileges out of
+the long-running API and Worker identities.
+
+Rollout order
+~~~~~~~~~~~~~
+Follow this order for every release that includes schema changes:
+
+1. Build and push the new container image to the Azure Container Registry.
+2. Trigger ``caj-<env>-migration`` via the Azure portal, CLI, or CI
+   pipeline and wait for it to complete successfully (exit code 0).
+3. Deploy the updated API revision.
+4. Deploy the updated Worker revision.
+
+The API and Worker will refuse to start if the database schema does not
+match the expected head revision.  This prevents the application from
+running against an incompatible schema.
+
+Failure handling
+~~~~~~~~~~~~~~~~
+If the migration job exits non-zero:
+
+- The existing API and Worker revisions continue running unaffected
+  (they remain on the old revision and old schema).
+- Inspect the job execution logs in Azure Log Analytics / the Container
+  Apps log stream.
+- Fix the migration script, build a new image, and re-trigger the job.
+- Do **not** activate new API/Worker revisions until the job succeeds.
+
+Writing new migrations
+----------------------
+Generate a new migration with::
+
+    # From the backend/ directory
+    alembic revision --autogenerate -m "describe your change"
+
+Review the generated file in ``versions/`` before committing.  Each
+migration should be idempotent where possible (use ``IF NOT EXISTS`` /
+``IF EXISTS`` guards in raw SQL).
