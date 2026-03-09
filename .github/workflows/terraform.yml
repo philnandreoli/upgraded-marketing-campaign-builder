@@ -1,0 +1,506 @@
+# Terraform CI/CD — Marketing Campaign Builder
+#
+# Runs Terraform fmt/validate/plan on every pull-request and push to main that
+# touches infrastructure, and applies changes to each environment in a
+# controlled, auditable manner.
+#
+# ── Execution model ──────────────────────────────────────────────────────────
+#   Pull requests  : fmt-check → validate + plan (all 3 envs) → PR comment
+#   Push to main   : fmt-check → validate + plan (all 3 envs) →
+#                      auto-apply dev
+#                      approval-gated apply test  (GitHub Environment: test)
+#                      approval-gated apply prod  (GitHub Environment: prod)
+#
+# ── Required repository secrets ──────────────────────────────────────────────
+#   AZURE_TENANT_ID          — Azure tenant ID (shared across environments)
+#
+#   Per-environment secrets used by the plan jobs (repository level):
+#   AZURE_CLIENT_ID_DEV      — Client ID of the dev   OIDC app registration
+#   AZURE_SUBSCRIPTION_ID_DEV
+#   AZURE_CLIENT_ID_TEST     — Client ID of the test  OIDC app registration
+#   AZURE_SUBSCRIPTION_ID_TEST
+#   AZURE_CLIENT_ID_PROD     — Client ID of the prod  OIDC app registration
+#   AZURE_SUBSCRIPTION_ID_PROD
+#
+# ── Required GitHub Environment secrets ──────────────────────────────────────
+#   The apply jobs use GitHub Environments (dev / test / prod).
+#   Each environment must define:
+#   AZURE_CLIENT_ID      — Client ID of the OIDC app registration for apply
+#   AZURE_TENANT_ID      — Azure tenant ID
+#   AZURE_SUBSCRIPTION_ID
+#
+#   Set required reviewers on the "test" and "prod" GitHub Environments to
+#   enforce manual approval before infrastructure changes are applied.
+#
+# ── OIDC federated-identity claims ───────────────────────────────────────────
+#   Plan  : repo:<owner>/<repo>:ref:refs/heads/main
+#            repo:<owner>/<repo>:pull_request
+#   Apply : repo:<owner>/<repo>:environment:dev   (dev apply)
+#            repo:<owner>/<repo>:environment:test  (test apply)
+#            repo:<owner>/<repo>:environment:prod  (prod apply)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform.yml'
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.11.0"
+  TF_INPUT: "false"
+
+jobs:
+  # ── 1. Format check ──────────────────────────────────────────────────────
+  fmt:
+    name: "Terraform Format"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive infra
+
+  # ── 2. Validate + Plan — dev ──────────────────────────────────────────────
+  plan-dev:
+    name: "Validate & Plan — dev"
+    runs-on: ubuntu-latest
+    needs: fmt
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: infra/environments/dev
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+        working-directory: infra/environments/dev
+
+      - name: Terraform Plan
+        id: plan
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -out=tfplan.binary 2>&1 | tee plan.txt
+        working-directory: infra/environments/dev
+        continue-on-error: true
+
+      - name: Upload plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-dev
+          path: |
+            infra/environments/dev/tfplan.binary
+            infra/environments/dev/plan.txt
+          retention-days: 7
+
+      - name: Fail on plan error
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ── 3. Validate + Plan — test ─────────────────────────────────────────────
+  plan-test:
+    name: "Validate & Plan — test"
+    runs-on: ubuntu-latest
+    needs: fmt
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_TEST }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID_TEST }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_TEST }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_TEST }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: infra/environments/test
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+        working-directory: infra/environments/test
+
+      - name: Terraform Plan
+        id: plan
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -out=tfplan.binary 2>&1 | tee plan.txt
+        working-directory: infra/environments/test
+        continue-on-error: true
+
+      - name: Upload plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-test
+          path: |
+            infra/environments/test/tfplan.binary
+            infra/environments/test/plan.txt
+          retention-days: 7
+
+      - name: Fail on plan error
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ── 4. Validate + Plan — prod ─────────────────────────────────────────────
+  plan-prod:
+    name: "Validate & Plan — prod"
+    runs-on: ubuntu-latest
+    needs: fmt
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID_PROD }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID_PROD }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: infra/environments/prod
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+        working-directory: infra/environments/prod
+
+      - name: Terraform Plan
+        id: plan
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -out=tfplan.binary 2>&1 | tee plan.txt
+        working-directory: infra/environments/prod
+        continue-on-error: true
+
+      - name: Upload plan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-prod
+          path: |
+            infra/environments/prod/tfplan.binary
+            infra/environments/prod/plan.txt
+          retention-days: 7
+
+      - name: Fail on plan error
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ── 5. PR comment with plan summary ──────────────────────────────────────
+  pr-comment:
+    name: "Post Plan Summary"
+    if: github.event_name == 'pull_request' && always()
+    needs: [plan-dev, plan-test, plan-prod]
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download plan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "tfplan-*"
+          path: /tmp/plans
+          merge-multiple: false
+        continue-on-error: true
+
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        env:
+          DEV_RESULT: ${{ needs.plan-dev.result }}
+          TEST_RESULT: ${{ needs.plan-test.result }}
+          PROD_RESULT: ${{ needs.plan-prod.result }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            function readPlan(env) {
+              const path = `/tmp/plans/tfplan-${env}/plan.txt`;
+              try {
+                return fs.readFileSync(path, 'utf8').trim();
+              } catch {
+                return '(plan output not available)';
+              }
+            }
+
+            function truncate(text, maxLen = 15000) {
+              return text.length > maxLen
+                ? text.slice(0, maxLen) + '\n\n…(output truncated — download the workflow artifact for the full plan)'
+                : text;
+            }
+
+            function statusIcon(result) {
+              if (result === 'success') return '✅';
+              if (result === 'failure') return '❌';
+              return '⚠️';
+            }
+
+            const devResult  = process.env.DEV_RESULT;
+            const testResult = process.env.TEST_RESULT;
+            const prodResult = process.env.PROD_RESULT;
+
+            const body = [
+              '## 🏗️ Terraform Plan Summary',
+              '',
+              '| Environment | Plan status |',
+              '|-------------|-------------|',
+              `| \`dev\`  | ${statusIcon(devResult)}  ${devResult}  |`,
+              `| \`test\` | ${statusIcon(testResult)} ${testResult} |`,
+              `| \`prod\` | ${statusIcon(prodResult)} ${prodResult} |`,
+              '',
+              '---',
+              '',
+              `<details><summary>${statusIcon(devResult)} <b>dev</b> — plan output</summary>`,
+              '',
+              '```terraform',
+              truncate(readPlan('dev')),
+              '```',
+              '</details>',
+              '',
+              `<details><summary>${statusIcon(testResult)} <b>test</b> — plan output</summary>`,
+              '',
+              '```terraform',
+              truncate(readPlan('test')),
+              '```',
+              '</details>',
+              '',
+              `<details><summary>${statusIcon(prodResult)} <b>prod</b> — plan output</summary>`,
+              '',
+              '```terraform',
+              truncate(readPlan('prod')),
+              '```',
+              '</details>',
+              '',
+              `> Plan artifacts are available under **Actions → this run → Artifacts** (retained 7 days).`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(
+              c => c.user.type === 'Bot' && c.body.startsWith('## 🏗️ Terraform Plan Summary')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # ── 6. Apply — dev (auto-apply on push to main) ───────────────────────────
+  apply-dev:
+    name: "Apply — dev"
+    if: github.event_name == 'push'
+    needs: [plan-dev]
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-dev
+          path: infra/environments/dev
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: infra/environments/dev
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false tfplan.binary
+        working-directory: infra/environments/dev
+
+      - name: Terraform Output summary
+        if: always()
+        run: |
+          terraform output -no-color >> "$GITHUB_STEP_SUMMARY" 2>&1 \
+            || echo '⚠️ No outputs available or an error occurred while reading outputs.' >> "$GITHUB_STEP_SUMMARY"
+        working-directory: infra/environments/dev
+
+  # ── 7. Apply — test (requires environment approval) ───────────────────────
+  apply-test:
+    name: "Apply — test"
+    if: github.event_name == 'push'
+    needs: [plan-test]
+    runs-on: ubuntu-latest
+    environment: test
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-test
+          path: infra/environments/test
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: infra/environments/test
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false tfplan.binary
+        working-directory: infra/environments/test
+
+      - name: Terraform Output summary
+        if: always()
+        run: |
+          terraform output -no-color >> "$GITHUB_STEP_SUMMARY" 2>&1 \
+            || echo '⚠️ No outputs available or an error occurred while reading outputs.' >> "$GITHUB_STEP_SUMMARY"
+        working-directory: infra/environments/test
+
+  # ── 8. Apply — prod (requires protected-environment approval) ─────────────
+  apply-prod:
+    name: "Apply — prod"
+    if: github.event_name == 'push'
+    needs: [plan-prod]
+    runs-on: ubuntu-latest
+    environment: prod
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-prod
+          path: infra/environments/prod
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        working-directory: infra/environments/prod
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false tfplan.binary
+        working-directory: infra/environments/prod
+
+      - name: Terraform Output summary
+        if: always()
+        run: |
+          terraform output -no-color >> "$GITHUB_STEP_SUMMARY" 2>&1 \
+            || echo '⚠️ No outputs available or an error occurred while reading outputs.' >> "$GITHUB_STEP_SUMMARY"
+        working-directory: infra/environments/prod
