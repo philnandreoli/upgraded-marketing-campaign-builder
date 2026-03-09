@@ -43,16 +43,7 @@
 name: Terraform
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'infra/**'
-      - '.github/workflows/terraform.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'infra/**'
-      - '.github/workflows/terraform.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -97,7 +88,18 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Check Azure credentials
+        id: creds
+        run: |
+          if [ -n "$ARM_CLIENT_ID" ] && [ -n "$ARM_TENANT_ID" ] && [ -n "$ARM_SUBSCRIPTION_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Azure credentials not configured – full plan skipped. Set AZURE_CLIENT_ID_DEV, AZURE_TENANT_ID, and AZURE_SUBSCRIPTION_ID_DEV repository secrets to enable Terraform plan."
+          fi
+
       - name: Azure login
+        if: steps.creds.outputs.available == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
@@ -105,15 +107,25 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
 
       - name: Terraform Init
+        if: steps.creds.outputs.available == 'true'
         run: terraform init -input=false
         working-directory: infra/environments/dev
 
       - name: Terraform Validate
+        if: steps.creds.outputs.available == 'true'
         run: terraform validate -no-color
+        working-directory: infra/environments/dev
+
+      - name: Terraform Validate (no backend)
+        if: steps.creds.outputs.available == 'false'
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
         working-directory: infra/environments/dev
 
       - name: Terraform Plan
         id: plan
+        if: steps.creds.outputs.available == 'true'
         shell: bash
         run: |
           set -o pipefail
@@ -122,7 +134,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload plan artifacts
-        if: always()
+        if: always() && steps.creds.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-dev
@@ -153,7 +165,18 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Check Azure credentials
+        id: creds
+        run: |
+          if [ -n "$ARM_CLIENT_ID" ] && [ -n "$ARM_TENANT_ID" ] && [ -n "$ARM_SUBSCRIPTION_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Azure credentials not configured – full plan skipped. Set AZURE_CLIENT_ID_TEST, AZURE_TENANT_ID, and AZURE_SUBSCRIPTION_ID_TEST repository secrets to enable Terraform plan."
+          fi
+
       - name: Azure login
+        if: steps.creds.outputs.available == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_TEST }}
@@ -161,15 +184,25 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_TEST }}
 
       - name: Terraform Init
+        if: steps.creds.outputs.available == 'true'
         run: terraform init -input=false
         working-directory: infra/environments/test
 
       - name: Terraform Validate
+        if: steps.creds.outputs.available == 'true'
         run: terraform validate -no-color
+        working-directory: infra/environments/test
+
+      - name: Terraform Validate (no backend)
+        if: steps.creds.outputs.available == 'false'
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
         working-directory: infra/environments/test
 
       - name: Terraform Plan
         id: plan
+        if: steps.creds.outputs.available == 'true'
         shell: bash
         run: |
           set -o pipefail
@@ -178,7 +211,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload plan artifacts
-        if: always()
+        if: always() && steps.creds.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-test
@@ -209,7 +242,18 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Check Azure credentials
+        id: creds
+        run: |
+          if [ -n "$ARM_CLIENT_ID" ] && [ -n "$ARM_TENANT_ID" ] && [ -n "$ARM_SUBSCRIPTION_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Azure credentials not configured – full plan skipped. Set AZURE_CLIENT_ID_PROD, AZURE_TENANT_ID, and AZURE_SUBSCRIPTION_ID_PROD repository secrets to enable Terraform plan."
+          fi
+
       - name: Azure login
+        if: steps.creds.outputs.available == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID_PROD }}
@@ -217,15 +261,25 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_PROD }}
 
       - name: Terraform Init
+        if: steps.creds.outputs.available == 'true'
         run: terraform init -input=false
         working-directory: infra/environments/prod
 
       - name: Terraform Validate
+        if: steps.creds.outputs.available == 'true'
         run: terraform validate -no-color
+        working-directory: infra/environments/prod
+
+      - name: Terraform Validate (no backend)
+        if: steps.creds.outputs.available == 'false'
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
         working-directory: infra/environments/prod
 
       - name: Terraform Plan
         id: plan
+        if: steps.creds.outputs.available == 'true'
         shell: bash
         run: |
           set -o pipefail
@@ -234,7 +288,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload plan artifacts
-        if: always()
+        if: always() && steps.creds.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-prod
