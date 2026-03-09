@@ -11,6 +11,8 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime
 from typing import Any, Optional
 
@@ -19,6 +21,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from backend.models.user import User, UserRole, roles_from_db, roles_to_db
 from backend.infrastructure.auth import require_admin
@@ -219,6 +223,21 @@ async def list_all_campaigns(
     """List all campaigns across all users (admin view)."""
     store = get_campaign_store()
     campaigns = await store.list_all()
+
+    # Resolve workspace info in a single batch (one lookup per unique workspace_id)
+    unique_ws_ids = {c.workspace_id for c in campaigns if c.workspace_id is not None}
+    ws_map: dict[str, Any] = {}
+    if unique_ws_ids:
+        results = await asyncio.gather(
+            *[store.get_workspace(ws_id) for ws_id in unique_ws_ids],
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning("Failed to look up workspace: %s", result)
+            elif result is not None:
+                ws_map[result.id] = {"id": result.id, "name": result.name, "is_personal": result.is_personal}
+
     return [
         {
             "id": c.id,
@@ -226,6 +245,8 @@ async def list_all_campaigns(
             "product_or_service": c.brief.product_or_service,
             "goal": c.brief.goal,
             "owner_id": c.owner_id,
+            "workspace_id": c.workspace_id,
+            "workspace": ws_map.get(c.workspace_id) if c.workspace_id else None,
             "created_at": c.created_at.isoformat(),
             "updated_at": c.updated_at.isoformat(),
         }
