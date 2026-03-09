@@ -413,6 +413,43 @@ class TestListAllCampaigns:
         data = r.json()
         assert data[0]["owner_id"] == "owner-x"
 
+    async def test_response_includes_workspace_id_when_assigned(self, admin_client):
+        """workspace_id is present and non-null when campaign belongs to a workspace."""
+        client, fresh_store = admin_client
+        ws = await fresh_store.create_workspace("Test WS", owner_id="u1")
+        await fresh_store.create(CampaignBrief(product_or_service="P1", goal="G1"), owner_id="u1", workspace_id=ws.id)
+
+        r = await client.get("/api/admin/campaigns")
+        assert r.status_code == 200
+        data = r.json()
+        assert data[0]["workspace_id"] == ws.id
+
+    async def test_response_includes_workspace_object_when_assigned(self, admin_client):
+        """workspace object with id/name/is_personal is returned for assigned campaigns."""
+        client, fresh_store = admin_client
+        ws = await fresh_store.create_workspace("My Workspace", owner_id="u1")
+        await fresh_store.create(CampaignBrief(product_or_service="P1", goal="G1"), owner_id="u1", workspace_id=ws.id)
+
+        r = await client.get("/api/admin/campaigns")
+        assert r.status_code == 200
+        data = r.json()
+        workspace = data[0]["workspace"]
+        assert workspace is not None
+        assert workspace["id"] == ws.id
+        assert workspace["name"] == "My Workspace"
+        assert "is_personal" in workspace
+
+    async def test_response_workspace_id_is_null_for_orphaned_campaigns(self, admin_client):
+        """workspace_id is null and workspace is null for orphaned campaigns."""
+        client, fresh_store = admin_client
+        await fresh_store.create(CampaignBrief(product_or_service="P1", goal="G1"), owner_id="u1")
+
+        r = await client.get("/api/admin/campaigns")
+        assert r.status_code == 200
+        data = r.json()
+        assert data[0]["workspace_id"] is None
+        assert data[0]["workspace"] is None
+
     async def test_returns_403_for_non_admin(self, db_engine):
         """Non-admin cannot list all campaigns."""
         session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
