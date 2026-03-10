@@ -117,6 +117,7 @@ jobs:
   # ── 2. Push images to dev ACR ─────────────────────────────────────────────
   push-dev:
     name: Push Images — dev
+    if: false
     needs: build
     runs-on: ubuntu-latest
     environment: dev
@@ -224,6 +225,7 @@ jobs:
   # ── 5. Push images to test ACR ────────────────────────────────────────────
   push-test:
     name: Push Images — test
+    if: false
     needs: [build, deploy-dev]
     runs-on: ubuntu-latest
     environment: test
@@ -331,6 +333,7 @@ jobs:
   # ── 8. Push images to prod ACR ────────────────────────────────────────────
   push-prod:
     name: Push Images — prod
+    if: false
     needs: [build, deploy-test]
     runs-on: ubuntu-latest
     environment: prod
