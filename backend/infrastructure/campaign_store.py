@@ -15,7 +15,7 @@ from typing import Optional
 
 from sqlalchemy import delete as sa_delete, or_, select
 
-from backend.models.campaign import Campaign, CampaignBrief
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from backend.infrastructure.database import (
@@ -117,6 +117,18 @@ class CampaignStore:
             result = await session.execute(
                 select(CampaignRow)
                 .where(CampaignRow.owner_id == owner_id)
+                .order_by(CampaignRow.created_at.desc())
+            )
+            rows = result.scalars().all()
+            return [Campaign.model_validate_json(r.data) for r in rows]
+
+    async def list_by_status(self, statuses: list[CampaignStatus]) -> list[Campaign]:
+        """Return all campaigns whose status is in *statuses*."""
+        status_values = [s.value for s in statuses]
+        async with async_session() as session:
+            result = await session.execute(
+                select(CampaignRow)
+                .where(CampaignRow.status.in_(status_values))
                 .order_by(CampaignRow.created_at.desc())
             )
             rows = result.scalars().all()

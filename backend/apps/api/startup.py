@@ -5,6 +5,7 @@ for the FastAPI application.  These are API-only concerns:
 
 - Database initialisation / teardown
 - External event subscriber wiring (Postgres LISTEN/NOTIFY → WebSocket relay)
+- Auto-resume of stuck pipelines (in-process executor only)
 
 The workflow-engine agent registration is intentionally **not** performed here;
 it belongs to the worker/orchestration boundary, not the HTTP API.
@@ -12,13 +13,37 @@ it belongs to the worker/orchestration boundary, not the HTTP API.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Callable
 
 from backend.config import get_settings
+from backend.infrastructure.campaign_store import get_campaign_store
 from backend.infrastructure.database import close_db, init_db
+from backend.infrastructure.workflow_executor import WorkflowJob, get_executor
 
 logger = logging.getLogger(__name__)
+
+# Campaign statuses that represent an in-flight pipeline interrupted by a restart.
+# Terminal statuses (APPROVED, REJECTED, MANUAL_REVIEW_REQUIRED) and DRAFT are
+# intentionally excluded — only campaigns actively waiting for input or actively
+# executing a stage need to be resumed.
+from backend.models.campaign import CampaignStatus
+
+_RESUMABLE_STATUSES = [
+    CampaignStatus.CLARIFICATION,
+    CampaignStatus.STRATEGY,
+    CampaignStatus.CONTENT,
+    CampaignStatus.CHANNEL_PLANNING,
+    CampaignStatus.ANALYTICS_SETUP,
+    CampaignStatus.REVIEW,
+    CampaignStatus.CONTENT_REVISION,
+    CampaignStatus.CONTENT_APPROVAL,
+]
+
+# Seconds to wait after startup before sweeping for stuck campaigns.
+# Allows the event loop and DB connection pool to fully initialise.
+_AUTO_RESUME_DELAY_SECONDS = 1
 
 
 def make_startup_handler(app: object) -> Callable[[], None]:
@@ -50,7 +75,51 @@ def make_startup_handler(app: object) -> Callable[[], None]:
             subscriber.start()
             app.state.event_subscriber = subscriber  # type: ignore[union-attr]
 
+        # Auto-resume stuck pipelines after a server restart.  This only
+        # applies to the in-process executor (local dev / single-process
+        # deployment) and can be disabled via AUTO_RESUME_ON_STARTUP=false.
+        if (
+            settings.app.workflow_executor == "in_process"
+            and settings.app.auto_resume_on_startup
+        ):
+            asyncio.ensure_future(_auto_resume_stuck_pipelines())
+
     return on_startup
+
+
+async def _auto_resume_stuck_pipelines() -> None:
+    """Query for campaigns stuck in interruptible states and dispatch resume jobs.
+
+    A short delay allows the event loop and DB connection pool to fully
+    initialise before the query runs.
+    """
+    await asyncio.sleep(_AUTO_RESUME_DELAY_SECONDS)
+
+    try:
+        store = get_campaign_store()
+        stuck = await store.list_by_status(_RESUMABLE_STATUSES)
+    except Exception:  # noqa: BLE001
+        logger.exception("auto-resume: failed to query stuck campaigns")
+        return
+
+    if not stuck:
+        return
+
+    executor = get_executor()
+    for campaign in stuck:
+        logger.warning(
+            "auto-resume: dispatching resume_pipeline for campaign %s (status=%s)",
+            campaign.id,
+            campaign.status.value,
+        )
+        try:
+            await executor.dispatch(
+                WorkflowJob(campaign_id=campaign.id, action="resume_pipeline")
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "auto-resume: failed to dispatch resume for campaign %s", campaign.id
+            )
 
 
 def make_shutdown_handler(app: object) -> Callable[[], None]:
