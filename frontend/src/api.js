@@ -106,16 +106,25 @@ export async function submitReview() {
 }
 
 export async function submitContentApproval(campaignId, pieces, rejectCampaign = false) {
-  const res = await fetch(`${API_BASE}/api/campaigns/${campaignId}/content-approve`, {
+  const url = `${API_BASE}/api/campaigns/${campaignId}/content-approve`;
+  const payload = {
+    campaign_id: campaignId,
+    pieces,
+    reject_campaign: rejectCampaign,
+  };
+  console.log("[submitContentApproval] URL:", url);
+  console.log("[submitContentApproval] Payload:", JSON.stringify(payload, null, 2));
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({
-      campaign_id: campaignId,
-      pieces,
-      reject_campaign: rejectCampaign,
-    }),
+    body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`Content approval failed: ${res.status}`);
+  console.log("[submitContentApproval] Response status:", res.status);
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error("[submitContentApproval] Error response body:", errorBody);
+    throw new Error(`Content approval failed: ${res.status} - ${errorBody}`);
+  }
   return res.json();
 }
 

@@ -8,7 +8,10 @@ WorkflowExecutor abstraction; this service only writes signals and stores state.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse
@@ -57,15 +60,20 @@ class CampaignWorkflowService:
         self, campaign_id: str, response: ContentApprovalResponse
     ) -> None:
         """Write the content approval signal for the running coordinator to pick up."""
+        logger.info("submit_content_approval: campaign_id=%s, pieces=%d", campaign_id, len(response.pieces))
         campaign = await self._store.get(campaign_id)
         if campaign is None:
             raise ValueError(f"Campaign {campaign_id} not found")
+        logger.info("submit_content_approval: campaign found, status=%s", campaign.status)
         response.campaign_id = campaign_id
+        payload = response.model_dump(mode="json")
+        logger.info("submit_content_approval: writing signal, payload keys=%s", list(payload.keys()))
         await self._signal_store.write_signal(
             campaign_id,
             SignalType.CONTENT_APPROVAL,
-            response.model_dump(mode="json"),
+            payload,
         )
+        logger.info("submit_content_approval: signal written successfully")
 
     async def update_piece_decision(
         self,

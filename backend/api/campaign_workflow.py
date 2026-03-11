@@ -14,9 +14,12 @@ Endpoints:
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import Response
 
 from backend.models.campaign import Campaign
@@ -75,11 +78,16 @@ async def submit_content_approval(
     campaign: Campaign = Depends(get_campaign_for_write),
 ) -> WorkflowActionResponse:
     """Submit per-piece content approval decisions."""
+    logger.info("content-approve called for campaign=%s pieces=%d reject=%s",
+                campaign.id, len(response.pieces), response.reject_campaign)
     workflow = get_workflow_service()
     try:
         await workflow.submit_content_approval(campaign.id, response)
     except ValueError:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    except Exception as exc:
+        logger.exception("content-approve FAILED for campaign=%s: %s", campaign.id, exc)
+        raise HTTPException(status_code=500, detail=f"Content approval failed: {exc}")
 
     return WorkflowActionResponse(message="Content approval submitted", campaign_id=campaign.id)
 
