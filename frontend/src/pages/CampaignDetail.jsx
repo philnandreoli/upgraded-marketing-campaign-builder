@@ -350,9 +350,6 @@ export default function CampaignDetail() {
                 📡 {campaign.brief.selected_channels.length} channel{campaign.brief.selected_channels.length !== 1 ? "s" : ""}
               </span>
             )}
-            <span className="campaign-banner-meta-item">
-              <WorkspaceBadge workspace={campaign.workspace} orphaned={!campaign.workspace_id} linkTo={true} />
-            </span>
           </div>
         </div>
         <div className="campaign-banner-side">
@@ -407,9 +404,6 @@ export default function CampaignDetail() {
               <p className="sidebar-meta-goal">
                 {campaign.brief.goal}
               </p>
-              <div style={{ marginBottom: "0.5rem" }}>
-                <WorkspaceBadge workspace={campaign.workspace} orphaned={!campaign.workspace_id} linkTo={true} />
-              </div>
               {campaign.brief.selected_channels?.length > 0 && (
                 <div className="sidebar-meta-channels">
                   {campaign.brief.selected_channels.map((ch) => (
