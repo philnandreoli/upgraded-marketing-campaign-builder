@@ -226,15 +226,22 @@ class CoordinatorAgent:
             raise ValueError(f"Campaign {campaign_id} not found")
 
         checkpoint = await self._checkpoint_store.get_checkpoint(campaign_id)
-        if checkpoint is None:
+        if checkpoint is None and campaign.status == CampaignStatus.DRAFT:
             logger.info("No checkpoint for %s, starting fresh", campaign_id)
             return await self.run_pipeline(campaign)
 
-        logger.info(
-            "Resuming pipeline for campaign %s from checkpoint stage '%s'",
-            campaign_id,
-            checkpoint.current_stage,
-        )
+        if checkpoint is not None:
+            logger.info(
+                "Resuming pipeline for campaign %s from checkpoint stage '%s'",
+                campaign_id,
+                checkpoint.current_stage,
+            )
+        else:
+            logger.info(
+                "No checkpoint for %s but campaign already in '%s' — resuming with skip",
+                campaign_id,
+                campaign.status.value,
+            )
 
         await self._emit("pipeline_started", {"campaign_id": campaign.id})
         campaign_data = campaign.model_dump(mode="json")
@@ -347,8 +354,13 @@ class CoordinatorAgent:
         campaign_data = campaign.model_dump(mode="json")
 
         # 0 — Clarification gate (multi-turn strategy intake)
-        campaign = await self._run_clarification(campaign, campaign_data)
-        campaign_data = campaign.model_dump(mode="json")
+        # Only run clarification if the strategy stage hasn't completed yet.
+        # When resume_pipeline falls back here for a campaign that already has
+        # a strategy (e.g. currently in content_approval), skipping avoids an
+        # illegal content_approval → clarification transition.
+        if self._should_run_stage(campaign, "strategy"):
+            campaign = await self._run_clarification(campaign, campaign_data)
+            campaign_data = campaign.model_dump(mode="json")
 
         # If clarification timed out the campaign is already in a terminal state —
         # skip the remaining stages and return immediately.
