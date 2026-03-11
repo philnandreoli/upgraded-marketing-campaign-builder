@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from backend.models.campaign import Campaign, CampaignBrief
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import CampaignMember, CampaignMemberRole, User
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 
@@ -55,6 +55,10 @@ class InMemoryCampaignStore:
 
     async def list_by_owner(self, owner_id: str) -> list[Campaign]:
         return [c for c in self._campaigns.values() if c.owner_id == owner_id]
+
+    async def list_by_status(self, statuses: list[CampaignStatus]) -> list[Campaign]:
+        """Return all campaigns whose status is in *statuses*."""
+        return [c for c in self._campaigns.values() if c.status in statuses]
 
     async def list_accessible(self, user_id: str, is_admin: bool = False) -> list[Campaign]:
         """Return campaigns accessible to *user_id*.

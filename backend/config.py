@@ -109,6 +109,16 @@ class AppSettings(BaseSettings):
         alias="WORKFLOW_EXECUTOR",
         description="Executor backend for pipeline jobs. One of: in_process, azure_service_bus.",
     )
+    auto_resume_on_startup: bool = Field(
+        default=True,
+        alias="AUTO_RESUME_ON_STARTUP",
+        description=(
+            "When true and WORKFLOW_EXECUTOR=in_process, automatically dispatch resume_pipeline "
+            "jobs for any campaigns stuck in an interruptible wait state on API startup. "
+            "Useful during local development with --reload to recover in-flight pipelines "
+            "after a server restart. Has no effect when WORKFLOW_EXECUTOR is not in_process."
+        ),
+    )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
