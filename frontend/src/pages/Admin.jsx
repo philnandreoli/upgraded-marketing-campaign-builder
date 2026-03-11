@@ -6,7 +6,13 @@ import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 const ROLES = ["admin", "campaign_builder", "viewer"];
 const INCOMPATIBLE = { campaign_builder: "viewer", viewer: "campaign_builder" };
 
-function RoleCheckboxes({ userId, currentRoles, onRolesChange }) {
+const ROLE_LABELS = {
+  admin: "Admin",
+  campaign_builder: "Campaign Builder",
+  viewer: "Viewer",
+};
+
+function RoleCheckboxes({ userId, currentRoles, onRolesChange, disabled = false }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -37,29 +43,47 @@ function RoleCheckboxes({ userId, currentRoles, onRolesChange }) {
   };
 
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-      {ROLES.map((r) => (
-        <label
-          key={r}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.25rem",
-            fontSize: "0.8rem",
-            cursor: saving ? "not-allowed" : "pointer",
-            opacity: saving ? 0.6 : 1,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={currentRoles.includes(r)}
-            disabled={saving}
-            onChange={() => handleToggle(r)}
-          />
-          {r.replace(/_/g, " ")}
-        </label>
-      ))}
-      {saving && <span className="spinner" style={{ width: 14, height: 14 }} />}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+      {ROLES.map((r) => {
+        const isActive = currentRoles.includes(r);
+        const pillClass = [
+          "role-pill",
+          isActive ? "role-pill--active" : "",
+          saving ? "role-pill--saving" : "",
+          disabled ? "role-pill--disabled" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return (
+          <button
+            key={r}
+            className={pillClass}
+            data-role={r}
+            disabled={disabled || saving}
+            onClick={() => handleToggle(r)}
+            aria-pressed={isActive}
+            aria-label={
+              disabled
+                ? ROLE_LABELS[r]
+                : isActive
+                ? `Remove ${ROLE_LABELS[r]}`
+                : `Add ${ROLE_LABELS[r]}`
+            }
+            title={
+              disabled
+                ? ROLE_LABELS[r]
+                : isActive
+                ? `Remove ${ROLE_LABELS[r]}`
+                : `Add ${ROLE_LABELS[r]}`
+            }
+          >
+            {isActive && <span className="role-pill__check">✓</span>}
+            {ROLE_LABELS[r]}
+          </button>
+        );
+      })}
+      {saving && <span className="spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />}
       {error && (
         <span style={{ fontSize: "0.75rem", color: "var(--color-danger)" }} title={error}>
           ⚠ {error}
@@ -255,17 +279,12 @@ export default function Admin() {
                           {u.email ?? "—"}
                         </td>
                         <td style={{ padding: "0.6rem 0.75rem" }}>
-                          {u.is_active ? (
-                            <RoleCheckboxes
-                              userId={u.id}
-                              currentRoles={u.roles}
-                              onRolesChange={handleRolesChange}
-                            />
-                          ) : (
-                            <span style={{ color: "var(--color-text-dim)", fontSize: "0.8rem" }}>
-                              {u.roles.map((r) => r.replace(/_/g, " ")).join(", ")}
-                            </span>
-                          )}
+                          <RoleCheckboxes
+                            userId={u.id}
+                            currentRoles={u.roles}
+                            onRolesChange={handleRolesChange}
+                            disabled={!u.is_active}
+                          />
                         </td>
                         <td style={{ padding: "0.6rem 0.75rem" }}>
                           <span
