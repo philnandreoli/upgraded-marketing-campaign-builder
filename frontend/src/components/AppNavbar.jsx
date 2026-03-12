@@ -1,0 +1,155 @@
+import { useState } from "react";
+import { NavLink } from "react-router-dom";
+import ThemeToggle from "./ThemeToggle.jsx";
+
+/** Derive up-to-two initials from a display name or email. */
+function getInitials(account) {
+  if (!account) return "?";
+  const name = account.name ?? account.username ?? "";
+  const parts = name.trim().split(/\s+/).filter((p) => p.length > 0);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase() || "?";
+}
+
+/** Returns the className string for a NavLink in the navbar. */
+function navLinkClass(isActive, extra = "") {
+  const base = "navbar-link";
+  const active = isActive ? "navbar-link--active" : "";
+  return [base, active, extra].filter(Boolean).join(" ");
+}
+
+/** Geometric logomark — two overlapping squares forming a campaign funnel shape. */
+function LogoMark() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 28 28"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      className="navbar-logomark"
+    >
+      <rect x="2" y="2" width="14" height="14" rx="3" fill="#0D9488" opacity="0.9" />
+      <rect x="12" y="12" width="14" height="14" rx="3" fill="#06B6D4" opacity="0.85" />
+      <rect x="9" y="9" width="10" height="10" rx="2" fill="#0C0F1A" opacity="0.6" />
+      <rect x="10" y="10" width="8" height="8" rx="1.5" fill="url(#logo-inner)" />
+      <defs>
+        <linearGradient id="logo-inner" x1="10" y1="10" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0D9488" />
+          <stop offset="100%" stopColor="#06B6D4" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+/**
+ * AppNavbar — three-zone command bar.
+ *
+ * Props:
+ *   connected    {boolean}  WebSocket live/offline status
+ *   activeAccount {object}  MSAL account object (may be undefined)
+ *   isAdmin      {boolean}
+ *   isViewer     {boolean}
+ *   authEnabled  {boolean}  Whether MSAL auth is configured
+ *   onLogout     {Function} Callback to trigger logoutRedirect
+ */
+export default function AppNavbar({
+  connected,
+  activeAccount,
+  isAdmin,
+  isViewer,
+  authEnabled,
+  onLogout,
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const initials = getInitials(activeAccount);
+  const displayName = activeAccount?.name ?? activeAccount?.username ?? "";
+
+  return (
+    <header className="navbar" role="banner">
+      {/* ── Zone 1: Brand ─────────────────────────────────────── */}
+      <div className="navbar-brand">
+        <LogoMark />
+        <span className="navbar-wordmark">Campaign Builder</span>
+      </div>
+
+      {/* ── Zone 2: Nav links (desktop) ───────────────────────── */}
+      <nav className={`navbar-nav${menuOpen ? " navbar-nav--open" : ""}`} aria-label="Main navigation">
+        <NavLink to="/" end className={({ isActive }) => navLinkClass(isActive)}>
+          Dashboard
+        </NavLink>
+        <NavLink to="/workspaces" className={({ isActive }) => navLinkClass(isActive)}>
+          Workspaces
+        </NavLink>
+        {!isViewer && (
+          <NavLink to="/new" className={({ isActive }) => navLinkClass(isActive, "navbar-link--create")}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            Create Campaign
+          </NavLink>
+        )}
+        {isAdmin && (
+          <NavLink to="/admin" className={({ isActive }) => navLinkClass(isActive)}>
+            Admin
+          </NavLink>
+        )}
+      </nav>
+
+      {/* ── Zone 3: Actions ───────────────────────────────────── */}
+      <div className="navbar-actions">
+        <ThemeToggle />
+
+        {/* Vertical divider */}
+        <span className="navbar-divider" aria-hidden="true" />
+
+        {/* Status badge */}
+        <span className={`navbar-status${connected ? " navbar-status--live" : " navbar-status--offline"}`}>
+          <span className="navbar-status-dot" aria-hidden="true" />
+          {connected ? "Live" : "Offline"}
+        </span>
+
+        {authEnabled && activeAccount && (
+          <>
+            <span className="navbar-divider" aria-hidden="true" />
+
+            {/* User avatar + name */}
+            <div className="navbar-user" title={displayName}>
+              <span className="navbar-avatar" aria-hidden="true">{initials}</span>
+              <span className="navbar-username">{displayName}</span>
+            </div>
+
+            {/* Sign out */}
+            <button
+              className="navbar-signout"
+              onClick={onLogout}
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                <path d="M6 2H2.5A1.5 1.5 0 0 0 1 3.5v8A1.5 1.5 0 0 0 2.5 13H6M10 10.5l3-3-3-3M13 7.5H5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </>
+        )}
+
+        {/* Mobile hamburger */}
+        <button
+          className={`navbar-hamburger${menuOpen ? " navbar-hamburger--open" : ""}`}
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+        >
+          <span className="navbar-hamburger-bar" />
+          <span className="navbar-hamburger-bar" />
+          <span className="navbar-hamburger-bar" />
+        </button>
+      </div>
+    </header>
+  );
+}
