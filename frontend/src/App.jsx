@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import {
   AuthenticatedTemplate,
   UnauthenticatedTemplate,
@@ -12,7 +12,7 @@ import WorkspaceList from "./pages/WorkspaceList.jsx";
 import WorkspaceDetail from "./pages/WorkspaceDetail.jsx";
 import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
 import useWebSocket from "./hooks/useWebSocket.js";
-import ThemeToggle from "./components/ThemeToggle.jsx";
+import AppNavbar from "./components/AppNavbar.jsx";
 import { loginRequest } from "./authConfig.js";
 import { UserProvider, useUser } from "./UserContext.jsx";
 import { WorkspaceProvider } from "./WorkspaceContext.jsx";
@@ -89,40 +89,14 @@ function AuthenticatedApp() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <h1>
-          <span role="img" aria-label="rocket">🚀</span> Campaign Builder
-        </h1>
-        <nav>
-          <NavLink to="/" end>
-            Dashboard
-          </NavLink>
-          <NavLink to="/workspaces">Workspaces</NavLink>
-          {!isViewer && <NavLink to="/new">+ Create Campaign</NavLink>}
-          {isAdmin && <NavLink to="/admin">Admin</NavLink>}
-          <ThemeToggle />
-          <span style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
-            <span
-              className={`ws-indicator ${connected ? "connected" : "disconnected"}`}
-            />
-            {connected ? "Live" : "Offline"}
-          </span>
-          {authEnabled && activeAccount && (
-            <>
-              <span style={{ fontSize: "0.8rem", color: "var(--color-text-dim)", marginLeft: "0.5rem" }}>
-                {activeAccount.name ?? activeAccount.username}
-              </span>
-              <button
-                className="btn btn-outline"
-                style={{ padding: "0.25rem 0.6rem", fontSize: "0.75rem", marginLeft: "0.25rem" }}
-                onClick={() => instance.logoutRedirect()}
-              >
-                Sign out
-              </button>
-            </>
-          )}
-        </nav>
-      </header>
+      <AppNavbar
+        connected={connected}
+        activeAccount={activeAccount}
+        isAdmin={isAdmin}
+        isViewer={isViewer}
+        authEnabled={authEnabled}
+        onLogout={() => instance.logoutRedirect()}
+      />
 
       <main className="app-main">
         <Routes>
