@@ -647,6 +647,29 @@ class TestTransitionValidation:
 
         assert campaign.status == CampaignStatus.STRATEGY
 
+    def test_strategy_to_clarification_is_valid(self, store):
+        """STRATEGY -> CLARIFICATION must be permitted to support resume-pipeline loop-backs."""
+        from backend.agents.coordinator_agent import ALLOWED_TRANSITIONS
+
+        assert CampaignStatus.CLARIFICATION in ALLOWED_TRANSITIONS[CampaignStatus.STRATEGY]
+
+        coordinator = CoordinatorAgent(store=store)
+        campaign = Campaign(
+            brief=CampaignBrief(
+                product_or_service="Test",
+                goal="Test goal",
+                budget=1000,
+                currency="USD",
+                start_date="2026-01-01",
+                end_date="2026-03-31",
+            )
+        )
+        campaign.status = CampaignStatus.STRATEGY
+
+        coordinator._transition(campaign, CampaignStatus.CLARIFICATION)
+
+        assert campaign.status == CampaignStatus.CLARIFICATION
+
     def test_invalid_transition_raises_value_error(self, store):
         """An invalid transition should raise ValueError and not modify the campaign status."""
         coordinator = CoordinatorAgent(store=store)
