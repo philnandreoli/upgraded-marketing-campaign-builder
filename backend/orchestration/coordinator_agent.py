@@ -80,7 +80,7 @@ MAX_CONTENT_REVISION_CYCLES = 3
 ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
     CampaignStatus.DRAFT: {CampaignStatus.CLARIFICATION, CampaignStatus.STRATEGY},
     CampaignStatus.CLARIFICATION: {CampaignStatus.STRATEGY, CampaignStatus.MANUAL_REVIEW_REQUIRED},
-    CampaignStatus.STRATEGY: {CampaignStatus.CONTENT},
+    CampaignStatus.STRATEGY: {CampaignStatus.CLARIFICATION, CampaignStatus.CONTENT},
     CampaignStatus.CONTENT: {CampaignStatus.CHANNEL_PLANNING},
     CampaignStatus.CHANNEL_PLANNING: {CampaignStatus.ANALYTICS_SETUP},
     CampaignStatus.ANALYTICS_SETUP: {CampaignStatus.REVIEW},
