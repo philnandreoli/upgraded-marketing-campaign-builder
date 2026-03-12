@@ -38,14 +38,7 @@ function MemberRoleSelect({ campaignId, userId, currentRole, onUpdated }) {
         value={currentRole}
         onChange={handleChange}
         disabled={saving}
-        style={{
-          padding: "0.3rem 0.5rem",
-          fontSize: "0.8rem",
-          background: "var(--color-surface-2)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
-          color: "var(--color-text)",
-        }}
+        className="member-role-select"
       >
         {CAMPAIGN_ROLES.map((r) => (
           <option key={r} value={r}>

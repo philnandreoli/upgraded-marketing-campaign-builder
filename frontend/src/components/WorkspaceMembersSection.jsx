@@ -40,14 +40,7 @@ function WorkspaceMemberRoleSelect({ workspaceId, userId, currentRole, onUpdated
         onChange={handleChange}
         disabled={saving}
         aria-label={`Role for member ${userId}`}
-        style={{
-          padding: "0.3rem 0.5rem",
-          fontSize: "0.8rem",
-          background: "var(--color-surface-2)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
-          color: "var(--color-text)",
-        }}
+        className="member-role-select"
       >
         {WORKSPACE_ROLES.map((r) => (
           <option key={r} value={r}>
