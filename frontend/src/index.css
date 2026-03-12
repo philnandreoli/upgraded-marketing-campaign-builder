@@ -1376,46 +1376,78 @@ a:hover { color: var(--color-primary-hover); }
   top: 50%;
   transform: translateY(-50%);
 }
-.add-member-role {
+.add-member-role-wrap {
+  position: relative;
+}
+.add-member-role-wrap .role-dropdown-trigger {
   padding: 0.55rem 0.85rem;
-  font-size: 0.875rem;
-  font-family: inherit;
-  color: var(--color-text);
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.2s;
-  -webkit-appearance: none;
-  appearance: none;
   padding-right: 2rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.65rem center;
+  font-size: 0.875rem;
 }
-.add-member-role:focus {
-  border-color: var(--color-primary);
+.member-role-select-wrap {
+  position: relative;
 }
-.member-role-select {
+.member-role-select-wrap .role-dropdown-trigger {
   padding: 0.3rem 1.5rem 0.3rem 0.5rem;
   font-size: 0.8rem;
+}
+
+/* --- Custom role dropdown base --- */
+.role-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.role-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-family: inherit;
   color: var(--color-text);
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  outline: none;
   cursor: pointer;
   transition: border-color 0.2s;
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.4rem center;
+  white-space: nowrap;
 }
-.member-role-select:focus {
+.role-dropdown-trigger:focus {
   border-color: var(--color-primary);
+  outline: none;
+}
+.role-dropdown-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.role-dropdown-trigger svg {
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+.role-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  z-index: 200;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  list-style: none;
+  padding: 0.25rem 0;
+  margin: 0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+.role-dropdown-item {
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  transition: background 0.15s;
+}
+.role-dropdown-item:hover {
+  background: var(--color-surface);
+}
+.role-dropdown-item.selected {
+  color: var(--color-primary);
 }
 .add-member-dropdown {
   position: absolute;
@@ -1581,20 +1613,13 @@ a:hover { color: var(--color-primary-hover); }
   display: flex;
   gap: 0.35rem;
 }
-.compact-add-role {
+.compact-add-role-wrap {
   flex: 1;
+}
+.compact-add-role-wrap .role-dropdown-trigger {
   padding: 0.35rem 0.5rem;
   font-size: 0.78rem;
-  font-family: inherit;
-  color: var(--color-text);
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  outline: none;
-  cursor: pointer;
-}
-.compact-add-role:focus {
-  border-color: var(--color-primary);
+  width: 100%;
 }
 .compact-add-actions .btn {
   padding: 0.35rem 0.75rem;

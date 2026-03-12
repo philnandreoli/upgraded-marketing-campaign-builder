@@ -12,6 +12,50 @@ const SPINNER_SIZE = 14;
 const DROPDOWN_CLOSE_DELAY = 150;
 
 // ---------------------------------------------------------------------------
+// Custom role dropdown — fully styled, replaces native <select>
+// ---------------------------------------------------------------------------
+function RoleDropdown({ value, onChange, className, disabled }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div className={`role-dropdown ${className || ""}`} ref={wrapRef}>
+      <button
+        type="button"
+        className="role-dropdown-trigger"
+        onClick={() => !disabled && setOpen((o) => !o)}
+        disabled={disabled}
+      >
+        <span>{value}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <ul className="role-dropdown-menu">
+          {CAMPAIGN_ROLES.map((r) => (
+            <li
+              key={r}
+              className={`role-dropdown-item${r === value ? " selected" : ""}`}
+              onMouseDown={() => { onChange(r); setOpen(false); }}
+            >
+              {r}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Role selector — inline dropdown that PATCHes the member role on change
 // ---------------------------------------------------------------------------
 function MemberRoleSelect({ campaignId, userId, currentRole, onUpdated }) {
@@ -34,18 +78,12 @@ function MemberRoleSelect({ campaignId, userId, currentRole, onUpdated }) {
 
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-      <select
+      <RoleDropdown
         value={currentRole}
-        onChange={handleChange}
+        onChange={(newRole) => handleChange({ target: { value: newRole } })}
         disabled={saving}
-        className="member-role-select"
-      >
-        {CAMPAIGN_ROLES.map((r) => (
-          <option key={r} value={r}>
-            {r}
-          </option>
-        ))}
-      </select>
+        className="member-role-select-wrap"
+      />
       {saving && <span className="spinner" style={{ width: SPINNER_SIZE, height: SPINNER_SIZE }} />}
       {error && (
         <span style={{ fontSize: "0.75rem", color: "var(--color-danger)" }} title={error}>
@@ -167,17 +205,11 @@ function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
         </div>
 
         {/* Role selector */}
-        <select
-          className="add-member-role"
+        <RoleDropdown
           value={role}
-          onChange={(e) => setRole(e.target.value)}
-        >
-          {CAMPAIGN_ROLES.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
+          onChange={setRole}
+          className="add-member-role-wrap"
+        />
 
         {/* Add button */}
         <button
@@ -288,15 +320,11 @@ function CompactAddMemberForm({ campaignId, existingUserIds, onAdded }) {
         )}
       </div>
       <div className="compact-add-actions">
-        <select
-          className="compact-add-role"
+        <RoleDropdown
           value={role}
-          onChange={(e) => setRole(e.target.value)}
-        >
-          {CAMPAIGN_ROLES.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
-        </select>
+          onChange={setRole}
+          className="compact-add-role-wrap"
+        />
         <button
           className="btn btn-primary compact-add-btn"
           onClick={handleAdd}
