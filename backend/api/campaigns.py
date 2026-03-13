@@ -16,13 +16,10 @@ Shared DTOs live in backend.apps.api.schemas.campaigns and
 backend.apps.api.schemas.workflow.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import User, UserRole
@@ -53,6 +50,7 @@ from backend.apps.api.schemas.workflow import (  # noqa: F401
     UpdatePieceNotesRequest,
     WorkflowActionResponse,
 )
+from backend.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["campaigns"])
@@ -90,8 +88,11 @@ async def get_me(
 
 
 @router.post("/campaigns", status_code=201, response_model=CreateCampaignResponse)
+@limiter.limit("10/minute")
 async def create_campaign(
-    request: CreateCampaignRequest,
+    request: Request,
+    response: Response,
+    body: CreateCampaignRequest = Body(),
     user: Optional[User] = Depends(get_current_user),
 ) -> CreateCampaignResponse:
     """Create a new campaign and kick off the agent pipeline in the background.
@@ -106,7 +107,7 @@ async def create_campaign(
     if user is not None and user.is_viewer:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    workspace_id = request.workspace_id
+    workspace_id = body.workspace_id
     if workspace_id is not None and user is not None and not user.is_admin:
         # Verify the user is a CREATOR member of the target workspace
         store = get_campaign_store()
@@ -118,7 +119,7 @@ async def create_campaign(
             raise HTTPException(status_code=403, detail="Only workspace CREATORs can create campaigns in a workspace")
 
     # Build a plain CampaignBrief from the request (workspace_id is handled separately)
-    brief = CampaignBrief(**request.model_dump(exclude={"workspace_id"}))
+    brief = CampaignBrief(**body.model_dump(exclude={"workspace_id"}))
 
     try:
         logger.info("Creating campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())

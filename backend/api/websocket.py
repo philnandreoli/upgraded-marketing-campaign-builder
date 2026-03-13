@@ -20,8 +20,6 @@ reverse-proxy / CDN access logs, since the opaque ticket has no value
 outside the single WebSocket upgrade request.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -29,9 +27,10 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Request, Response, WebSocket, WebSocketDisconnect
 
 from backend.config import get_settings
+from backend.core.rate_limit import limiter
 from backend.infrastructure.auth import require_authenticated
 from backend.infrastructure.campaign_store import get_campaign_store
 from backend.models.user import User
@@ -144,7 +143,8 @@ manager = ConnectionManager()
 # ---------------------------------------------------------------------------
 
 @ticket_router.post("/ticket")
-async def create_ws_ticket(user: User = Depends(require_authenticated)) -> dict:
+@limiter.limit("10/minute")
+async def create_ws_ticket(request: Request, response: Response, user: User = Depends(require_authenticated)) -> dict:
     """Issue a short-lived, single-use ticket for WebSocket authentication.
 
     The ticket is valid for 30 seconds and can only be used once.
