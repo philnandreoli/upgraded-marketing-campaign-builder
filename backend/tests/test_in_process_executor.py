@@ -236,6 +236,90 @@ class TestHealthCheck:
 
 
 # ---------------------------------------------------------------------------
+# _broadcast — event persistence
+# ---------------------------------------------------------------------------
+
+
+class TestBroadcast:
+    async def test_broadcast_persists_to_event_store(self):
+        """_broadcast must call EventStore.save_event for each emitted event."""
+        executor = InProcessExecutor()
+
+        mock_coord = MagicMock()
+        captured_on_event: dict = {}
+
+        def _capture_coord(**kwargs):
+            captured_on_event["fn"] = kwargs.get("on_event")
+            return mock_coord
+
+        mock_coord.run_pipeline = AsyncMock()
+        mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=MagicMock())
+        mock_event_store = MagicMock()
+        mock_event_store.save_event = AsyncMock(return_value="evt-uuid-1")
+        mock_ws = MagicMock()
+        mock_ws.broadcast = AsyncMock()
+
+        with (
+            patch(
+                "backend.infrastructure.executors.in_process.CoordinatorAgent",
+                side_effect=_capture_coord,
+            ),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.get_event_store", return_value=mock_event_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager", mock_ws),
+        ):
+            await executor.dispatch(_make_job("start_pipeline", "camp-42"))
+            await asyncio.sleep(0)
+
+            on_event = captured_on_event.get("fn")
+            assert on_event is not None
+            await on_event("pipeline_started", {"campaign_id": "camp-42", "stage": "strategy"})
+
+            mock_event_store.save_event.assert_awaited_once()
+            call_kwargs = mock_event_store.save_event.call_args
+            assert call_kwargs.kwargs.get("campaign_id") == "camp-42" or (
+                call_kwargs.args and call_kwargs.args[0] == "camp-42"
+            )
+
+    async def test_broadcast_save_failure_does_not_propagate(self):
+        """EventStore.save_event errors must be caught and not crash the pipeline."""
+        executor = InProcessExecutor()
+
+        mock_coord = MagicMock()
+        captured_on_event: dict = {}
+
+        def _capture_coord(**kwargs):
+            captured_on_event["fn"] = kwargs.get("on_event")
+            return mock_coord
+
+        mock_coord.run_pipeline = AsyncMock()
+        mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=MagicMock())
+        mock_event_store = MagicMock()
+        mock_event_store.save_event = AsyncMock(side_effect=RuntimeError("db down"))
+        mock_ws = MagicMock()
+        mock_ws.broadcast = AsyncMock()
+
+        with (
+            patch(
+                "backend.infrastructure.executors.in_process.CoordinatorAgent",
+                side_effect=_capture_coord,
+            ),
+            patch("backend.infrastructure.executors.in_process.get_campaign_store", return_value=mock_store),
+            patch("backend.infrastructure.executors.in_process.get_event_store", return_value=mock_event_store),
+            patch("backend.infrastructure.executors.in_process.ws_manager", mock_ws),
+        ):
+            await executor.dispatch(_make_job("start_pipeline", "camp-42"))
+            await asyncio.sleep(0)
+
+            on_event = captured_on_event.get("fn")
+            assert on_event is not None
+            # Should not raise even though EventStore.save_event fails
+            await on_event("pipeline_started", {"campaign_id": "camp-42"})
+
+
+# ---------------------------------------------------------------------------
 # error handling
 # ---------------------------------------------------------------------------
 
