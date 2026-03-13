@@ -5,4 +5,6 @@ __pycache__
 .devcontainer
 frontend
 *.md
-.env.example
+.env
+.env.*
+!.env.example
