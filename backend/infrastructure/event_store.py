@@ -40,7 +40,7 @@ class EventStore:
             stage=stage,
             payload=json.dumps(payload, default=str),
             owner_id=owner_id,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         async with async_session() as session:
             session.add(row)
