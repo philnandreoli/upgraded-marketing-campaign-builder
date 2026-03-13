@@ -1620,3 +1620,103 @@ class TestAssignCampaignWorkspace:
         campaign = self._make_campaign(_isolated_store)
         r = client.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
         assert r.status_code == 403
+
+
+# ---- GET /api/campaigns/{id}/events ----
+
+
+class TestGetCampaignEvents:
+    """Tests for the GET /campaigns/{id}/events endpoint."""
+
+    def _make_campaign(self, store) -> Campaign:
+        import asyncio
+        brief = CampaignBrief(product_or_service="EventTest", goal="Test events")
+        campaign = Campaign(brief=brief, owner_id=_TEST_USER.id)
+        asyncio.get_event_loop().run_until_complete(store.update(campaign))
+        return campaign
+
+    def _make_event_log(self, campaign_id: str, event_type: str = "pipeline_started"):
+        from datetime import datetime, timezone
+        from backend.models.events import CampaignEventLog
+        return CampaignEventLog(
+            id="evt-001",
+            campaign_id=campaign_id,
+            event_type=event_type,
+            stage=None,
+            payload={"campaign_id": campaign_id},
+            owner_id=None,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+
+    def test_returns_empty_list_when_no_events(self, authed_client, _isolated_store):
+        """Returns an empty list when no events have been persisted."""
+        campaign = self._make_campaign(_isolated_store)
+        mock_store = MagicMock()
+        mock_store.get_events = AsyncMock(return_value=[])
+
+        with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
+            r = authed_client.get(f"/api/campaigns/{campaign.id}/events")
+
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_returns_events_for_campaign(self, authed_client, _isolated_store):
+        """Returns serialised event logs for a campaign."""
+        campaign = self._make_campaign(_isolated_store)
+        event_log = self._make_event_log(campaign.id)
+        mock_store = MagicMock()
+        mock_store.get_events = AsyncMock(return_value=[event_log])
+
+        with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
+            r = authed_client.get(f"/api/campaigns/{campaign.id}/events")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "evt-001"
+        assert data[0]["event_type"] == "pipeline_started"
+        assert data[0]["campaign_id"] == campaign.id
+
+    def test_returns_404_for_unknown_campaign(self, authed_client, _isolated_store):
+        """Returns 404 when the campaign does not exist."""
+        r = authed_client.get("/api/campaigns/no-such-campaign/events")
+        assert r.status_code == 404
+
+    def test_passes_limit_and_offset_to_store(self, authed_client, _isolated_store):
+        """Query params limit and offset are forwarded to the event store."""
+        campaign = self._make_campaign(_isolated_store)
+        mock_store = MagicMock()
+        mock_store.get_events = AsyncMock(return_value=[])
+
+        with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
+            r = authed_client.get(
+                f"/api/campaigns/{campaign.id}/events?limit=10&offset=5"
+            )
+
+        assert r.status_code == 200
+        mock_store.get_events.assert_awaited_once_with(campaign.id, limit=10, offset=5)
+
+    def test_viewer_can_read_events_via_admin(self, _isolated_store):
+        """An admin can always access the event log."""
+        import asyncio
+        campaign = self._make_campaign(_isolated_store)
+        mock_store = MagicMock()
+        mock_store.get_events = AsyncMock(return_value=[])
+
+        admin = User(id="admin-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
+        with _as_user(admin) as c:
+            with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
+                r = c.get(f"/api/campaigns/{campaign.id}/events")
+
+        assert r.status_code == 200
+
+    def test_unauthenticated_can_read_events_when_auth_disabled(self, client, _isolated_store):
+        """When auth is disabled all requests succeed."""
+        campaign = self._make_campaign(_isolated_store)
+        mock_store = MagicMock()
+        mock_store.get_events = AsyncMock(return_value=[])
+
+        with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
+            r = client.get(f"/api/campaigns/{campaign.id}/events")
+
+        assert r.status_code == 200

@@ -304,6 +304,31 @@ class EventOverflowRow(Base):
     created_at = Column(DateTime, nullable=False)
 
 
+class CampaignEventRow(Base):
+    """Persists each pipeline event emitted by the CoordinatorAgent.
+
+    Provides a durable audit trail for all campaign pipeline events so that
+    history is available when users navigate to a campaign page, even if they
+    were not connected during pipeline execution.
+    """
+
+    __tablename__ = "campaign_events"
+
+    id = Column(String, primary_key=True)          # UUID
+    campaign_id = Column(
+        String, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type = Column(String, nullable=False)    # e.g. "pipeline_started", "stage_completed"
+    stage = Column(String, nullable=True)          # e.g. "strategy", "content"
+    payload = Column(Text, nullable=False)         # full JSON-serialised event payload
+    owner_id = Column(String, nullable=True)       # user who triggered the action
+    created_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_campaign_events_campaign_id", "campaign_id"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Session dependency
 # ---------------------------------------------------------------------------
