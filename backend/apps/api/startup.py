@@ -46,12 +46,33 @@ _RESUMABLE_STATUSES = [
 _AUTO_RESUME_DELAY_SECONDS = 1
 
 
+def _check_cors_safety(app_env: str, allowed_origins: list[str]) -> None:
+    """Refuse to start when wildcard CORS origins are used outside development.
+
+    A wildcard origin combined with ``allow_credentials=True`` opens the API
+    to cross-origin data exfiltration (OWASP A01:2021 — Broken Access Control).
+    Set ``CORS_ALLOWED_ORIGINS`` to an explicit JSON array before deploying,
+    e.g. ``'["https://app.example.com"]'``.
+    """
+    if app_env != "development" and "*" in allowed_origins:
+        logger.critical(
+            "CORS_ALLOWED_ORIGINS contains wildcard '*' in non-development "
+            "environment (%s). Set explicit origins for production.",
+            app_env,
+        )
+        raise SystemExit(1)
+
+
 def make_startup_handler(app: object) -> Callable[[], None]:
     """Return an async startup handler that stores state on *app*."""
 
     settings = get_settings()
 
     async def on_startup() -> None:
+        # CORS safety guard — refuse to start in non-development environments
+        # when wildcard origins are still configured.
+        _check_cors_safety(settings.app.env, settings.cors.allowed_origins)
+
         await init_db()
 
         # Start the cross-process event subscriber only when the pipeline

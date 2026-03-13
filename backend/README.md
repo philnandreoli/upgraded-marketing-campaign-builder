@@ -198,8 +198,22 @@ All settings are loaded from environment variables (or a `.env` file) using **py
 | `TracingSettings` | `TRACING_ENABLED`, `TRACING_EXPORTER`, `OTLP_ENDPOINT`, `APPLICATIONINSIGHTS_CONNECTION_STRING` |
 | `OIDCSettings` | `AUTH_ENABLED`, `OIDC_AUTHORITY`, `OIDC_CLIENT_ID` |
 | `FoundryAgentsSettings` | `FOUNDRY_AGENTS_ENABLED` |
+| `CORSSettings` | `CORS_ALLOWED_ORIGINS` |
 | `AppSettings` | `APP_ENV`, `APP_PORT`, `APP_LOG_LEVEL`, `WORKFLOW_EXECUTOR` |
 | `ServiceBusSettings` | `AZURE_SERVICE_BUS_NAMESPACE`, `AZURE_SERVICE_BUS_CONNECTION_STRING`, `AZURE_SERVICE_BUS_QUEUE_NAME` |
 | `WorkerSettings` | `WORKER_MAX_CONCURRENCY`, `WORKER_SHUTDOWN_TIMEOUT_SECONDS`, `WORKER_HEALTH_PORT` |
 | `EventSettings` | `EVENT_CHANNEL_NAME` (PostgreSQL NOTIFY channel for worker → API relay) |
 | `DatabaseSettings` | `DB_AUTH_MODE`, `DATABASE_URL`, `AZURE_POSTGRES_HOST/DATABASE/USER`, `API_AUTO_MIGRATE` |
+
+### CORS configuration
+
+`CORS_ALLOWED_ORIGINS` controls which browser origins may make cross-origin requests to the API.
+
+| Environment | Required value | Example |
+|-------------|----------------|---------|
+| Local development | `["*"]` (default) | No change needed |
+| Staging / Production | Explicit JSON array | `CORS_ALLOWED_ORIGINS='["https://app.example.com"]'` |
+
+> **Important:** The API **refuses to start** if `APP_ENV` is not `development` and `CORS_ALLOWED_ORIGINS` still contains the wildcard `"*"`.  Always set explicit origins before deploying.
+
+When the React frontend is served by the same nginx reverse-proxy that proxies API traffic (the default production topology), the browser sees a single origin so CORS is not exercised at all.  Restricting allowed origins is most important when the API is accessed directly from a different origin (e.g. a separate staging frontend or a developer machine).

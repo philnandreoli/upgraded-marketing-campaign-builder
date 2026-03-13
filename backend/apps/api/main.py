@@ -43,6 +43,8 @@ logging.basicConfig(
     force=True,
 )
 
+logger = logging.getLogger(__name__)
+
 # ------------------------------------------------------------------
 # Tracing — must be initialised before any LLM client is created
 # ------------------------------------------------------------------
@@ -66,11 +68,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors.allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
-
-logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------
