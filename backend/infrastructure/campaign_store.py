@@ -13,11 +13,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import delete as sa_delete, or_, select
+from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
+from backend.core.exceptions import ConcurrentUpdateError
 from backend.infrastructure.database import (
     CampaignMemberRow,
     CampaignRow,
@@ -56,6 +57,7 @@ class CampaignStore:
             data=campaign.model_dump_json(),
             created_at=campaign.created_at,
             updated_at=campaign.updated_at,
+            version=campaign.version,
         )
         async with async_session() as session:
             session.add(row)
@@ -78,28 +80,60 @@ class CampaignStore:
             row = await session.get(CampaignRow, campaign_id)
             if row is None:
                 return None
-            return Campaign.model_validate_json(row.data)
+            campaign = Campaign.model_validate_json(row.data)
+            campaign.version = row.version
+            return campaign
 
     async def update(self, campaign: Campaign) -> Campaign:
+        """Persist a campaign using optimistic locking.
+
+        Performs a conditional UPDATE: ``WHERE id = :id AND version = :version``.
+        If zero rows are affected the campaign was concurrently modified; a
+        ``ConcurrentUpdateError`` is raised so callers can reload and retry.
+
+        If no row exists at all (first-time persist), an INSERT is performed
+        instead and the version stays at its current value.
+        """
         async with async_session() as session:
-            row = await session.get(CampaignRow, campaign.id)
-            if row is None:
-                # First time persisting — insert instead
-                row = CampaignRow(
-                    id=campaign.id,
-                    owner_id=campaign.owner_id,
-                    workspace_id=campaign.workspace_id,
-                    status=campaign.status.value,
-                    data=campaign.model_dump_json(),
-                    created_at=campaign.created_at,
-                    updated_at=campaign.updated_at,
+            result = await session.execute(
+                sa_update(CampaignRow)
+                .where(
+                    CampaignRow.id == campaign.id,
+                    CampaignRow.version == campaign.version,
                 )
-                session.add(row)
+                .values(
+                    status=campaign.status.value,
+                    workspace_id=campaign.workspace_id,
+                    data=campaign.model_dump_json(),
+                    updated_at=campaign.updated_at,
+                    version=campaign.version + 1,
+                )
+            )
+            if result.rowcount == 0:
+                # Either no row exists yet (first save) or a concurrent writer
+                # already bumped the version.  Check which case it is.
+                existing = await session.get(CampaignRow, campaign.id)
+                if existing is None:
+                    # First time persisting — insert instead
+                    row = CampaignRow(
+                        id=campaign.id,
+                        owner_id=campaign.owner_id,
+                        workspace_id=campaign.workspace_id,
+                        status=campaign.status.value,
+                        data=campaign.model_dump_json(),
+                        created_at=campaign.created_at,
+                        updated_at=campaign.updated_at,
+                        version=campaign.version,
+                    )
+                    session.add(row)
+                else:
+                    raise ConcurrentUpdateError(
+                        f"Campaign {campaign.id} was modified by another process "
+                        f"(expected version {campaign.version}, "
+                        f"found {existing.version})"
+                    )
             else:
-                row.status = campaign.status.value
-                row.workspace_id = campaign.workspace_id
-                row.data = campaign.model_dump_json()
-                row.updated_at = campaign.updated_at
+                campaign.version += 1
             await session.commit()
         return campaign
 

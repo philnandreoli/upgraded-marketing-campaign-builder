@@ -17,7 +17,7 @@ from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, Con
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse
 from backend.models.user import User
 from backend.infrastructure.campaign_store import CampaignStore, get_campaign_store
-from backend.core.exceptions import WorkflowConflictError
+from backend.core.exceptions import ConcurrentUpdateError, WorkflowConflictError
 from backend.infrastructure.workflow_signal_store import WorkflowSignalStore, SignalType, get_workflow_signal_store
 
 __all__ = ["CampaignWorkflowService", "WorkflowConflictError", "get_workflow_service"]
@@ -88,41 +88,55 @@ class CampaignWorkflowService:
         Raises ValueError if the campaign or piece does not exist, and
         WorkflowConflictError if the campaign is not in content_approval status
         or if an attempt is made to reject an already-approved piece.
+
+        Retries once on a ``ConcurrentUpdateError`` (optimistic-lock conflict)
+        by re-reading the campaign and re-applying the decision.
         """
-        campaign = await self._store.get(campaign_id)
-        if campaign is None:
-            raise ValueError(f"Campaign {campaign_id} not found")
-        if campaign.status != CampaignStatus.CONTENT_APPROVAL:
-            raise WorkflowConflictError("Campaign is not in content_approval status")
-        if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
-            raise ValueError("Content piece not found")
+        for attempt in range(2):
+            campaign = await self._store.get(campaign_id)
+            if campaign is None:
+                raise ValueError(f"Campaign {campaign_id} not found")
+            if campaign.status != CampaignStatus.CONTENT_APPROVAL:
+                raise WorkflowConflictError("Campaign is not in content_approval status")
+            if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
+                raise ValueError("Content piece not found")
 
-        piece = campaign.content.pieces[piece_index]
+            piece = campaign.content.pieces[piece_index]
 
-        # Approved pieces are immutable — cannot be un-approved via this endpoint.
-        if piece.approval_status == ContentApprovalStatus.APPROVED and not approved:
-            raise WorkflowConflictError("Cannot reject an already-approved piece")
+            # Approved pieces are immutable — cannot be un-approved via this endpoint.
+            if piece.approval_status == ContentApprovalStatus.APPROVED and not approved:
+                raise WorkflowConflictError("Cannot reject an already-approved piece")
 
-        if approved:
-            piece.approval_status = ContentApprovalStatus.APPROVED
-            if edited_content is not None:
-                piece.human_edited_content = edited_content
-            if notes:
+            if approved:
+                piece.approval_status = ContentApprovalStatus.APPROVED
+                if edited_content is not None:
+                    piece.human_edited_content = edited_content
+                if notes:
+                    piece.human_notes = notes
+            else:
+                piece.approval_status = ContentApprovalStatus.REJECTED
+                if edited_content is not None:
+                    piece.human_edited_content = edited_content
                 piece.human_notes = notes
-        else:
-            piece.approval_status = ContentApprovalStatus.REJECTED
-            if edited_content is not None:
-                piece.human_edited_content = edited_content
-            piece.human_notes = notes
 
-        await self._store.update(campaign)
+            try:
+                await self._store.update(campaign)
+            except ConcurrentUpdateError:
+                if attempt == 0:
+                    logger.warning(
+                        "Optimistic lock conflict updating piece %d of campaign %s — retrying",
+                        piece_index,
+                        campaign_id,
+                    )
+                    continue
+                raise
 
-        return {
-            "message": "Piece decision saved",
-            "campaign_id": campaign_id,
-            "piece_index": piece_index,
-            "approval_status": piece.approval_status,
-        }
+            return {
+                "message": "Piece decision saved",
+                "campaign_id": campaign_id,
+                "piece_index": piece_index,
+                "approval_status": piece.approval_status,
+            }
 
     async def update_piece_notes(
         self, campaign_id: str, piece_index: int, notes: str
@@ -131,21 +145,36 @@ class CampaignWorkflowService:
 
         Raises ValueError if the campaign or piece does not exist, and
         WorkflowConflictError if the piece has not yet been approved.
+
+        Retries once on a ``ConcurrentUpdateError`` (optimistic-lock conflict)
+        by re-reading the campaign and re-applying the note update.
         """
-        campaign = await self._store.get(campaign_id)
-        if campaign is None:
-            raise ValueError(f"Campaign {campaign_id} not found")
-        if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
-            raise ValueError("Content piece not found")
+        for attempt in range(2):
+            campaign = await self._store.get(campaign_id)
+            if campaign is None:
+                raise ValueError(f"Campaign {campaign_id} not found")
+            if campaign.content is None or not (0 <= piece_index < len(campaign.content.pieces)):
+                raise ValueError("Content piece not found")
 
-        piece = campaign.content.pieces[piece_index]
-        if piece.approval_status != ContentApprovalStatus.APPROVED:
-            raise WorkflowConflictError("Notes can only be updated on approved content pieces")
+            piece = campaign.content.pieces[piece_index]
+            if piece.approval_status != ContentApprovalStatus.APPROVED:
+                raise WorkflowConflictError("Notes can only be updated on approved content pieces")
 
-        piece.human_notes = notes
-        await self._store.update(campaign)
+            piece.human_notes = notes
 
-        return {"message": "Notes updated", "campaign_id": campaign_id, "piece_index": piece_index}
+            try:
+                await self._store.update(campaign)
+            except ConcurrentUpdateError:
+                if attempt == 0:
+                    logger.warning(
+                        "Optimistic lock conflict updating notes for piece %d of campaign %s — retrying",
+                        piece_index,
+                        campaign_id,
+                    )
+                    continue
+                raise
+
+            return {"message": "Notes updated", "campaign_id": campaign_id, "piece_index": piece_index}
 
 
 # ---------------------------------------------------------------------------

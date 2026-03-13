@@ -8,3 +8,7 @@ modules (e.g. agents) can raise these without creating circular imports.
 
 class WorkflowConflictError(Exception):
     """Raised when a workflow action is not valid for the current campaign status."""
+
+
+class ConcurrentUpdateError(Exception):
+    """Raised when optimistic locking detects a concurrent modification."""

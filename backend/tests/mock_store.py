@@ -48,6 +48,7 @@ class InMemoryCampaignStore:
 
     async def update(self, campaign: Campaign) -> Campaign:
         self._campaigns[campaign.id] = campaign
+        campaign.version += 1
         return campaign
 
     async def list_all(self) -> list[Campaign]:

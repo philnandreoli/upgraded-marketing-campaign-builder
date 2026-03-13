@@ -57,7 +57,7 @@ from backend.models.messages import (
 )
 from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
 from backend.infrastructure.campaign_store import CampaignStore, get_campaign_store
-from backend.core.exceptions import WorkflowConflictError
+from backend.core.exceptions import ConcurrentUpdateError, WorkflowConflictError
 from backend.infrastructure.workflow_checkpoint_store import (
     WorkflowCheckpointStore,
     get_workflow_checkpoint_store,
@@ -1165,8 +1165,47 @@ class CoordinatorAgent:
         event_name: str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> None:
-        """Persist the campaign and optionally emit an event."""
-        await self._store.update(campaign)
+        """Persist the campaign and optionally emit an event.
+
+        On a ``ConcurrentUpdateError`` (optimistic-lock conflict), the latest
+        version of the campaign is reloaded from the DB, the in-flight agent
+        output already set on *campaign* is merged onto the fresh copy, and the
+        save is retried once.  A second conflict is propagated to the caller.
+        """
+        try:
+            await self._store.update(campaign)
+        except ConcurrentUpdateError:
+            logger.warning(
+                "Optimistic lock conflict on campaign %s (version %s) — reloading and retrying",
+                campaign.id,
+                campaign.version,
+            )
+            fresh = await self._store.get(campaign.id)
+            if fresh is None:
+                raise
+            # Merge agent-set fields from *campaign* onto the fresh copy.
+            # We copy every field except identity/timing/version fields
+            # so that the pipeline's output (strategy, content, etc.) is
+            # preserved while the fresh DB version's metadata is kept.
+            for field in (
+                "status",
+                "clarification_questions",
+                "clarification_answers",
+                "strategy",
+                "content",
+                "channel_plan",
+                "analytics_plan",
+                "review",
+                "original_content",
+                "content_revision_count",
+                "stage_errors",
+            ):
+                setattr(fresh, field, getattr(campaign, field))
+            fresh.updated_at = datetime.utcnow()
+            await self._store.update(fresh)
+            # Update the caller's reference in-place so downstream code sees
+            # the incremented version number.
+            campaign.version = fresh.version
         if event_name:
             await self._emit(event_name, payload or {"campaign_id": campaign.id})
 
