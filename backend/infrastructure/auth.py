@@ -263,6 +263,12 @@ async def validate_token(token: str, db: AsyncSession) -> User:
         display_name: Optional[str] = payload.get("name")
         user_row = await _provision_user(db, user_id, email, display_name)
 
+        if not user_row.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account has been deactivated. Contact an administrator.",
+            )
+
         return User(
             id=user_row.id,
             email=user_row.email,

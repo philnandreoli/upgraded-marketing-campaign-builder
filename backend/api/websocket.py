@@ -182,6 +182,8 @@ async def _authenticate_ws_ticket(ticket: Optional[str]) -> Optional[User]:
     user = await store.get_user(entry["user_id"])
     if user is None:
         raise ValueError("User not found")
+    if not user.is_active:
+        raise ValueError("Account deactivated")
     return user
 
 

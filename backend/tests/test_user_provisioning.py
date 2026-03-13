@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from backend.services.database import Base, UserRow, WorkspaceMemberRow, WorkspaceRow
-from backend.services.auth import _provision_user
+from backend.services.auth import _provision_user, validate_token
 
 
 # ---------------------------------------------------------------------------
@@ -195,3 +195,89 @@ class TestProvisionUser:
         )
         workspaces = result.scalars().all()
         assert len(workspaces) == 1
+
+
+# ---------------------------------------------------------------------------
+# validate_token — deactivated user check
+# ---------------------------------------------------------------------------
+
+class TestValidateTokenDeactivatedUser:
+    """validate_token must return HTTP 403 when the user's account is inactive."""
+
+    async def test_deactivated_user_raises_403(self, db_session):
+        """A user with is_active=False triggers a 403 Forbidden response."""
+        from fastapi import HTTPException
+
+        # Build a fake UserRow with is_active=False to be returned by _provision_user.
+        deactivated_row = UserRow(
+            id="deactivated-user",
+            email="deactivated@example.com",
+            display_name="Deactivated",
+            role="viewer",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            is_active=False,
+        )
+
+        # Mock the signing key lookup so JWT decoding succeeds.
+        mock_jwk = MagicMock()
+        mock_jwk.key_id = "test-kid"
+        mock_jwk.key = MagicMock()
+        mock_jwks = MagicMock()
+        mock_jwks.keys = [mock_jwk]
+
+        fake_payload = {
+            "oid": "deactivated-user",
+            "preferred_username": "deactivated@example.com",
+            "name": "Deactivated",
+        }
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "test-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", return_value=fake_payload), \
+             patch("backend.infrastructure.auth._provision_user", new_callable=AsyncMock, return_value=deactivated_row):
+
+            with pytest.raises(HTTPException) as exc_info:
+                await validate_token("fake.jwt.token", db_session)
+
+        assert exc_info.value.status_code == 403
+        assert "deactivated" in exc_info.value.detail.lower()
+
+    async def test_active_user_returns_user_object(self, db_session):
+        """An active user passes the is_active check and returns a User."""
+        from backend.models.user import User
+
+        active_row = UserRow(
+            id="active-user",
+            email="active@example.com",
+            display_name="Active",
+            role="viewer",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            is_active=True,
+        )
+
+        mock_jwk = MagicMock()
+        mock_jwk.key_id = "test-kid"
+        mock_jwk.key = MagicMock()
+        mock_jwks = MagicMock()
+        mock_jwks.keys = [mock_jwk]
+
+        fake_payload = {
+            "oid": "active-user",
+            "preferred_username": "active@example.com",
+            "name": "Active",
+        }
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "test-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", return_value=fake_payload), \
+             patch("backend.infrastructure.auth._provision_user", new_callable=AsyncMock, return_value=active_row):
+
+            user = await validate_token("fake.jwt.token", db_session)
+
+        assert isinstance(user, User)
+        assert user.id == "active-user"
+        assert user.is_active is True
