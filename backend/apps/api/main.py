@@ -50,30 +50,6 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 setup_tracing()
 
-
-def _check_cors_safety(app_env: str, allowed_origins: list[str]) -> None:
-    """Refuse to start when wildcard CORS origins are used outside development.
-
-    A wildcard origin combined with ``allow_credentials=True`` opens the API
-    to cross-origin data exfiltration (OWASP A01:2021 — Broken Access Control).
-    Set ``CORS_ALLOWED_ORIGINS`` to an explicit JSON array before deploying,
-    e.g. ``'["https://app.example.com"]'``.
-    """
-    if app_env != "development" and "*" in allowed_origins:
-        logger.critical(
-            "CORS_ALLOWED_ORIGINS contains wildcard '*' in non-development "
-            "environment (%s). Set explicit origins for production.",
-            app_env,
-        )
-        raise SystemExit(1)
-
-
-# ------------------------------------------------------------------
-# CORS safety guard — refuse to start in non-development environments
-# when the wildcard origin is still configured.
-# ------------------------------------------------------------------
-_check_cors_safety(settings.app.env, settings.cors.allowed_origins)
-
 app = FastAPI(
     title="Marketing Campaign Builder",
     description="AI-powered multi-agent system for building marketing campaigns",

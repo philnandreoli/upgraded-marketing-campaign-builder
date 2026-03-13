@@ -18,6 +18,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
+# Capture the real function before the autouse fixture patches it in the module
+# namespace, so TestCORSStartupGuard can call the original implementation.
+from backend.apps.api.startup import _check_cors_safety as _real_check_cors_safety
 
 
 # ---------------------------------------------------------------------------
@@ -26,9 +29,10 @@ from backend.main import app
 
 @pytest.fixture(autouse=True)
 def _patch_db_lifecycle():
-    """Prevent TestClient from triggering real DB init/close."""
+    """Prevent TestClient from triggering real DB init/close or CORS startup guard."""
     with patch("backend.apps.api.startup.init_db", new_callable=AsyncMock), \
-         patch("backend.apps.api.startup.close_db", new_callable=AsyncMock):
+         patch("backend.apps.api.startup.close_db", new_callable=AsyncMock), \
+         patch("backend.apps.api.startup._check_cors_safety"):
         yield
 
 
@@ -145,22 +149,16 @@ class TestCORSStartupGuard:
 
     def test_wildcard_raises_system_exit_in_production(self):
         """SystemExit(1) is raised when app_env=production and origins=['*']."""
-        from backend.apps.api.main import _check_cors_safety
-
         with pytest.raises(SystemExit) as exc_info:
-            _check_cors_safety("production", ["*"])
+            _real_check_cors_safety("production", ["*"])
         assert exc_info.value.code == 1
 
     def test_wildcard_allowed_in_development(self):
         """No SystemExit when app_env=development and origins=['*'] (the default)."""
-        from backend.apps.api.main import _check_cors_safety
-
         # Should not raise
-        _check_cors_safety("development", ["*"])
+        _real_check_cors_safety("development", ["*"])
 
     def test_explicit_origins_allowed_in_production(self):
         """No SystemExit when origins are explicit even in production."""
-        from backend.apps.api.main import _check_cors_safety
-
         # Should not raise
-        _check_cors_safety("production", ["https://app.example.com"])
+        _real_check_cors_safety("production", ["https://app.example.com"])
