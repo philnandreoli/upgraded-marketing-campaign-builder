@@ -254,7 +254,7 @@ class DatabaseSettings(BaseSettings):
         ),
     )
     url: str = Field(
-        default="postgresql+asyncpg://postgres:postgres@db:5432/campaigns",
+        default="",
         alias="DATABASE_URL",
         description="Database connection URL (local mode only).",
     )

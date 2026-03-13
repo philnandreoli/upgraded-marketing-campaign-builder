@@ -48,12 +48,10 @@ _ENTRA_TOKEN_SCOPE = "https://ossrdbms-aad.database.windows.net/.default"
 # ---------------------------------------------------------------------------
 
 # Kept as a module-level constant so that legacy imports and shims continue
-# to work.  In azure mode this reflects the local-development default and
-# should not be used directly; use get_connection_dsn() instead.
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@db:5432/campaigns",
-)
+# to work.  Must not have a hardcoded default — callers that need the URL in
+# local mode should go through _require_database_url() which fails fast with
+# a clear error if the variable is unset.
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # ---------------------------------------------------------------------------
 # Azure credential (lazy, module-level singleton)
@@ -70,6 +68,22 @@ _entra_credential: "DefaultAzureCredential | None" = None
 def _get_auth_mode() -> str:
     """Return the current database authentication mode (lower-cased)."""
     return os.getenv("DB_AUTH_MODE", _DB_AUTH_MODE_LOCAL).lower()
+
+
+def _require_database_url() -> str:
+    """Return ``DATABASE_URL``, raising :class:`RuntimeError` if it is unset.
+
+    Only called in local auth mode.  Azure mode uses managed-identity tokens
+    and does not need ``DATABASE_URL``.
+    """
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL environment variable is required when using "
+            "local database authentication. Set it in your .env file or "
+            "environment. "
+            "Example: postgresql+asyncpg://user:pass@host:5432/dbname"
+        )
+    return DATABASE_URL
 
 
 def _should_auto_migrate() -> bool:
@@ -143,7 +157,7 @@ def _create_engine():
 
     # Local / default: password-based DATABASE_URL.
     logger.debug("Database engine: local mode")
-    return create_async_engine(DATABASE_URL, echo=False, future=True)
+    return create_async_engine(_require_database_url(), echo=False, future=True)
 
 
 def get_connection_dsn() -> str:
@@ -159,7 +173,7 @@ def get_connection_dsn() -> str:
         database = os.getenv("AZURE_POSTGRES_DATABASE", "campaigns")
         user = os.getenv("AZURE_POSTGRES_USER", "")
         return f"postgresql://{user}@{host}/{database}"
-    return DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    return _require_database_url().replace("postgresql+asyncpg://", "postgresql://")
 
 
 def get_connection_password() -> "Callable[[], Coroutine[Any, Any, str]] | None":
@@ -356,7 +370,7 @@ def _make_alembic_config():
         # migrations/env.py will acquire the Entra token per connection.
         alembic_cfg.set_main_option("sqlalchemy.url", _build_azure_db_url())
     else:
-        alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL.replace("+asyncpg", ""))
+        alembic_cfg.set_main_option("sqlalchemy.url", _require_database_url().replace("+asyncpg", ""))
     return alembic_cfg
 
 
