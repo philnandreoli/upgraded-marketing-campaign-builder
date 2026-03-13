@@ -19,8 +19,7 @@ backend.apps.api.schemas.workflow.
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import User, UserRole

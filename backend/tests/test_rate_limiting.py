@@ -13,7 +13,7 @@ Verifies that:
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -126,7 +126,7 @@ _CAMPAIGN_PAYLOAD = {
 
 
 def _make_user_row(user_id: str, role: str = "admin") -> UserRow:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return UserRow(
         id=user_id,
         email=f"{user_id}@example.com",
