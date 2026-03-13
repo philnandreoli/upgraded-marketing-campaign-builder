@@ -214,6 +214,7 @@ class TestMakeStartupHandlerAutoResume:
         with (
             patch("backend.apps.api.startup.get_settings", return_value=mock_settings),
             patch("backend.apps.api.startup.init_db", new=AsyncMock()),
+            patch("backend.api.websocket.start_ticket_cleanup_task"),
             patch("backend.apps.api.startup.asyncio.ensure_future") as mock_future,
         ):
             handler = make_startup_handler(app)
@@ -235,6 +236,7 @@ class TestMakeStartupHandlerAutoResume:
         with (
             patch("backend.apps.api.startup.get_settings", return_value=mock_settings),
             patch("backend.apps.api.startup.init_db", new=AsyncMock()),
+            patch("backend.api.websocket.start_ticket_cleanup_task"),
             patch("backend.apps.api.startup.asyncio.ensure_future") as mock_future,
         ):
             handler = make_startup_handler(app)

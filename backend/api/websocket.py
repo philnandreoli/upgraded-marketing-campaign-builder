@@ -4,61 +4,53 @@ WebSocket endpoint for real-time pipeline updates.
 Clients connect to  ws://host/ws/{campaign_id}  (or /ws for all campaigns)
 and receive JSON messages as each pipeline stage starts / completes.
 
-When AUTH_ENABLED=True, a ``token`` query parameter is required:
-  ws://host/ws/{campaign_id}?token=<jwt>
+Authentication uses a short-lived, single-use opaque ticket:
 
-The connection is rejected with close code 4001 (Unauthorized) if the token
-is missing or invalid, and with 4003 (Forbidden) if the user does not have
-READ access to the requested campaign.
+  1. Client calls ``POST /api/ws/ticket`` (Bearer auth) to obtain a ticket.
+  2. Client connects using ``?ticket=<opaque>`` instead of the raw JWT.
+  3. Server validates and consumes the ticket on upgrade, then discards it.
 
-Security characteristics of the query-string token model
----------------------------------------------------------
-Passing the bearer token as a query parameter is the only mechanism
-available at the browser WebSocket API boundary — the ``WebSocket``
-constructor does not support custom request headers.  The implications are:
+The ticket is valid for 30 seconds and is single-use.  The connection is
+rejected with close code 4001 (Unauthorized) if the ticket is missing,
+expired, or has already been consumed, and with 4003 (Forbidden) if the
+user does not have READ access to the requested campaign.
 
-* **Nginx access logs**: By default nginx logs the full request URI,
-  including the query string.  The ``/ws`` location in ``nginx.conf``
-  sets ``access_log off`` to prevent tokens from being recorded.  Any
-  additional reverse-proxy or ingress layer in front of nginx must be
-  configured equivalently (e.g. Azure Application Gateway path rules,
-  Container App ingress log settings).
-
-* **Browser history / referrer**: The WebSocket URL is not stored in
-  browser history, and the ``Referer`` header is not sent for WebSocket
-  upgrades, so token leakage via those vectors is not a concern.
-
-* **TLS**: All production traffic must use ``wss://`` (TLS) so the token
-  is encrypted in transit.
-
-Follow-up (TODO): Replace query-string tokens with a short-lived,
-single-use ticket issued by a ``POST /ws/ticket`` endpoint.  The client
-exchanges a full bearer token for a ticket (opaque, short TTL, stored
-server-side) and then passes ``?ticket=<value>`` to the WebSocket
-upgrade.  This limits exposure because the ticket has no value outside
-the single upgrade request.  See issue #07 for details.
+This approach mitigates the OWASP A07:2021 risk of JWT leakage through
+reverse-proxy / CDN access logs, since the opaque ticket has no value
+outside the single WebSocket upgrade request.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import secrets
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from backend.config import get_settings
-from backend.models.user import User, UserRole
-from backend.infrastructure.auth import validate_token
+from backend.infrastructure.auth import require_authenticated
 from backend.infrastructure.campaign_store import get_campaign_store
-from backend.infrastructure.database import async_session
+from backend.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
+ticket_router = APIRouter(tags=["websocket"])
 
 # WebSocket close codes (application-defined range 4000-4999)
 _WS_UNAUTHORIZED = 4001
 _WS_FORBIDDEN = 4003
+
+# Ticket time-to-live (seconds)
+_TICKET_TTL_SECONDS = 30
+
+# In-memory single-use ticket store: ticket → {"user_id": str, "expires_at": datetime}
+# Tickets are popped (consumed) on first use. A background cleanup loop evicts
+# any tickets that were created but never redeemed.
+_ws_tickets: dict[str, dict] = {}
 
 
 class ConnectionManager:
@@ -148,22 +140,66 @@ manager = ConnectionManager()
 
 
 # ---------------------------------------------------------------------------
+# Ticket endpoint (HTTP REST — registered under /api/ws prefix)
+# ---------------------------------------------------------------------------
+
+@ticket_router.post("/ticket")
+async def create_ws_ticket(user: User = Depends(require_authenticated)) -> dict:
+    """Issue a short-lived, single-use ticket for WebSocket authentication.
+
+    The ticket is valid for 30 seconds and can only be used once.
+    Exchange it for a WebSocket connection via ``?ticket=<value>``.
+
+    Requires a valid Bearer token in the ``Authorization`` header.
+    """
+    ticket = secrets.token_urlsafe(32)
+    _ws_tickets[ticket] = {
+        "user_id": user.id,
+        "expires_at": datetime.utcnow() + timedelta(seconds=_TICKET_TTL_SECONDS),
+    }
+    return {"ticket": ticket}
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _authenticate_ws(token: Optional[str]) -> Optional[User]:
-    """Validate the WS token query param when auth is enabled.
+async def _authenticate_ws_ticket(ticket: Optional[str]) -> Optional[User]:
+    """Validate and consume a single-use WS ticket.
 
     Returns the authenticated User, or None when auth is disabled.
-    Raises an Exception (HTTPException) on invalid/missing token.
+    Raises ValueError on a missing, expired, or already-consumed ticket.
     """
     settings = get_settings()
     if not settings.oidc.enabled:
-        return None
-    if not token:
-        raise ValueError("Token required")
-    async with async_session() as db:
-        return await validate_token(token, db)
+        return None  # Auth disabled — local-dev / testing mode
+    if not ticket:
+        raise ValueError("Ticket required")
+    entry = _ws_tickets.pop(ticket, None)  # single-use: pop immediately
+    if not entry or entry["expires_at"] < datetime.utcnow():
+        raise ValueError("Invalid or expired ticket")
+    store = get_campaign_store()
+    user = await store.get_user(entry["user_id"])
+    if user is None:
+        raise ValueError("User not found")
+    return user
+
+
+async def _ticket_cleanup_loop() -> None:
+    """Background task: evict unredeemed expired tickets every 60 seconds."""
+    while True:
+        await asyncio.sleep(60)
+        now = datetime.utcnow()
+        expired = [k for k, v in list(_ws_tickets.items()) if v["expires_at"] < now]
+        for k in expired:
+            _ws_tickets.pop(k, None)
+        if expired:
+            logger.debug("WS ticket cleanup: removed %d expired tickets", len(expired))
+
+
+def start_ticket_cleanup_task() -> None:
+    """Schedule the background ticket-cleanup loop on the running event loop."""
+    asyncio.ensure_future(_ticket_cleanup_loop())
 
 
 # ---------------------------------------------------------------------------
@@ -171,15 +207,16 @@ async def _authenticate_ws(token: Optional[str]) -> Optional[User]:
 # ---------------------------------------------------------------------------
 
 @router.websocket("")
-async def ws_global(websocket: WebSocket, token: Optional[str] = None) -> None:
+async def ws_global(websocket: WebSocket, ticket: Optional[str] = None) -> None:
     """Subscribe to events for ALL campaigns (Dashboard).
 
-    Requires a valid JWT ``token`` query parameter when AUTH_ENABLED=True.
+    Requires a valid ``ticket`` query parameter when AUTH_ENABLED=True.
+    Obtain a ticket from ``POST /api/ws/ticket`` before connecting.
     Admins receive all events; other users receive only events for campaigns
     they are a member of.
     """
     try:
-        user = await _authenticate_ws(token)
+        user = await _authenticate_ws_ticket(ticket)
     except Exception:
         await websocket.close(code=_WS_UNAUTHORIZED)
         return
@@ -198,16 +235,17 @@ async def ws_global(websocket: WebSocket, token: Optional[str] = None) -> None:
 
 @router.websocket("/{campaign_id}")
 async def ws_campaign(
-    websocket: WebSocket, campaign_id: str, token: Optional[str] = None
+    websocket: WebSocket, campaign_id: str, ticket: Optional[str] = None
 ) -> None:
     """Subscribe to events for a specific campaign.
 
-    Requires a valid JWT ``token`` query parameter when AUTH_ENABLED=True.
+    Requires a valid ``ticket`` query parameter when AUTH_ENABLED=True.
+    Obtain a ticket from ``POST /api/ws/ticket`` before connecting.
     The user must be a member of the campaign (or an admin), otherwise the
     connection is rejected with close code 4003 (Forbidden).
     """
     try:
-        user = await _authenticate_ws(token)
+        user = await _authenticate_ws_ticket(ticket)
     except Exception:
         await websocket.close(code=_WS_UNAUTHORIZED)
         return

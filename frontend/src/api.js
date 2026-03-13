@@ -407,5 +407,27 @@ export async function getWsUrl(campaignId = null) {
   }
   const path = campaignId ? `${base}/ws/${campaignId}` : `${base}/ws`;
   const token = await getBearerToken();
-  return token ? `${path}?token=${encodeURIComponent(token)}` : path;
+  if (!token) {
+    // Auth disabled (local-dev) — connect without a ticket
+    return path;
+  }
+  // Exchange the JWT for a short-lived, single-use opaque ticket so that the
+  // full JWT never appears in the WebSocket upgrade URL (OWASP A07:2021).
+  try {
+    const resp = await fetch(`${API_BASE}/api/ws/ticket`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) {
+      throw new Error(`Ticket request failed: ${resp.status}`);
+    }
+    const { ticket } = await resp.json();
+    return `${path}?ticket=${encodeURIComponent(ticket)}`;
+  } catch (err) {
+    console.error("Failed to obtain WS ticket:", err);
+    // Fall back to a connection without auth — the server will reject it if
+    // auth is required, producing a clean 4001 close code rather than a
+    // silent hang.
+    return path;
+  }
 }

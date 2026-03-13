@@ -96,6 +96,10 @@ def make_startup_handler(app: object) -> Callable[[], None]:
             subscriber.start()
             app.state.event_subscriber = subscriber  # type: ignore[union-attr]
 
+        # Start the background task that evicts expired WS tickets.
+        from backend.api.websocket import start_ticket_cleanup_task  # noqa: PLC0415
+        start_ticket_cleanup_task()
+
         # Auto-resume stuck pipelines after a server restart.  This only
         # applies to the in-process executor (local dev / single-process
         # deployment) and can be disabled via AUTO_RESUME_ON_STARTUP=false.
