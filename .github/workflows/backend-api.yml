@@ -62,6 +62,7 @@ jobs:
           TRACING_ENABLED: "false"
           FOUNDRY_AGENTS_ENABLED: "false"
           AZURE_AI_PROJECT_ENDPOINT: "https://dummy.services.ai.azure.com/api/projects/test"
+          DATABASE_URL: "postgresql+asyncpg://localhost/testdb"
         run: pytest
 
   build-api-image:
