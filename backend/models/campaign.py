@@ -251,6 +251,10 @@ class Campaign(BaseModel):
         default_factory=dict,
         description="Maps stage key to error message when an agent fails.",
     )
+    version: int = Field(
+        default=1,
+        description="Optimistic locking counter incremented on every successful write.",
+    )
 
     def advance_status(self, new_status: CampaignStatus) -> None:
         self.status = new_status

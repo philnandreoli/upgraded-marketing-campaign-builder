@@ -27,6 +27,7 @@ from backend.models.messages import ClarificationResponse, ContentApprovalRespon
 from backend.models.user import User
 from backend.infrastructure.auth import get_current_user
 from backend.application.campaign_workflow_service import WorkflowConflictError, get_workflow_service
+from backend.core.exceptions import ConcurrentUpdateError
 from backend.infrastructure.workflow_executor import get_executor, WorkflowJob
 
 from backend.apps.api.dependencies import get_campaign_for_write
@@ -122,7 +123,7 @@ async def update_piece_decision(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except WorkflowConflictError as exc:
+    except (WorkflowConflictError, ConcurrentUpdateError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
 
@@ -148,7 +149,7 @@ async def update_piece_notes(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except WorkflowConflictError as exc:
+    except (WorkflowConflictError, ConcurrentUpdateError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
 

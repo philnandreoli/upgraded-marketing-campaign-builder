@@ -228,6 +228,7 @@ class CampaignRow(Base):
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
     workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True, index=True)
+    version = Column(Integer, nullable=False, default=1)
 
 
 class UserRow(Base):
