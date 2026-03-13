@@ -6,6 +6,8 @@ Validates that:
 - Configured allowed origins are respected: preflight for an allowed origin
   returns Access-Control-Allow-Origin and 204; for a disallowed origin the
   header is absent.
+- The application refuses to start (SystemExit) when a wildcard origin is
+  configured in a non-development environment.
 """
 
 from __future__ import annotations
@@ -30,11 +32,12 @@ def _patch_db_lifecycle():
         yield
 
 
-def _make_settings(allowed_origins: list[str]) -> MagicMock:
+def _make_settings(allowed_origins: list[str], app_env: str = "development") -> MagicMock:
     settings = MagicMock()
     settings.cors.allowed_origins = allowed_origins
     settings.oidc.enabled = False
     settings.app.log_level = "INFO"
+    settings.app.env = app_env
     return settings
 
 
@@ -95,8 +98,8 @@ class TestCORSMiddleware:
                 CORSMiddleware,
                 allow_origins=mock_settings.cors.allowed_origins,
                 allow_credentials=True,
-                allow_methods=["*"],
-                allow_headers=["*"],
+                allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+                allow_headers=["Authorization", "Content-Type", "Accept"],
             )
 
             @test_app.get("/ping")
@@ -120,8 +123,8 @@ class TestCORSMiddleware:
             CORSMiddleware,
             allow_origins=[allowed],
             allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "Accept"],
         )
 
         @test_app.get("/ping")
@@ -131,3 +134,33 @@ class TestCORSMiddleware:
         with TestClient(test_app) as client:
             resp = client.get("/ping", headers={"Origin": disallowed})
         assert "access-control-allow-origin" not in resp.headers
+
+
+# ---------------------------------------------------------------------------
+# Startup guard — wildcard CORS rejected in non-development environments
+# ---------------------------------------------------------------------------
+
+class TestCORSStartupGuard:
+    """Validate that the startup guard rejects wildcard origins outside dev."""
+
+    def test_wildcard_raises_system_exit_in_production(self):
+        """SystemExit(1) is raised when app_env=production and origins=['*']."""
+        from backend.apps.api.main import _check_cors_safety
+
+        with pytest.raises(SystemExit) as exc_info:
+            _check_cors_safety("production", ["*"])
+        assert exc_info.value.code == 1
+
+    def test_wildcard_allowed_in_development(self):
+        """No SystemExit when app_env=development and origins=['*'] (the default)."""
+        from backend.apps.api.main import _check_cors_safety
+
+        # Should not raise
+        _check_cors_safety("development", ["*"])
+
+    def test_explicit_origins_allowed_in_production(self):
+        """No SystemExit when origins are explicit even in production."""
+        from backend.apps.api.main import _check_cors_safety
+
+        # Should not raise
+        _check_cors_safety("production", ["https://app.example.com"])
