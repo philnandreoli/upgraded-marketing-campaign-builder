@@ -120,7 +120,7 @@ export default function Admin() {
   const [entraLoading, setEntraLoading] = useState(false);
   const [entraError, setEntraError] = useState(null);
   const [selectedEntraUser, setSelectedEntraUser] = useState(null);
-  const [provisionRole, setProvisionRole] = useState("viewer");
+  const [provisionRoles, setProvisionRoles] = useState(["viewer"]);
   const [provisionError, setProvisionError] = useState(null);
   const [provisionSuccess, setProvisionSuccess] = useState(null);
   const [provisioning, setProvisioning] = useState(false);
@@ -245,15 +245,15 @@ export default function Admin() {
         selectedEntraUser.id,
         selectedEntraUser.mail ?? selectedEntraUser.user_principal_name,
         selectedEntraUser.display_name,
-        [provisionRole],
+        provisionRoles,
       );
       setProvisionSuccess(
-        `${getEntraUserLabel(selectedEntraUser)} has been added as ${provisionRole}.`,
+        `${getEntraUserLabel(selectedEntraUser)} has been added as ${provisionRoles.map((r) => ROLE_LABELS[r]).join(", ")}.`,
       );
       setSelectedEntraUser(null);
       setEntraSearch("");
       setEntraResults([]);
-      setProvisionRole("viewer");
+      setProvisionRoles(["viewer"]);
       await fetchUsers("");
     } catch (err) {
       setProvisionError(err.message);
@@ -303,7 +303,7 @@ export default function Admin() {
               before they log in for the first time.
             </p>
 
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div className="ws-add-member-form" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", borderBottom: "none", marginBottom: 0, paddingBottom: 0 }}>
               {/* Directory search input + autocomplete */}
               <div style={{ position: "relative", flex: "1 1 260px", maxWidth: 400 }}>
                 <input
@@ -368,31 +368,51 @@ export default function Admin() {
                 )}
               </div>
 
-              {/* Role selector */}
-              <select
-                value={provisionRole}
-                onChange={(e) => setProvisionRole(e.target.value)}
-                disabled={provisioning}
-                style={{
-                  padding: "0.4rem 0.6rem",
-                  background: "var(--color-surface-2)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius)",
-                  color: "var(--color-text)",
-                  fontSize: "0.875rem",
-                }}
-                aria-label="Select role for new user"
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                ))}
-              </select>
+              {/* Role selector (multi-select pills) */}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                {ROLES.map((r) => {
+                  const isActive = provisionRoles.includes(r);
+                  const pillClass = [
+                    "role-pill",
+                    isActive ? "role-pill--active" : "",
+                    provisioning ? "role-pill--saving" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      className={pillClass}
+                      data-role={r}
+                      disabled={provisioning}
+                      onClick={() => {
+                        setProvisionRoles((prev) => {
+                          if (prev.includes(r)) {
+                            const next = prev.filter((x) => x !== r);
+                            return next.length === 0 ? prev : next;
+                          }
+                          const incomp = INCOMPATIBLE[r];
+                          return [...prev.filter((x) => x !== incomp), r];
+                        });
+                      }}
+                      aria-pressed={isActive}
+                      aria-label={isActive ? `Remove ${ROLE_LABELS[r]}` : `Add ${ROLE_LABELS[r]}`}
+                      title={isActive ? `Remove ${ROLE_LABELS[r]}` : `Add ${ROLE_LABELS[r]}`}
+                    >
+                      {isActive && <span className="role-pill__check">✓</span>}
+                      {ROLE_LABELS[r]}
+                    </button>
+                  );
+                })}
+              </span>
 
               {/* Add button */}
               <button
                 className="btn btn-primary"
                 style={{ padding: "0.4rem 1rem", fontSize: "0.875rem" }}
-                disabled={!selectedEntraUser || provisioning}
+                disabled={!selectedEntraUser || provisioning || provisionRoles.length === 0}
                 onClick={handleProvisionUser}
               >
                 {provisioning ? <><span className="spinner" style={{ width: 13, height: 13, marginRight: "0.4rem" }} />Adding…</> : "Add"}
