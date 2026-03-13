@@ -7,6 +7,8 @@ Endpoints:
   PATCH  /api/admin/users/{user_id}/role — Change a user's platform role
   DELETE /api/admin/users/{user_id}      — Deactivate a user (soft delete)
   GET    /api/admin/campaigns            — List all campaigns (admin view)
+  GET    /api/admin/entra/users          — Search Microsoft Entra ID directory
+  POST   /api/admin/users                — Pre-provision a user from Entra ID
 """
 
 from __future__ import annotations
@@ -24,10 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+from backend.config import get_settings
 from backend.models.user import User, UserRole, roles_from_db, roles_to_db
 from backend.infrastructure.auth import require_admin
 from backend.infrastructure.campaign_store import get_campaign_store
 from backend.infrastructure.database import CampaignMemberRow, UserRow, get_db
+from backend.infrastructure.graph import search_entra_users
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -39,6 +43,20 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 class RoleUpdateRequest(BaseModel):
     roles: list[str]
+
+
+class ProvisionUserRequest(BaseModel):
+    entra_id: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    roles: list[str] = ["viewer"]
+
+
+class EntraUserResult(BaseModel):
+    id: str
+    display_name: Optional[str] = None
+    mail: Optional[str] = None
+    user_principal_name: Optional[str] = None
 
 
 class UserListResponse(BaseModel):
@@ -214,6 +232,128 @@ async def deactivate_user(
     await db.commit()
 
     return Response(status_code=204)
+
+
+@router.get("/entra/users", response_model=list[EntraUserResult])
+async def search_entra_directory(
+    search: str = Query(description="Name or email prefix to search for in Entra ID"),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[EntraUserResult]:
+    """Search Microsoft Entra ID for users matching the given name/email prefix.
+
+    Returns matching directory users that have NOT yet been provisioned in the
+    local database. Requires ``AZURE_CLIENT_SECRET`` to be configured.
+    """
+    settings = get_settings()
+
+    if not settings.oidc.graph_client_secret:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Entra ID directory search is not configured. "
+                "Set AZURE_CLIENT_SECRET, OIDC_AUTHORITY, and OIDC_CLIENT_ID "
+                "to enable this feature."
+            ),
+        )
+
+    if not search or not search.strip():
+        return []
+
+    try:
+        entra_users = await search_entra_users(
+            search=search.strip(),
+            authority=settings.oidc.authority,
+            client_id=settings.oidc.client_id,
+            client_secret=settings.oidc.graph_client_secret,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Graph API search failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to query the Entra ID directory. Check the server logs for details.",
+        ) from exc
+
+    if not entra_users:
+        return []
+
+    # Exclude users that are already provisioned in the local database.
+    entra_ids = [u["id"] for u in entra_users]
+    result = await db.execute(select(UserRow.id).where(UserRow.id.in_(entra_ids)))
+    existing_ids = {row for (row,) in result.all()}
+
+    return [
+        EntraUserResult(
+            id=u["id"],
+            display_name=u.get("displayName"),
+            mail=u.get("mail"),
+            user_principal_name=u.get("userPrincipalName"),
+        )
+        for u in entra_users
+        if u["id"] not in existing_ids
+    ]
+
+
+@router.post("/users", response_model=UserListResponse, status_code=201)
+async def provision_user(
+    body: ProvisionUserRequest,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> UserListResponse:
+    """Pre-provision a user from Entra ID with the specified roles.
+
+    Creates a ``UserRow`` using the Entra object ID so that the JIT
+    provisioning flow (``_provision_user`` in auth.py) will find the
+    pre-created record on the user's first login.
+    """
+    # Validate roles
+    try:
+        new_roles = [UserRole(r) for r in body.roles]
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid role(s): {body.roles!r}")
+
+    if not new_roles:
+        raise HTTPException(status_code=422, detail="At least one role is required.")
+
+    if UserRole.CAMPAIGN_BUILDER in new_roles and UserRole.VIEWER in new_roles:
+        raise HTTPException(
+            status_code=422,
+            detail="A user cannot be both a campaign_builder and a viewer.",
+        )
+
+    # Check for duplicate
+    existing = await db.get(UserRow, body.entra_id)
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A user with id '{body.entra_id}' already exists in the platform.",
+        )
+
+    now = datetime.utcnow()
+    row = UserRow(
+        id=body.entra_id,
+        email=body.email,
+        display_name=body.display_name,
+        role=roles_to_db(new_roles),
+        created_at=now,
+        updated_at=now,
+        is_active=True,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+
+    return UserListResponse(
+        id=row.id,
+        email=row.email,
+        display_name=row.display_name,
+        roles=[v.strip() for v in row.role.split(",") if v.strip()],
+        is_active=row.is_active,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 @router.get("/campaigns")

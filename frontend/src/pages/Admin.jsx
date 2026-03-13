@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns, listWorkspaces, moveCampaign } from "../api";
+import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns, listWorkspaces, moveCampaign, searchEntraUsers, provisionUser } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 
 const ROLES = ["admin", "campaign_builder", "viewer"];
@@ -93,6 +93,11 @@ function RoleCheckboxes({ userId, currentRoles, onRolesChange, disabled = false 
   );
 }
 
+/** Return the best human-readable label for an Entra ID directory user. */
+function getEntraUserLabel(user) {
+  return user.display_name ?? user.mail ?? user.user_principal_name ?? user.id;
+}
+
 export default function Admin() {
   const [users, setUsers] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -108,6 +113,18 @@ export default function Admin() {
   const [moveError, setMoveError] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
   const navigate = useNavigate();
+
+  // Entra ID directory search state
+  const [entraSearch, setEntraSearch] = useState("");
+  const [entraResults, setEntraResults] = useState([]);
+  const [entraLoading, setEntraLoading] = useState(false);
+  const [entraError, setEntraError] = useState(null);
+  const [selectedEntraUser, setSelectedEntraUser] = useState(null);
+  const [provisionRole, setProvisionRole] = useState("viewer");
+  const [provisionError, setProvisionError] = useState(null);
+  const [provisionSuccess, setProvisionSuccess] = useState(null);
+  const [provisioning, setProvisioning] = useState(false);
+  const entraSearchTimer = useRef(null);
 
   const fetchUsers = useCallback(async (term = "") => {
     setLoadingUsers(true);
@@ -185,6 +202,66 @@ export default function Admin() {
     }
   };
 
+  const handleEntraSearchChange = (e) => {
+    const val = e.target.value;
+    setEntraSearch(val);
+    setSelectedEntraUser(null);
+    setEntraError(null);
+    setProvisionSuccess(null);
+
+    if (entraSearchTimer.current) clearTimeout(entraSearchTimer.current);
+    if (!val.trim()) {
+      setEntraResults([]);
+      return;
+    }
+    entraSearchTimer.current = setTimeout(async () => {
+      setEntraLoading(true);
+      try {
+        setEntraResults(await searchEntraUsers(val.trim()));
+      } catch (err) {
+        setEntraError(err.message);
+        setEntraResults([]);
+      } finally {
+        setEntraLoading(false);
+      }
+    }, 400);
+  };
+
+  const handleSelectEntraUser = (user) => {
+    setSelectedEntraUser(user);
+    setEntraResults([]);
+    setEntraSearch(getEntraUserLabel(user));
+    setProvisionError(null);
+    setProvisionSuccess(null);
+  };
+
+  const handleProvisionUser = async () => {
+    if (!selectedEntraUser) return;
+    setProvisioning(true);
+    setProvisionError(null);
+    setProvisionSuccess(null);
+    try {
+      await provisionUser(
+        selectedEntraUser.id,
+        selectedEntraUser.mail ?? selectedEntraUser.user_principal_name,
+        selectedEntraUser.display_name,
+        [provisionRole],
+      );
+      setProvisionSuccess(
+        `${getEntraUserLabel(selectedEntraUser)} has been added as ${provisionRole}.`,
+      );
+      setSelectedEntraUser(null);
+      setEntraSearch("");
+      setEntraResults([]);
+      setProvisionRole("viewer");
+      await fetchUsers("");
+    } catch (err) {
+      setProvisionError(err.message);
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
   const formatDate = (iso) => {
     if (!iso) return "—";
     return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -214,6 +291,129 @@ export default function Admin() {
         <>
           <div className="section-header">
             <h2>User Management</h2>
+          </div>
+
+          {/* ── Add User from Directory ──────────────────────────────── */}
+          <div className="card" style={{ marginBottom: "1rem" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem", fontWeight: 600 }}>
+              Add User from Directory
+            </h3>
+            <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)", marginBottom: "0.75rem" }}>
+              Search your Microsoft Entra ID directory to pre-provision a user with a specific role
+              before they log in for the first time.
+            </p>
+
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+              {/* Directory search input + autocomplete */}
+              <div style={{ position: "relative", flex: "1 1 260px", maxWidth: 400 }}>
+                <input
+                  type="search"
+                  placeholder="Search by name or email…"
+                  value={entraSearch}
+                  onChange={handleEntraSearchChange}
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  aria-label="Search Entra ID directory"
+                  aria-expanded={entraResults.length > 0}
+                  aria-haspopup="listbox"
+                />
+                {entraLoading && (
+                  <span
+                    className="spinner"
+                    style={{ position: "absolute", right: "0.6rem", top: "50%", transform: "translateY(-50%)", width: 14, height: 14 }}
+                  />
+                )}
+                {entraResults.length > 0 && (
+                  <ul
+                    role="listbox"
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 4px)",
+                      left: 0,
+                      right: 0,
+                      zIndex: 50,
+                      margin: 0,
+                      padding: "0.25rem 0",
+                      listStyle: "none",
+                      background: "var(--color-surface)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius)",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                      maxHeight: 240,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {entraResults.map((u) => (
+                      <li
+                        key={u.id}
+                        role="option"
+                        aria-selected={selectedEntraUser?.id === u.id}
+                        onClick={() => handleSelectEntraUser(u)}
+                        style={{
+                          padding: "0.5rem 0.75rem",
+                          cursor: "pointer",
+                          fontSize: "0.875rem",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--color-surface-2)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "")}
+                      >
+                        <span style={{ fontWeight: 500 }}>{getEntraUserLabel(u)}</span>
+                        {(u.mail ?? u.user_principal_name) && (
+                          <span style={{ marginLeft: "0.4rem", color: "var(--color-text-muted)", fontSize: "0.8rem" }}>
+                            {u.mail ?? u.user_principal_name}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* Role selector */}
+              <select
+                value={provisionRole}
+                onChange={(e) => setProvisionRole(e.target.value)}
+                disabled={provisioning}
+                style={{
+                  padding: "0.4rem 0.6rem",
+                  background: "var(--color-surface-2)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius)",
+                  color: "var(--color-text)",
+                  fontSize: "0.875rem",
+                }}
+                aria-label="Select role for new user"
+              >
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                ))}
+              </select>
+
+              {/* Add button */}
+              <button
+                className="btn btn-primary"
+                style={{ padding: "0.4rem 1rem", fontSize: "0.875rem" }}
+                disabled={!selectedEntraUser || provisioning}
+                onClick={handleProvisionUser}
+              >
+                {provisioning ? <><span className="spinner" style={{ width: 13, height: 13, marginRight: "0.4rem" }} />Adding…</> : "Add"}
+              </button>
+            </div>
+
+            {entraError && (
+              <p style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "var(--color-danger)" }}>
+                ⚠ {entraError}
+              </p>
+            )}
+            {provisionError && (
+              <p style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "var(--color-danger)" }}>
+                ⚠ {provisionError}
+              </p>
+            )}
+            {provisionSuccess && (
+              <p style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "var(--color-success)" }}>
+                ✓ {provisionSuccess}
+              </p>
+            )}
           </div>
 
           <div className="card">

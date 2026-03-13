@@ -472,3 +472,244 @@ class TestListAllCampaigns:
 
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_db, None)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/admin/entra/users
+# ---------------------------------------------------------------------------
+
+
+class TestSearchEntraDirectory:
+    async def test_returns_501_when_graph_not_configured(self, admin_client):
+        """Returns 501 when AZURE_CLIENT_SECRET is not set."""
+        client, _ = admin_client
+        r = await client.get("/api/admin/entra/users?search=alice")
+        assert r.status_code == 501
+        assert "not configured" in r.json()["detail"].lower()
+
+    async def test_returns_empty_list_when_search_is_blank(self, admin_client):
+        """Returns empty list when the search term is blank."""
+        client, _ = admin_client
+        from unittest.mock import MagicMock
+        from backend.config import OIDCSettings, Settings
+
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.oidc = MagicMock(spec=OIDCSettings)
+        mock_settings.oidc.graph_client_secret = "secret"
+        mock_settings.oidc.authority = "https://login.microsoftonline.com/tenant-id/v2.0"
+        mock_settings.oidc.client_id = "client-id"
+
+        with patch("backend.api.admin.get_settings", return_value=mock_settings):
+            r = await client.get("/api/admin/entra/users?search=  ")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    async def test_returns_entra_users_excluding_existing(self, admin_client, db_session):
+        """Returns Entra users filtered to exclude those already in the local DB."""
+        client, _ = admin_client
+        # Pre-provision one of the Entra users in the local DB
+        db_session.add(_make_user_row("entra-already-exists", email="existing@example.com"))
+        await db_session.commit()
+
+        from unittest.mock import MagicMock
+        from backend.config import OIDCSettings, Settings
+
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.oidc = MagicMock(spec=OIDCSettings)
+        mock_settings.oidc.graph_client_secret = "secret"
+        mock_settings.oidc.authority = "https://login.microsoftonline.com/tenant-id/v2.0"
+        mock_settings.oidc.client_id = "client-id"
+
+        entra_results = [
+            {"id": "entra-already-exists", "displayName": "Alice", "mail": "existing@example.com", "userPrincipalName": "existing@example.com"},
+            {"id": "entra-new-user", "displayName": "Bob", "mail": "bob@example.com", "userPrincipalName": "bob@example.com"},
+        ]
+
+        with (
+            patch("backend.api.admin.get_settings", return_value=mock_settings),
+            patch("backend.api.admin.search_entra_users", new=AsyncMock(return_value=entra_results)),
+        ):
+            r = await client.get("/api/admin/entra/users?search=b")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "entra-new-user"
+        assert data[0]["display_name"] == "Bob"
+
+    async def test_returns_502_when_graph_api_fails(self, admin_client):
+        """Returns 502 when the Graph API call raises an exception."""
+        client, _ = admin_client
+
+        from unittest.mock import MagicMock
+        from backend.config import OIDCSettings, Settings
+
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.oidc = MagicMock(spec=OIDCSettings)
+        mock_settings.oidc.graph_client_secret = "secret"
+        mock_settings.oidc.authority = "https://login.microsoftonline.com/tenant-id/v2.0"
+        mock_settings.oidc.client_id = "client-id"
+
+        with (
+            patch("backend.api.admin.get_settings", return_value=mock_settings),
+            patch("backend.api.admin.search_entra_users", new=AsyncMock(side_effect=Exception("network error"))),
+        ):
+            r = await client.get("/api/admin/entra/users?search=alice")
+
+        assert r.status_code == 502
+
+    async def test_returns_403_for_non_admin(self, db_engine):
+        """Non-admin users cannot search Entra directory."""
+        session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+
+        async def override_get_db():
+            async with session_factory() as session:
+                yield session
+
+        app.dependency_overrides[get_current_user] = lambda: _VIEWER_USER
+        app.dependency_overrides[get_db] = override_get_db
+
+        with (
+            patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+            patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
+        ):
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.get("/api/admin/entra/users?search=alice")
+        assert r.status_code == 403
+
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/admin/users
+# ---------------------------------------------------------------------------
+
+
+class TestProvisionUser:
+    async def test_provisions_user_successfully(self, admin_client, db_session):
+        """Admin can pre-provision a new user with a specific role."""
+        client, _ = admin_client
+        r = await client.post(
+            "/api/admin/users",
+            json={
+                "entra_id": "entra-abc-123",
+                "email": "alice@example.com",
+                "display_name": "Alice",
+                "roles": ["campaign_builder"],
+            },
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["id"] == "entra-abc-123"
+        assert data["email"] == "alice@example.com"
+        assert data["display_name"] == "Alice"
+        assert data["roles"] == ["campaign_builder"]
+        assert data["is_active"] is True
+
+    async def test_provisions_user_with_admin_role(self, admin_client, db_session):
+        """Admin can provision a user with admin role."""
+        client, _ = admin_client
+        r = await client.post(
+            "/api/admin/users",
+            json={
+                "entra_id": "entra-admin-user",
+                "email": "admin2@example.com",
+                "display_name": "Second Admin",
+                "roles": ["admin"],
+            },
+        )
+        assert r.status_code == 201
+        assert r.json()["roles"] == ["admin"]
+
+    async def test_defaults_to_viewer_role(self, admin_client):
+        """Provisioned user defaults to viewer role if roles not specified."""
+        client, _ = admin_client
+        r = await client.post(
+            "/api/admin/users",
+            json={
+                "entra_id": "entra-viewer-user",
+                "email": "viewer@example.com",
+                "display_name": "Viewer User",
+            },
+        )
+        assert r.status_code == 201
+        assert r.json()["roles"] == ["viewer"]
+
+    async def test_returns_409_when_user_already_exists(self, admin_client, db_session):
+        """Returns 409 if a user with that Entra ID already exists."""
+        client, _ = admin_client
+        db_session.add(_make_user_row("entra-dup", email="dup@example.com"))
+        await db_session.commit()
+
+        r = await client.post(
+            "/api/admin/users",
+            json={"entra_id": "entra-dup", "email": "dup@example.com", "roles": ["viewer"]},
+        )
+        assert r.status_code == 409
+        assert "already exists" in r.json()["detail"].lower()
+
+    async def test_returns_422_for_invalid_role(self, admin_client):
+        """Returns 422 when an invalid role string is supplied."""
+        client, _ = admin_client
+        r = await client.post(
+            "/api/admin/users",
+            json={"entra_id": "entra-xyz", "roles": ["superuser"]},
+        )
+        assert r.status_code == 422
+
+    async def test_returns_422_for_conflicting_roles(self, admin_client):
+        """Returns 422 when campaign_builder and viewer are both specified."""
+        client, _ = admin_client
+        r = await client.post(
+            "/api/admin/users",
+            json={"entra_id": "entra-xyz", "roles": ["campaign_builder", "viewer"]},
+        )
+        assert r.status_code == 422
+
+    async def test_persists_user_in_database(self, admin_client, db_session):
+        """The provisioned user is persisted in the database."""
+        client, _ = admin_client
+        r = await client.post(
+            "/api/admin/users",
+            json={
+                "entra_id": "entra-persist",
+                "email": "persist@example.com",
+                "display_name": "Persist Test",
+                "roles": ["viewer"],
+            },
+        )
+        assert r.status_code == 201
+
+        row = await db_session.get(UserRow, "entra-persist")
+        await db_session.refresh(row)
+        assert row is not None
+        assert row.email == "persist@example.com"
+        assert row.is_active is True
+
+    async def test_returns_403_for_non_admin(self, db_engine):
+        """Non-admin users cannot provision users."""
+        session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+
+        async def override_get_db():
+            async with session_factory() as session:
+                yield session
+
+        app.dependency_overrides[get_current_user] = lambda: _VIEWER_USER
+        app.dependency_overrides[get_db] = override_get_db
+
+        with (
+            patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
+            patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
+        ):
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.post(
+                    "/api/admin/users",
+                    json={"entra_id": "xyz", "roles": ["viewer"]},
+                )
+        assert r.status_code == 403
+
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)

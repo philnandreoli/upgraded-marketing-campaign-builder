@@ -4,6 +4,7 @@ Uses pydantic-settings for validation and type coercion.
 """
 
 from functools import lru_cache
+from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -81,6 +82,15 @@ class OIDCSettings(BaseSettings):
         default=3600,
         alias="OIDC_JWKS_CACHE_TTL",
         description="Seconds to cache the OIDC provider's public keys (default: 3600).",
+    )
+    graph_client_secret: Optional[str] = Field(
+        default=None,
+        alias="AZURE_CLIENT_SECRET",
+        description=(
+            "Client secret for Microsoft Graph API access (application permissions). "
+            "Required to enable the Entra ID user directory search feature. "
+            "The app registration must have User.Read.All application permission with admin consent granted."
+        ),
     )
 
     model_config = {"env_file": ".env", "extra": "ignore"}

@@ -232,6 +232,25 @@ export async function moveCampaign(campaignId, workspaceId) {
   return res.json();
 }
 
+export async function searchEntraUsers(search) {
+  const res = await fetch(
+    `${API_BASE}/api/admin/entra/users?search=${encodeURIComponent(search)}`,
+    { headers: await authHeaders() },
+  );
+  if (!res.ok) throw new Error(`Entra search failed: ${res.status}`);
+  return res.json();
+}
+
+export async function provisionUser(entraId, email, displayName, roles) {
+  const res = await fetch(`${API_BASE}/api/admin/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ entra_id: entraId, email, display_name: displayName, roles }),
+  });
+  if (!res.ok) throw new Error(`Provision user failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Campaign member management API
 // ---------------------------------------------------------------------------
