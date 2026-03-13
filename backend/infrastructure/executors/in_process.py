@@ -16,6 +16,7 @@ from backend.orchestration.coordinator_agent import CoordinatorAgent
 from backend.api.websocket import manager as ws_manager
 from backend.infrastructure.campaign_store import get_campaign_store
 from backend.infrastructure.event_publisher import InProcessEventPublisher
+from backend.infrastructure.event_store import get_event_store
 from backend.infrastructure.workflow_executor import WorkflowJob
 
 logger = logging.getLogger(__name__)
@@ -77,9 +78,23 @@ class InProcessExecutor:
         re-raised so that a pipeline failure never kills the event loop.
         """
         publisher = InProcessEventPublisher(ws_manager)
+        event_store = get_event_store()
 
         async def _broadcast(event: str, data: dict[str, Any]) -> None:
             await publisher.publish(event, data)
+            campaign_id = data.get("campaign_id") or job.campaign_id
+            stage = data.get("stage")
+            owner_id = data.get("owner_id")
+            try:
+                await event_store.save_event(
+                    campaign_id=campaign_id,
+                    event_type=event,
+                    payload=data,
+                    stage=stage,
+                    owner_id=owner_id,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("EventStore.save_event failed for event %s", event)
 
         coordinator = CoordinatorAgent(on_event=_broadcast)
         store = get_campaign_store()
