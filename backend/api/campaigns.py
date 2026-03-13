@@ -7,6 +7,7 @@ Endpoints:
   GET    /api/campaigns           — List all campaigns
   GET    /api/campaigns/{id}      — Get a single campaign
   DELETE /api/campaigns/{id}      — Delete a campaign
+  GET    /api/campaigns/{id}/events — Get persisted event log for a campaign
 
 Workflow command routes live in campaign_workflow.py.
 Member management routes live in campaign_members.py.
@@ -20,14 +21,16 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import User, UserRole
 from backend.models.workspace import WorkspaceRole
+from backend.models.events import CampaignEventLog
 from backend.infrastructure.auth import get_current_user
 from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.event_store import get_event_store
 from backend.application.campaign_workflow_service import get_workflow_service
 from backend.infrastructure.workflow_executor import get_executor, WorkflowJob
 import asyncio
@@ -238,3 +241,18 @@ async def assign_campaign_workspace(
         if ws:
             data["workspace"] = {"id": ws.id, "name": ws.name, "is_personal": ws.is_personal}
     return data
+
+
+@router.get("/campaigns/{campaign_id}/events", response_model=list[CampaignEventLog])
+async def get_campaign_events(
+    campaign: Campaign = Depends(get_campaign_for_read),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[CampaignEventLog]:
+    """Return persisted pipeline event logs for a campaign.
+
+    Events are ordered chronologically (oldest first).  Use ``limit`` and
+    ``offset`` to paginate through large histories.
+    """
+    store = get_event_store()
+    return await store.get_events(campaign.id, limit=limit, offset=offset)

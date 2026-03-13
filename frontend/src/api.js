@@ -91,6 +91,16 @@ export async function getCampaign(id) {
   return res.json();
 }
 
+export async function getCampaignEvents(campaignId, { limit = 100, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit, offset });
+  const res = await fetch(
+    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/events?${params}`,
+    { headers: await authHeaders() }
+  );
+  if (!res.ok) throw new Error(`Get events failed: ${res.status}`);
+  return res.json();
+}
+
 export async function deleteCampaign(id) {
   const res = await fetch(`${API_BASE}/api/campaigns/${id}`, {
     method: "DELETE",

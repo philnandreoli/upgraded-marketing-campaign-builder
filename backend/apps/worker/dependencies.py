@@ -12,6 +12,7 @@ from typing import Any
 
 from backend.config import get_settings
 from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.event_store import get_event_store
 from backend.infrastructure.workflow_executor import WorkflowJob
 from backend.orchestration.coordinator_agent import CoordinatorAgent
 
@@ -68,6 +69,8 @@ async def execute_job(job: WorkflowJob) -> None:
     Creates a fresh ``CoordinatorAgent`` with a ``PostgresEventPublisher``
     so that real-time pipeline events are forwarded to the API process via
     PostgreSQL LISTEN/NOTIFY and then relayed to WebSocket clients.
+    Each event is also persisted to the ``campaign_events`` table via
+    ``EventStore`` so that the audit trail survives browser refreshes.
     """
     from backend.infrastructure.database import engine  # noqa: PLC0415
     from backend.infrastructure.event_publisher import PostgresEventPublisher  # noqa: PLC0415
@@ -77,9 +80,23 @@ async def execute_job(job: WorkflowJob) -> None:
         engine,
         channel_name=settings.events.channel_name,
     )
+    event_store = get_event_store()
 
     async def _on_event(event: str, data: dict) -> None:
         await publisher.publish(event, data)
+        campaign_id = data.get("campaign_id", job.campaign_id)
+        stage = data.get("stage")
+        owner_id = data.get("owner_id")
+        try:
+            await event_store.save_event(
+                campaign_id=campaign_id,
+                event_type=event,
+                payload=data,
+                stage=stage,
+                owner_id=owner_id,
+            )
+        except Exception:
+            logger.exception("EventStore.save_event failed for event %s", event)
 
     coordinator = CoordinatorAgent(on_event=_on_event)
     store = get_campaign_store()

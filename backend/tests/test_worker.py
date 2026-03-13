@@ -214,6 +214,99 @@ class TestDispatchRouting:
         assert kwargs.get("on_event") is not None
         assert callable(kwargs["on_event"])
 
+    async def test_on_event_persists_to_event_store(self):
+        """_on_event callback must also save the event to EventStore."""
+        from backend.apps.worker.dependencies import execute_job
+
+        mock_coord = MagicMock()
+        mock_coord.run_pipeline = AsyncMock()
+        mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=MagicMock())
+        mock_event_store = MagicMock()
+        mock_event_store.save_event = AsyncMock(return_value="evt-uuid-1")
+        mock_publisher = MagicMock()
+        mock_publisher.publish = AsyncMock()
+
+        captured_on_event = {}
+
+        def _capture_coord(**kwargs):
+            captured_on_event["fn"] = kwargs.get("on_event")
+            return mock_coord
+
+        with (
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                side_effect=_capture_coord,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_event_store",
+                return_value=mock_event_store,
+            ),
+            patch(
+                "backend.infrastructure.event_publisher.PostgresEventPublisher",
+                return_value=mock_publisher,
+            ),
+        ):
+            await execute_job(_make_job("start_pipeline", "camp-42"))
+
+        # Now invoke the captured callback to verify it calls save_event
+        on_event = captured_on_event.get("fn")
+        assert on_event is not None
+        await on_event("pipeline_started", {"campaign_id": "camp-42", "stage": "strategy"})
+        mock_event_store.save_event.assert_awaited_once()
+        call_kwargs = mock_event_store.save_event.call_args
+        assert call_kwargs.kwargs.get("campaign_id") == "camp-42" or (
+            call_kwargs.args and call_kwargs.args[0] == "camp-42"
+        )
+
+    async def test_on_event_save_failure_does_not_propagate(self):
+        """Errors from EventStore.save_event must be caught, not re-raised."""
+        from backend.apps.worker.dependencies import execute_job
+
+        mock_coord = MagicMock()
+        mock_coord.run_pipeline = AsyncMock()
+        mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=MagicMock())
+        mock_event_store = MagicMock()
+        mock_event_store.save_event = AsyncMock(side_effect=RuntimeError("db down"))
+        mock_publisher = MagicMock()
+        mock_publisher.publish = AsyncMock()
+
+        captured_on_event = {}
+
+        def _capture_coord(**kwargs):
+            captured_on_event["fn"] = kwargs.get("on_event")
+            return mock_coord
+
+        with (
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                side_effect=_capture_coord,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_event_store",
+                return_value=mock_event_store,
+            ),
+            patch(
+                "backend.infrastructure.event_publisher.PostgresEventPublisher",
+                return_value=mock_publisher,
+            ),
+        ):
+            await execute_job(_make_job("start_pipeline", "camp-42"))
+
+        on_event = captured_on_event.get("fn")
+        assert on_event is not None
+        # Should not raise even though EventStore.save_event fails
+        await on_event("pipeline_started", {"campaign_id": "camp-42"})
+
     async def test_resume_pipeline_calls_resume(self):
         from backend.apps.worker.dependencies import execute_job
 

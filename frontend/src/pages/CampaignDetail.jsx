@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getCampaign } from "../api";
+import { getCampaign, getCampaignEvents } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import StrategySection from "../components/StrategySection.jsx";
 import ContentSection from "../components/ContentSection.jsx";
@@ -58,6 +58,7 @@ export default function CampaignDetail() {
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
   const [badgePulse, setBadgePulse] = useState(false);
+  const [historicalEvents, setHistoricalEvents] = useState([]);
   const { events } = useWebSocket(id);
   const { isViewer, isAdmin, user } = useUser();
   const prevStatusRef = useRef(null);
@@ -77,6 +78,26 @@ export default function CampaignDetail() {
     } catch (err) {
       setError(err.message);
     }
+  }, [id]);
+
+  // Load historical events once on mount — pre-populate the event log with
+  // events that were persisted during previous or ongoing pipeline runs.
+  useEffect(() => {
+    getCampaignEvents(id)
+      .then((evts) => {
+        // Normalise persisted events to match the WebSocket event shape:
+        // stored events use `event_type` while the EventLog component reads `event`.
+        setHistoricalEvents(
+          evts.map((e) => ({
+            ...e,
+            event: e.event_type,
+            ...(e.payload || {}),
+          }))
+        );
+      })
+      .catch(() => {
+        // Non-fatal — live WebSocket events will still appear.
+      });
   }, [id]);
 
   // Set up polling; defer initial fetch so setState isn't synchronous in the effect
@@ -153,6 +174,22 @@ export default function CampaignDetail() {
     const cs = campaign.status;
     return !TERMINAL_STATES.includes(cs) && !PAUSE_STATES.includes(cs);
   }, [campaign]);
+
+  // Merge historical events (loaded on page open) with live WebSocket events.
+  // Historical events are shown first (chronological order from the DB).
+  // Live events are deduplicated against historical ones by `id` so that
+  // events already persisted do not appear twice.
+  const historicalIds = useMemo(
+    () => new Set(historicalEvents.map((e) => e.id).filter(Boolean)),
+    [historicalEvents]
+  );
+  const mergedEvents = useMemo(
+    () => [
+      ...historicalEvents,
+      ...events.filter((e) => !e.id || !historicalIds.has(e.id)),
+    ],
+    [historicalEvents, events, historicalIds]
+  );
 
   // At approval stage, hide content & revision tabs (approval tab shows the content)
   const isAtApproval = campaign?.status === "content_approval" || campaign?.status === "approved" || campaign?.status === "rejected" || campaign?.status === "manual_review_required";
@@ -277,7 +314,7 @@ export default function CampaignDetail() {
           />
         );
       case "events":
-        return <EventLog events={events} isPipelineRunning={isPipelineRunning} />;
+        return <EventLog events={mergedEvents} isPipelineRunning={isPipelineRunning} />;
       default:
         return (
           <div className="card empty-state">
@@ -447,7 +484,7 @@ export default function CampaignDetail() {
             {/* Event log */}
             <div className="card sidebar-events">
               <h3 style={{ marginBottom: "0.6rem" }}>Event Log</h3>
-              <EventLog events={events} isPipelineRunning={isPipelineRunning} />
+              <EventLog events={mergedEvents} isPipelineRunning={isPipelineRunning} />
             </div>
           </aside>
         </div>

@@ -66,3 +66,15 @@ class ContentApprovalRequestedEvent(WorkflowEvent):
     event_type: str = "content_approval_requested"
     content: dict[str, Any] = Field(default_factory=dict)
     revision_cycle: int = 0
+
+
+class CampaignEventLog(BaseModel):
+    """API response model for a persisted campaign pipeline event."""
+
+    id: str
+    campaign_id: str
+    event_type: str
+    stage: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    owner_id: str | None = None
+    created_at: datetime
