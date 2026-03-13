@@ -156,8 +156,13 @@ def _create_engine():
         )
 
     # Local / default: password-based DATABASE_URL.
+    # Validation via _require_database_url() is deferred to first actual use
+    # (_make_alembic_config, get_connection_dsn, init_db startup path) so that
+    # the module can be imported without DATABASE_URL being set — this allows
+    # unit tests that mock the database layer to collect and run normally.
     logger.debug("Database engine: local mode")
-    return create_async_engine(_require_database_url(), echo=False, future=True)
+    url = DATABASE_URL or "postgresql+asyncpg://localhost/placeholder_unconfigured"
+    return create_async_engine(url, echo=False, future=True)
 
 
 def get_connection_dsn() -> str:
