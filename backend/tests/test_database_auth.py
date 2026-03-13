@@ -58,6 +58,32 @@ class TestGetAuthMode:
 
 
 # ---------------------------------------------------------------------------
+# _require_database_url
+# ---------------------------------------------------------------------------
+
+class TestRequireDatabaseUrl:
+    def test_returns_url_when_set(self, monkeypatch):
+        monkeypatch.setattr(
+            db_module,
+            "DATABASE_URL",
+            "postgresql+asyncpg://user:pass@localhost:5432/db",
+        )
+        assert db_module._require_database_url() == (
+            "postgresql+asyncpg://user:pass@localhost:5432/db"
+        )
+
+    def test_raises_when_database_url_is_empty(self, monkeypatch):
+        monkeypatch.setattr(db_module, "DATABASE_URL", "")
+        with pytest.raises(RuntimeError, match="DATABASE_URL environment variable is required"):
+            db_module._require_database_url()
+
+    def test_error_message_includes_example(self, monkeypatch):
+        monkeypatch.setattr(db_module, "DATABASE_URL", "")
+        with pytest.raises(RuntimeError, match="postgresql\\+asyncpg://"):
+            db_module._require_database_url()
+
+
+# ---------------------------------------------------------------------------
 # _build_azure_db_url
 # ---------------------------------------------------------------------------
 
@@ -139,6 +165,11 @@ class TestFetchEntraDbToken:
 class TestCreateEngine:
     def test_local_mode_uses_database_url(self, monkeypatch):
         monkeypatch.delenv("DB_AUTH_MODE", raising=False)
+        monkeypatch.setattr(
+            db_module,
+            "DATABASE_URL",
+            "postgresql+asyncpg://testuser:testpass@localhost:5432/testdb",
+        )
         with patch("backend.infrastructure.database.create_async_engine") as mock_create:
             mock_create.return_value = MagicMock()
             db_module._create_engine()
@@ -186,6 +217,11 @@ class TestCreateEngine:
 class TestGetConnectionDsn:
     def test_local_mode_strips_asyncpg_prefix(self, monkeypatch):
         monkeypatch.delenv("DB_AUTH_MODE", raising=False)
+        monkeypatch.setattr(
+            db_module,
+            "DATABASE_URL",
+            "postgresql+asyncpg://testuser:testpass@localhost:5432/testdb",
+        )
         dsn = db_module.get_connection_dsn()
         assert "postgresql+asyncpg" not in dsn
         assert dsn.startswith("postgresql://")

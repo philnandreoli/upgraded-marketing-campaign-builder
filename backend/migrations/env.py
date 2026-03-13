@@ -31,11 +31,16 @@ if _DB_AUTH_MODE == "azure":
         )
     DATABASE_URL = f"postgresql+asyncpg://{_user}@{_host}/{_database}"
 else:
-    # Set the database URL from environment, falling back to default
-    DATABASE_URL = os.getenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://postgres:postgres@db:5432/campaigns",
-    )
+    # Set the database URL from environment — no default to avoid silently
+    # connecting with hardcoded credentials if the variable is unset.
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL environment variable is required when using "
+            "local database authentication. Set it in your .env file or "
+            "environment. "
+            "Example: postgresql+asyncpg://user:pass@host:5432/dbname"
+        )
 
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
