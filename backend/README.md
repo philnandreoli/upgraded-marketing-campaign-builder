@@ -121,6 +121,33 @@ Each agent is a Python class that inherits from `BaseAgent` and communicates wit
 
 > **Deprecated:** `/api/campaigns/{id}/review` and `/api/campaigns/{id}/review-clarify` return `410 Gone`. Use `/content-approve` instead.
 
+## Rate Limiting
+
+API rate limiting is implemented using [slowapi](https://github.com/laurents/slowapi) (application layer, per remote IP address). Limits are enforced per minute.
+
+| Endpoint | Limit |
+|----------|-------|
+| Global (all `/api/*` routes) | 100 req/min |
+| `POST /api/campaigns` | 10 req/min |
+| Admin endpoints (`/api/admin/*`) | 30 req/min |
+| `POST /api/ws/ticket` | 10 req/min |
+| Health checks (`/health/*`) | Exempt |
+
+When a limit is exceeded the API returns **HTTP 429 Too Many Requests** with a JSON body:
+
+```json
+{"error": "Rate limit exceeded: 10 per 1 minute"}
+```
+
+Rate limit response headers are included on **every** rate-limited response:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed in the window |
+| `X-RateLimit-Remaining` | Requests remaining before the limit is hit |
+| `X-RateLimit-Reset` | Unix timestamp when the window resets |
+| `Retry-After` | Seconds until the client may retry |
+
 ## Project Structure
 
 ```
@@ -134,6 +161,7 @@ backend/
 │       └── startup.py        # App lifecycle hooks (DB init, executor setup)
 ├── core/                     # Cross-cutting concerns
 │   ├── exceptions.py         # Domain exceptions
+│   ├── rate_limit.py         # Shared slowapi Limiter instance
 │   └── tracing.py            # OpenTelemetry bootstrap
 ├── infrastructure/           # External-facing adapters
 │   ├── database.py           # SQLAlchemy async engine and session factory

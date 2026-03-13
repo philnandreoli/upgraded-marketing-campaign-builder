@@ -14,6 +14,18 @@ from backend.models.workspace import Workspace
 from backend.tests.mock_store import InMemoryCampaignStore
 
 
+# ---- Reset rate-limiter storage between tests ----
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset the in-memory rate-limit counters before every test so that
+    tests making multiple requests to the same endpoint do not bleed state
+    into subsequent tests and trigger spurious 429 responses."""
+    from backend.core.rate_limit import limiter
+    limiter._storage.reset()
+    yield
+
+
 # ---- Isolate tests from Foundry agent registration state ----
 
 @pytest.fixture(autouse=True)

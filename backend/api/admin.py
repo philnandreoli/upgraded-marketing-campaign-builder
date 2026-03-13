@@ -11,14 +11,12 @@ Endpoints:
   POST   /api/admin/users                — Pre-provision a user from Entra ID
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, func, select
@@ -32,6 +30,7 @@ from backend.infrastructure.auth import require_admin
 from backend.infrastructure.campaign_store import get_campaign_store
 from backend.infrastructure.database import CampaignMemberRow, UserRow, get_db
 from backend.infrastructure.graph import search_entra_users
+from backend.core.rate_limit import limiter
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -86,7 +85,10 @@ class UserDetailResponse(BaseModel):
 
 
 @router.get("/users", response_model=list[UserListResponse])
+@limiter.limit("30/minute")
 async def list_users(
+    request: Request,
+    response: Response,
     search: Optional[str] = Query(default=None, description="Filter by name or email"),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -118,7 +120,10 @@ async def list_users(
 
 
 @router.get("/users/{user_id}", response_model=UserDetailResponse)
+@limiter.limit("30/minute")
 async def get_user(
+    request: Request,
+    response: Response,
     user_id: str,
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -153,9 +158,12 @@ async def get_user(
 
 
 @router.patch("/users/{user_id}/role", response_model=UserListResponse)
+@limiter.limit("30/minute")
 async def update_user_role(
+    request: Request,
+    response: Response,
     user_id: str,
-    body: RoleUpdateRequest,
+    body: RoleUpdateRequest = Body(),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> UserListResponse:
@@ -213,7 +221,10 @@ async def update_user_role(
 
 
 @router.delete("/users/{user_id}", status_code=204)
+@limiter.limit("30/minute")
 async def deactivate_user(
+    request: Request,
+    response: Response,
     user_id: str,
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -235,7 +246,10 @@ async def deactivate_user(
 
 
 @router.get("/entra/users", response_model=list[EntraUserResult])
+@limiter.limit("30/minute")
 async def search_entra_directory(
+    request: Request,
+    response: Response,
     search: str = Query(description="Name or email prefix to search for in Entra ID"),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -297,8 +311,11 @@ async def search_entra_directory(
 
 
 @router.post("/users", response_model=UserListResponse, status_code=201)
+@limiter.limit("30/minute")
 async def provision_user(
-    body: ProvisionUserRequest,
+    request: Request,
+    response: Response,
+    body: ProvisionUserRequest = Body(),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> UserListResponse:
@@ -357,7 +374,10 @@ async def provision_user(
 
 
 @router.get("/campaigns")
+@limiter.limit("30/minute")
 async def list_all_campaigns(
+    request: Request,
+    response: Response,
     _: User = Depends(require_admin),
 ) -> list[dict[str, Any]]:
     """List all campaigns across all users (admin view)."""

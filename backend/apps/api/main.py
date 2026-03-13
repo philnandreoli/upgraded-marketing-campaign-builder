@@ -23,8 +23,11 @@ import sqlalchemy
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from backend.config import get_settings
+from backend.core.rate_limit import limiter
 from backend.core.tracing import setup_tracing
 
 # ------------------------------------------------------------------
@@ -56,6 +59,13 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# ------------------------------------------------------------------
+# Rate limiting — attach the shared limiter to app state so slowapi
+# middleware can resolve it, and register the 429 exception handler.
+# ------------------------------------------------------------------
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS — restrict cross-origin access to configured origins.
 # In development the default ["*"] is permissive for convenience.
 # Set CORS_ALLOWED_ORIGINS in production to an explicit list of frontend
@@ -78,12 +88,14 @@ app.add_middleware(
 # ------------------------------------------------------------------
 
 @app.get("/health/live")
+@limiter.exempt
 async def health_live():
     """Liveness probe — process is running."""
     return {"status": "alive"}
 
 
 @app.get("/health/ready")
+@limiter.exempt
 async def health_ready():
     """Readiness probe — dependencies (DB + executor) are reachable."""
     from backend.infrastructure.database import engine  # noqa: PLC0415
@@ -116,6 +128,7 @@ async def health_ready():
 
 
 @app.get("/health")
+@limiter.exempt
 async def health_check():
     """Backward-compatible alias for /health/live."""
     return {"status": "alive"}

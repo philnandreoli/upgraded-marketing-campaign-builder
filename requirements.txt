@@ -1,6 +1,7 @@
 # Web framework
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+slowapi==0.1.9
 
 # Azure AI Projects (Foundry SDK)
 azure-ai-projects==2.0.0b4
