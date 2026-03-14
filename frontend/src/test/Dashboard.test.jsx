@@ -10,7 +10,7 @@
 
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Dashboard from '../pages/Dashboard';
 import { UserProvider } from '../UserContext';
 import { WorkspaceProvider } from '../WorkspaceContext';
