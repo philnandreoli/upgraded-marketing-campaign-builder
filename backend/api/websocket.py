@@ -20,7 +20,7 @@ reverse-proxy / CDN access logs, since the opaque ticket has no value
 outside the single WebSocket upgrade request.
 """
 
-import asyncio
+import hashlib
 import json
 import logging
 import secrets
@@ -148,8 +148,9 @@ async def create_ws_ticket(request: Request, response: Response, user: User = De
     Requires a valid Bearer token in the ``Authorization`` header.
     """
     ticket = secrets.token_urlsafe(32)
+    ticket_hash = hashlib.sha256(ticket.encode()).hexdigest()
     ticket_store = get_ticket_store()
-    await ticket_store.store(ticket, user.id, ttl_seconds=_TICKET_TTL_SECONDS)
+    await ticket_store.store(ticket_hash, user.id, ttl_seconds=_TICKET_TTL_SECONDS)
     return {"ticket": ticket}
 
 
@@ -168,8 +169,9 @@ async def _authenticate_ws_ticket(ticket: Optional[str]) -> Optional[User]:
         return None  # Auth disabled — local-dev / testing mode
     if not ticket:
         raise ValueError("Ticket required")
+    ticket_hash = hashlib.sha256(ticket.encode()).hexdigest()
     ticket_store = get_ticket_store()
-    user_id = await ticket_store.consume(ticket)  # atomic single-use: get-and-delete
+    user_id = await ticket_store.consume(ticket_hash)  # atomic single-use: get-and-delete
     if user_id is None:
         raise ValueError("Invalid or expired ticket")
     store = get_campaign_store()
@@ -179,30 +181,6 @@ async def _authenticate_ws_ticket(ticket: Optional[str]) -> Optional[User]:
     if not user.is_active:
         raise ValueError("Account deactivated")
     return user
-
-
-async def _ticket_cleanup_loop() -> None:
-    """Background task: evict unredeemed expired tickets every 60 seconds.
-
-    For :class:`~backend.infrastructure.ticket_store.RedisTicketStore` this is
-    a no-op because Redis TTL handles expiry automatically.  For
-    :class:`~backend.infrastructure.ticket_store.InMemoryTicketStore` this
-    prevents unbounded memory growth from tickets that were issued but never
-    redeemed.
-    """
-    while True:
-        await asyncio.sleep(60)
-        store = get_ticket_store()
-        if hasattr(store, "_evict_expired"):
-            count = store._evict_expired()
-            if count:
-                logger.debug("WS ticket cleanup: removed %d expired tickets", count)
-
-
-def start_ticket_cleanup_task() -> None:
-    """Schedule the background ticket-cleanup loop on the running event loop."""
-    asyncio.ensure_future(_ticket_cleanup_loop())
-
 
 # ---------------------------------------------------------------------------
 # WebSocket routes

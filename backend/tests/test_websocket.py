@@ -49,7 +49,7 @@ def _patch_db_lifecycle():
     """Prevent TestClient from calling real init_db / close_db."""
     with patch("backend.apps.api.startup.init_db", new_callable=AsyncMock), \
          patch("backend.apps.api.startup.close_db", new_callable=AsyncMock), \
-         patch("backend.api.websocket.start_ticket_cleanup_task"):
+         patch("backend.infrastructure.ticket_store.get_ticket_store", return_value=AsyncMock(close=AsyncMock())):
         yield
 
 
@@ -97,16 +97,18 @@ def _auth_disabled_settings():
 
 def _make_ticket(user: User, *, expired: bool = False) -> str:
     """Insert a ticket for *user* into the patched InMemoryTicketStore and return it."""
+    import hashlib
     import secrets as _secrets
     from backend.api.websocket import get_ticket_store
 
     ticket = _secrets.token_urlsafe(16)
+    ticket_hash = hashlib.sha256(ticket.encode()).hexdigest()
     if expired:
         expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     else:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=30)
     store = get_ticket_store()
-    store._tickets[ticket] = {"user_id": user.id, "expires_at": expires_at}
+    store._tickets[ticket_hash] = {"user_id": user.id, "expires_at": expires_at}
     return ticket
 
 
@@ -289,14 +291,16 @@ class TestWsTicketEndpoint:
             app.dependency_overrides.pop(get_current_user, None)
 
     def test_ticket_stored_in_memory_with_user_id(self, client, _patch_ticket_store):
-        """Created ticket is stored in the ticket store with the correct user_id."""
+        """Created ticket is stored in the ticket store as SHA-256 hash with the correct user_id."""
+        import hashlib
         from backend.infrastructure.auth import get_current_user
         app.dependency_overrides[get_current_user] = lambda: _MEMBER
         try:
             r = client.post("/api/ws/ticket")
             ticket = r.json()["ticket"]
-            assert ticket in _patch_ticket_store._tickets
-            assert _patch_ticket_store._tickets[ticket]["user_id"] == _MEMBER.id
+            ticket_hash = hashlib.sha256(ticket.encode()).hexdigest()
+            assert ticket_hash in _patch_ticket_store._tickets
+            assert _patch_ticket_store._tickets[ticket_hash]["user_id"] == _MEMBER.id
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
