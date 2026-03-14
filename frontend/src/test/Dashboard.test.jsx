@@ -8,7 +8,7 @@
  *  - Orphaned section: visible only to admins
  */
 
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import Dashboard from '../pages/Dashboard';
@@ -408,5 +408,184 @@ describe('Dashboard – Filter tabs', () => {
     expect(screen.getByRole('tab', { name: 'Needs Approval' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('AwaitingCampaign')).toBeInTheDocument();
     expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Search bar
+// ---------------------------------------------------------------------------
+
+const WS_SEARCH = { id: 'ws-search', name: 'Search Workspace', is_personal: true, role: 'creator' };
+
+const campaignAlpha = {
+  id: 'cs-1',
+  product_or_service: 'AlphaProduct',
+  goal: 'Grow revenue',
+  status: 'draft',
+  owner_id: 'user-1',
+  workspace_id: 'ws-search',
+  workspace_name: 'Search Workspace',
+};
+const campaignBeta = {
+  id: 'cs-2',
+  product_or_service: 'BetaService',
+  goal: 'Reduce churn',
+  status: 'approved',
+  owner_id: 'user-1',
+  workspace_id: 'ws-search',
+  workspace_name: 'Search Workspace',
+};
+
+/** Helper: fire a search change and advance fake timers to trigger the debounce. */
+async function typeSearch(inputValue) {
+  vi.useFakeTimers();
+  fireEvent.change(screen.getByPlaceholderText('Search campaigns...'), {
+    target: { value: inputValue },
+  });
+  await act(async () => vi.advanceTimersByTime(300));
+  vi.useRealTimers();
+}
+
+describe('Dashboard – Search bar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('renders the search bar with placeholder text', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+    expect(screen.getByPlaceholderText('Search campaigns...')).toBeInTheDocument();
+  });
+
+  it('filters campaigns by product/service name (debounced)', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('alpha');
+
+    expect(screen.queryByText('BetaService')).not.toBeInTheDocument();
+    expect(screen.getByText('AlphaProduct')).toBeInTheDocument();
+  });
+
+  it('filters campaigns by goal', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('reduce churn');
+
+    expect(screen.queryByText('AlphaProduct')).not.toBeInTheDocument();
+    expect(screen.getByText('BetaService')).toBeInTheDocument();
+  });
+
+  it('filters campaigns by workspace name', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('search workspace');
+
+    // Both campaigns are in "Search Workspace", both should remain
+    expect(screen.getByText('AlphaProduct')).toBeInTheDocument();
+    expect(screen.getByText('BetaService')).toBeInTheDocument();
+  });
+
+  it('filters campaigns by status (with underscores replaced)', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('approved');
+
+    expect(screen.queryByText('AlphaProduct')).not.toBeInTheDocument();
+    expect(screen.getByText('BetaService')).toBeInTheDocument();
+  });
+
+  it('is case-insensitive', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('ALPHAPRODUCT');
+
+    expect(screen.queryByText('BetaService')).not.toBeInTheDocument();
+    expect(screen.getByText('AlphaProduct')).toBeInTheDocument();
+  });
+
+  it('shows "Showing X of Y campaigns" result count when search is active', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('alpha');
+
+    expect(screen.getByText(/showing 1 of 2 campaigns/i)).toBeInTheDocument();
+  });
+
+  it('does not show result count when search is empty', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+    expect(screen.queryByText(/showing/i)).not.toBeInTheDocument();
+  });
+
+  it('shows empty-state message when search yields no results', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('nomatch-xyz');
+
+    expect(screen.getByText(/no campaigns match your search/i)).toBeInTheDocument();
+  });
+
+  it('clear button resets search and shows all campaigns', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('alpha');
+    expect(screen.queryByText('BetaService')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear search/i }));
+
+    expect(screen.getByText('BetaService')).toBeInTheDocument();
+    expect(screen.getByText('AlphaProduct')).toBeInTheDocument();
+    expect(screen.queryByText(/showing/i)).not.toBeInTheDocument();
+  });
+
+  it('Escape key resets search', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('alpha');
+    expect(screen.queryByText('BetaService')).not.toBeInTheDocument();
+
+    const input = screen.getByPlaceholderText('Search campaigns...');
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(screen.getByText('BetaService')).toBeInTheDocument();
+    expect(screen.getByText('AlphaProduct')).toBeInTheDocument();
+  });
+
+  it('search composes with active filter tab', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    // Activate "Approved" tab — only campaignBeta is visible
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    await waitFor(() => expect(screen.queryByText('AlphaProduct')).not.toBeInTheDocument());
+
+    // Searching for "alpha" while on Approved tab should yield no results
+    await typeSearch('alpha');
+
+    expect(screen.getByText(/no campaigns match your search/i)).toBeInTheDocument();
+  });
+
+  it('search query is preserved when switching filter tabs', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignAlpha, campaignBeta], [WS_SEARCH]);
+    await waitFor(() => screen.getByText('AlphaProduct'));
+
+    await typeSearch('alpha');
+    expect(screen.queryByText('BetaService')).not.toBeInTheDocument();
+
+    // Switch to a different tab and back — search query should be preserved
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'All' }));
+
+    // The search input should still contain "alpha"
+    expect(screen.getByPlaceholderText('Search campaigns...')).toHaveValue('alpha');
   });
 });
