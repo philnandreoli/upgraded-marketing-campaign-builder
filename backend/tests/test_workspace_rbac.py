@@ -339,75 +339,19 @@ class TestOrphanedCampaign:
 # ---------------------------------------------------------------------------
 
 class TestAdminMoveCampaign:
-    """PATCH /api/campaigns/{id}/workspace — admin-only endpoint."""
+    """PATCH /api/campaigns/{id}/workspace — endpoint has been removed."""
 
-    def test_admin_can_move_campaign_between_workspaces(self):
+    def test_assign_workspace_endpoint_is_removed(self):
+        """The old PATCH /api/campaigns/{id}/workspace endpoint no longer exists (404)."""
         store = InMemoryCampaignStore()
-        ws_a_id = "move-ws-a"
-        ws_b_id = "move-ws-b"
-        now = datetime.now(timezone.utc)
-        store._workspaces[ws_a_id] = Workspace(
-            id=ws_a_id, name="WS A", owner_id="owner",
-            is_personal=False, created_at=now, updated_at=now,
-        )
-        store._workspaces[ws_b_id] = Workspace(
-            id=ws_b_id, name="WS B", owner_id="owner",
-            is_personal=False, created_at=now, updated_at=now,
-        )
-        campaign = Campaign(
-            brief=CampaignBrief(product_or_service="Movable", goal="Move me"),
-            owner_id=_BUILDER.id,
-            workspace_id=ws_a_id,
-        )
-        store._campaigns[campaign.id] = campaign
-
-        with _as_user(_ADMIN, store) as c:
-            r = c.patch(
-                f"/api/campaigns/{campaign.id}/workspace",
-                json={"workspace_id": ws_b_id},
-            )
-        assert r.status_code == 200
-        assert store._campaigns[campaign.id].workspace_id == ws_b_id
-
-    def test_non_admin_cannot_move_campaign(self):
-        store = InMemoryCampaignStore()
-        ws_a_id = "move-ws-a"
-        ws_b_id = "move-ws-b"
-        now = datetime.now(timezone.utc)
-        store._workspaces[ws_a_id] = Workspace(
-            id=ws_a_id, name="WS A", owner_id=_BUILDER.id,
-            is_personal=False, created_at=now, updated_at=now,
-        )
-        store._workspaces[ws_b_id] = Workspace(
-            id=ws_b_id, name="WS B", owner_id=_BUILDER.id,
-            is_personal=False, created_at=now, updated_at=now,
-        )
-        campaign = Campaign(
-            brief=CampaignBrief(product_or_service="Movable", goal="Move me"),
-            owner_id=_BUILDER.id,
-            workspace_id=ws_a_id,
-        )
-        store._campaigns[campaign.id] = campaign
-        store._workspace_members[(ws_a_id, _BUILDER.id)] = WorkspaceRole.CREATOR.value
-
-        with _as_user(_BUILDER, store) as c:
-            r = c.patch(
-                f"/api/campaigns/{campaign.id}/workspace",
-                json={"workspace_id": ws_b_id},
-            )
-        assert r.status_code == 403
-
-    def test_admin_can_orphan_campaign(self):
-        """Admin can set workspace_id to null, orphaning the campaign."""
-        store = InMemoryCampaignStore()
-        ws_id = "orphan-src-ws"
+        ws_id = "move-ws-a"
         now = datetime.now(timezone.utc)
         store._workspaces[ws_id] = Workspace(
-            id=ws_id, name="WS", owner_id="owner",
+            id=ws_id, name="WS A", owner_id="owner",
             is_personal=False, created_at=now, updated_at=now,
         )
         campaign = Campaign(
-            brief=CampaignBrief(product_or_service="Orphanable", goal="Orphan me"),
+            brief=CampaignBrief(product_or_service="Movable", goal="Move me"),
             owner_id=_BUILDER.id,
             workspace_id=ws_id,
         )
@@ -416,10 +360,9 @@ class TestAdminMoveCampaign:
         with _as_user(_ADMIN, store) as c:
             r = c.patch(
                 f"/api/campaigns/{campaign.id}/workspace",
-                json={"workspace_id": None},
+                json={"workspace_id": ws_id},
             )
-        assert r.status_code == 200
-        assert store._campaigns[campaign.id].workspace_id is None
+        assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +370,7 @@ class TestAdminMoveCampaign:
 # ---------------------------------------------------------------------------
 
 class TestCreateCampaignInWorkspace:
-    """POST /api/campaigns with workspace_id — CREATOR-only."""
+    """POST /api/workspaces/{ws_id}/campaigns — workspace-scoped campaign creation."""
 
     def test_workspace_creator_can_create_campaign_in_workspace(self):
         store = InMemoryCampaignStore()
@@ -441,11 +384,10 @@ class TestCreateCampaignInWorkspace:
 
         with _as_user(_BUILDER, store) as c:
             r = c.post(
-                "/api/campaigns",
+                f"/api/workspaces/{ws_id}/campaigns",
                 json={
                     "product_or_service": "New Product",
                     "goal": "Test goal",
-                    "workspace_id": ws_id,
                 },
             )
         assert r.status_code == 201
@@ -463,11 +405,10 @@ class TestCreateCampaignInWorkspace:
 
         with _as_user(_BUILDER, store) as c:
             r = c.post(
-                "/api/campaigns",
+                f"/api/workspaces/{ws_id}/campaigns",
                 json={
                     "product_or_service": "New Product",
                     "goal": "Test goal",
-                    "workspace_id": ws_id,
                 },
             )
         assert r.status_code == 403
@@ -484,11 +425,10 @@ class TestCreateCampaignInWorkspace:
 
         with _as_user(_BUILDER, store) as c:
             r = c.post(
-                "/api/campaigns",
+                f"/api/workspaces/{ws_id}/campaigns",
                 json={
                     "product_or_service": "New Product",
                     "goal": "Test goal",
-                    "workspace_id": ws_id,
                 },
             )
         assert r.status_code == 403
@@ -505,11 +445,10 @@ class TestCreateCampaignInWorkspace:
 
         with _as_user(_ADMIN, store) as c:
             r = c.post(
-                "/api/campaigns",
+                f"/api/workspaces/{ws_id}/campaigns",
                 json={
                     "product_or_service": "Admin Product",
                     "goal": "Admin goal",
-                    "workspace_id": ws_id,
                 },
             )
         assert r.status_code == 201
