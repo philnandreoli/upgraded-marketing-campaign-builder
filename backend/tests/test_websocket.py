@@ -15,7 +15,7 @@ Validates that:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,6 +25,7 @@ from fastapi import WebSocketDisconnect
 from backend.main import app
 from backend.models.user import User, UserRole, CampaignMemberRole
 from backend.tests.mock_store import InMemoryCampaignStore
+from backend.infrastructure.ticket_store import InMemoryTicketStore
 
 
 # ---------------------------------------------------------------------------
@@ -53,12 +54,11 @@ def _patch_db_lifecycle():
 
 
 @pytest.fixture(autouse=True)
-def _clear_ws_tickets():
-    """Ensure the in-memory ticket store is empty before and after each test."""
-    from backend.api.websocket import _ws_tickets
-    _ws_tickets.clear()
-    yield
-    _ws_tickets.clear()
+def _patch_ticket_store():
+    """Replace the ticket store singleton with a fresh InMemoryTicketStore for each test."""
+    store = InMemoryTicketStore()
+    with patch("backend.api.websocket.get_ticket_store", return_value=store):
+        yield store
 
 
 @pytest.fixture
@@ -96,15 +96,17 @@ def _auth_disabled_settings():
 
 
 def _make_ticket(user: User, *, expired: bool = False) -> str:
-    """Insert a ticket for *user* into the module-level store and return it."""
-    from backend.api.websocket import _ws_tickets
+    """Insert a ticket for *user* into the patched InMemoryTicketStore and return it."""
     import secrets as _secrets
+    from backend.api.websocket import get_ticket_store
+
     ticket = _secrets.token_urlsafe(16)
     if expired:
-        expires_at = datetime.utcnow() - timedelta(seconds=1)
+        expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     else:
-        expires_at = datetime.utcnow() + timedelta(seconds=30)
-    _ws_tickets[ticket] = {"user_id": user.id, "expires_at": expires_at}
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=30)
+    store = get_ticket_store()
+    store._tickets[ticket] = {"user_id": user.id, "expires_at": expires_at}
     return ticket
 
 
@@ -286,16 +288,15 @@ class TestWsTicketEndpoint:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    def test_ticket_stored_in_memory_with_user_id(self, client):
-        """Created ticket is stored in _ws_tickets with the correct user_id."""
-        from backend.api.websocket import _ws_tickets
+    def test_ticket_stored_in_memory_with_user_id(self, client, _patch_ticket_store):
+        """Created ticket is stored in the ticket store with the correct user_id."""
         from backend.infrastructure.auth import get_current_user
         app.dependency_overrides[get_current_user] = lambda: _MEMBER
         try:
             r = client.post("/api/ws/ticket")
             ticket = r.json()["ticket"]
-            assert ticket in _ws_tickets
-            assert _ws_tickets[ticket]["user_id"] == _MEMBER.id
+            assert ticket in _patch_ticket_store._tickets
+            assert _patch_ticket_store._tickets[ticket]["user_id"] == _MEMBER.id
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 

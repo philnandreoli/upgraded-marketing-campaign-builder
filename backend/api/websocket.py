@@ -24,7 +24,6 @@ import asyncio
 import json
 import logging
 import secrets
-from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request, Response, WebSocket, WebSocketDisconnect
@@ -33,6 +32,7 @@ from backend.config import get_settings
 from backend.core.rate_limit import limiter
 from backend.infrastructure.auth import require_authenticated
 from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.ticket_store import get_ticket_store
 from backend.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,6 @@ _WS_FORBIDDEN = 4003
 
 # Ticket time-to-live (seconds)
 _TICKET_TTL_SECONDS = 30
-
-# In-memory single-use ticket store: ticket → {"user_id": str, "expires_at": datetime}
-# Tickets are popped (consumed) on first use. A background cleanup loop evicts
-# any tickets that were created but never redeemed.
-_ws_tickets: dict[str, dict] = {}
 
 
 class ConnectionManager:
@@ -153,10 +148,8 @@ async def create_ws_ticket(request: Request, response: Response, user: User = De
     Requires a valid Bearer token in the ``Authorization`` header.
     """
     ticket = secrets.token_urlsafe(32)
-    _ws_tickets[ticket] = {
-        "user_id": user.id,
-        "expires_at": datetime.utcnow() + timedelta(seconds=_TICKET_TTL_SECONDS),
-    }
+    ticket_store = get_ticket_store()
+    await ticket_store.store(ticket, user.id, ttl_seconds=_TICKET_TTL_SECONDS)
     return {"ticket": ticket}
 
 
@@ -175,11 +168,12 @@ async def _authenticate_ws_ticket(ticket: Optional[str]) -> Optional[User]:
         return None  # Auth disabled — local-dev / testing mode
     if not ticket:
         raise ValueError("Ticket required")
-    entry = _ws_tickets.pop(ticket, None)  # single-use: pop immediately
-    if not entry or entry["expires_at"] < datetime.utcnow():
+    ticket_store = get_ticket_store()
+    user_id = await ticket_store.consume(ticket)  # atomic single-use: get-and-delete
+    if user_id is None:
         raise ValueError("Invalid or expired ticket")
     store = get_campaign_store()
-    user = await store.get_user(entry["user_id"])
+    user = await store.get_user(user_id)
     if user is None:
         raise ValueError("User not found")
     if not user.is_active:
@@ -188,15 +182,21 @@ async def _authenticate_ws_ticket(ticket: Optional[str]) -> Optional[User]:
 
 
 async def _ticket_cleanup_loop() -> None:
-    """Background task: evict unredeemed expired tickets every 60 seconds."""
+    """Background task: evict unredeemed expired tickets every 60 seconds.
+
+    For :class:`~backend.infrastructure.ticket_store.RedisTicketStore` this is
+    a no-op because Redis TTL handles expiry automatically.  For
+    :class:`~backend.infrastructure.ticket_store.InMemoryTicketStore` this
+    prevents unbounded memory growth from tickets that were issued but never
+    redeemed.
+    """
     while True:
         await asyncio.sleep(60)
-        now = datetime.utcnow()
-        expired = [k for k, v in list(_ws_tickets.items()) if v["expires_at"] < now]
-        for k in expired:
-            _ws_tickets.pop(k, None)
-        if expired:
-            logger.debug("WS ticket cleanup: removed %d expired tickets", len(expired))
+        store = get_ticket_store()
+        if hasattr(store, "_evict_expired"):
+            count = store._evict_expired()
+            if count:
+                logger.debug("WS ticket cleanup: removed %d expired tickets", count)
 
 
 def start_ticket_cleanup_task() -> None:
