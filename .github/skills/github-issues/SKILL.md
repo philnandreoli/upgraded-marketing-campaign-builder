@@ -10,6 +10,7 @@ You should leverage what the user has asked for then analyze the repo to determi
 2. **Proposal**: Suggest a solution or approach to address the problem. This can be a high-level overview or specific implementation details.
 3. **Implementation Detail**: If you have specific ideas on how to implement the solution, please include them here. This can include code snippets, architecture diagrams, or references to relevant documentation.
 4. **Why**: Why is this issue important? Explain the impact of the problem and the benefits of the proposed solution.
+5. **Acceptance Criteria**: Define clear acceptance criteria for the issue. This can include specific requirements, test cases, or success metrics that will indicate when the issue has been resolved.
 
 If you have questions about what the user is asking for, ask for clarification before creating the issue.  If you need to ask for clarification, do not create an issue until you have received a response from the user.
 
