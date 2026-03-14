@@ -235,7 +235,7 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
     <div className="campaign-card card" data-status={c.status}>
       <div className="campaign-card-avatar">{getInitials(c.product_or_service)}</div>
       <div className="campaign-card-body">
-        <Link to={`/workspaces/${workspace.id}/campaigns/${c.id}`} className="campaign-card-title">
+        <Link to={`/workspaces/${c.workspace_id}/campaigns/${c.id}`} className="campaign-card-title">
           {c.product_or_service}
         </Link>
         <p className="campaign-card-goal">{c.goal}</p>

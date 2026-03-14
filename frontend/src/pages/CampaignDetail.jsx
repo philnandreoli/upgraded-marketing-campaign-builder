@@ -77,23 +77,19 @@ export default function CampaignDetail() {
   const pollRef = useRef(null);
 
   const load = useCallback(async () => {
+    if (!workspaceId) return;
     try {
-      const wsId = workspaceId || campaign?.workspace_id;
-      if (!wsId) {
-        // Cannot load without workspaceId — wait for it to be available
-        return;
-      }
-      setCampaign(await getCampaign(wsId, id));
+      setCampaign(await getCampaign(workspaceId, id));
     } catch (err) {
       setError(err.message);
     }
-  }, [id, workspaceId, campaign?.workspace_id]);
+  }, [id, workspaceId]);
 
   // Load historical events once on mount — pre-populate the event log with
   // events that were persisted during previous or ongoing pipeline runs.
   useEffect(() => {
-    if (!effectiveWorkspaceId) return;
-    getCampaignEvents(effectiveWorkspaceId, id)
+    if (!workspaceId) return;
+    getCampaignEvents(workspaceId, id)
       .then((evts) => {
         // Normalise persisted events to match the WebSocket event shape:
         // stored events use `event_type` while the EventLog component reads `event`.
@@ -108,7 +104,7 @@ export default function CampaignDetail() {
       .catch(() => {
         // Non-fatal — live WebSocket events will still appear.
       });
-  }, [id]);
+  }, [id, workspaceId]);
 
   // Set up polling; defer initial fetch so setState isn't synchronous in the effect
   useEffect(() => {
