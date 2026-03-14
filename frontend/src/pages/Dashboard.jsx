@@ -46,10 +46,6 @@ export default function Dashboard({ events }) {
     load();
   };
 
-  const handleMove = () => {
-    // Campaign workspace can no longer be changed after creation.
-  };
-
   if (loading && campaigns.length === 0) {
     return (
       <div>
@@ -148,7 +144,6 @@ export default function Dashboard({ events }) {
             user={user}
             onDelete={handleDelete}
             allWorkspaces={workspaces}
-            onMove={handleMove}
           />
         ))}
         {/* Orphaned campaigns: admin only */}
@@ -161,7 +156,6 @@ export default function Dashboard({ events }) {
             user={user}
             onDelete={handleDelete}
             allWorkspaces={workspaces}
-            onMove={handleMove}
           />
         )}
       </div>
