@@ -331,7 +331,7 @@ class CampaignStore:
                 id=row.id,
                 email=row.email,
                 display_name=row.display_name,
-                role=UserRole(row.role),
+                roles=roles_from_db(row.role),
                 created_at=row.created_at,
                 updated_at=row.updated_at,
                 is_active=row.is_active,
