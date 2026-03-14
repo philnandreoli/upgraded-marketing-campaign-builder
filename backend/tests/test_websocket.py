@@ -131,29 +131,29 @@ class TestWsCampaignAuthEnabled:
         """Missing ticket → close code 4001."""
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}"):
-                    pass
-            assert exc_info.value.code == 4001
+            with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
+        assert exc_info.value.code == 4001
 
     def test_rejects_invalid_ticket_with_4001(self, client, fresh_store):
         """Unknown (never-issued) ticket → close code 4001."""
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket=bogus"):
-                    pass
-            assert exc_info.value.code == 4001
+            with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket=bogus") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
+        assert exc_info.value.code == 4001
 
     def test_rejects_expired_ticket_with_4001(self, client, fresh_store):
         """Expired ticket → close code 4001."""
         ticket = _make_ticket(_MEMBER, expired=True)
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}"):
-                    pass
-            assert exc_info.value.code == 4001
+            with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
+        assert exc_info.value.code == 4001
 
     def test_rejects_reused_ticket_with_4001(self, client, fresh_store):
         """Ticket consumed on first use → second connection rejected with 4001."""
@@ -164,20 +164,20 @@ class TestWsCampaignAuthEnabled:
             with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}"):
                 pass
             # Second use is rejected because the ticket was popped on first use
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}"):
-                    pass
-            assert exc_info.value.code == 4001
+            with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
+        assert exc_info.value.code == 4001
 
     def test_rejects_non_member_with_4003(self, client, fresh_store):
         """Valid ticket but user is not a campaign member → close code 4003."""
         ticket = _make_ticket(_OUTSIDER)
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}"):
-                    pass
-            assert exc_info.value.code == 4003
+            with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
+        assert exc_info.value.code == 4003
 
     def test_admin_connects_without_membership(self, client, fresh_store):
         """Admin user can connect to any campaign without being a member."""
@@ -216,19 +216,19 @@ class TestWsGlobalAuthEnabled:
     def test_rejects_missing_ticket_with_4001(self, client):
         """Missing ticket → close code 4001."""
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect("/ws"):
-                    pass
-            assert exc_info.value.code == 4001
+            with client.websocket_connect("/ws") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
+        assert exc_info.value.code == 4001
 
     def test_rejects_invalid_ticket_with_4001(self, client, fresh_store):
         """Unknown (never-issued) ticket → close code 4001."""
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect("/ws?ticket=bogus"):
-                    pass
-            assert exc_info.value.code == 4001
+            with client.websocket_connect("/ws?ticket=bogus") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
+        assert exc_info.value.code == 4001
 
     def test_valid_ticket_connects_successfully(self, client, fresh_store):
         """Valid ticket → global WS accepted."""
@@ -251,9 +251,9 @@ class TestDeactivatedUserWs:
         ticket = _make_ticket(_DEACTIVATED)
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}"):
-                    pass
+            with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
         assert exc_info.value.code == 4001
 
     def test_deactivated_user_global_ws_rejected_with_4001(self, client, fresh_store):
@@ -261,9 +261,9 @@ class TestDeactivatedUserWs:
         ticket = _make_ticket(_DEACTIVATED)
         with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
-            with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws?ticket={ticket}"):
-                    pass
+            with client.websocket_connect(f"/ws?ticket={ticket}") as ws:
+                with pytest.raises(WebSocketDisconnect) as exc_info:
+                    ws.receive_text()
         assert exc_info.value.code == 4001
 
 

@@ -296,6 +296,57 @@ class DatabaseSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class RedisSettings(BaseSettings):
+    """Redis connection settings.
+
+    Two authentication modes are supported, controlled by ``REDIS_MODE``:
+
+    ``local`` (default)
+        Standard Redis URL connection.  Set ``REDIS_URL`` to point at your
+        local Redis instance (defaults to ``redis://redis:6379/0``).
+
+    ``azure``
+        Azure Cache for Redis with token-based authentication via
+        ``DefaultAzureCredential`` (managed identity / workload identity).
+        Configure ``AZURE_REDIS_HOST`` instead of ``REDIS_URL``.
+    """
+
+    mode: str = Field(
+        default="local",
+        alias="REDIS_MODE",
+        description=(
+            "Redis authentication mode. "
+            "'local' uses REDIS_URL; "
+            "'azure' uses Microsoft Entra managed identity."
+        ),
+    )
+    url: str = Field(
+        default="redis://redis:6379/0",
+        alias="REDIS_URL",
+        description="Redis connection URL (local mode only).",
+    )
+    azure_host: str = Field(
+        default="",
+        alias="AZURE_REDIS_HOST",
+        description=(
+            "Fully-qualified hostname of the Azure Cache for Redis instance, "
+            "e.g. myredis.redis.cache.windows.net (azure mode only)."
+        ),
+    )
+    azure_port: int = Field(
+        default=6380,
+        alias="AZURE_REDIS_PORT",
+        description="Port for the Azure Cache for Redis instance (azure mode only, default 6380).",
+    )
+    azure_use_ssl: bool = Field(
+        default=True,
+        alias="AZURE_REDIS_USE_SSL",
+        description="Whether to use SSL/TLS for the Azure Redis connection (azure mode only, default true).",
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class Settings(BaseSettings):
     """Aggregate settings — single entry-point for the whole app."""
 
@@ -310,6 +361,7 @@ class Settings(BaseSettings):
     worker: WorkerSettings = WorkerSettings()
     events: EventSettings = EventSettings()
     database: DatabaseSettings = DatabaseSettings()
+    redis: RedisSettings = RedisSettings()
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -379,3 +379,76 @@ class TestDatabaseSettings:
         from backend.config import DatabaseSettings
         settings = DatabaseSettings()
         assert settings.auto_migrate is False
+
+
+# ---------------------------------------------------------------------------
+# RedisSettings (config.py)
+# ---------------------------------------------------------------------------
+
+class TestRedisSettings:
+    def test_defaults_to_local_mode(self, monkeypatch):
+        monkeypatch.delenv("REDIS_MODE", raising=False)
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.mode == "local"
+
+    def test_local_mode_default_url(self, monkeypatch):
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.url == "redis://redis:6379/0"
+
+    def test_local_url_from_env(self, monkeypatch):
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/1")
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.url == "redis://localhost:6379/1"
+
+    def test_azure_mode_from_env(self, monkeypatch):
+        monkeypatch.setenv("REDIS_MODE", "azure")
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.mode == "azure"
+
+    def test_azure_host_from_env(self, monkeypatch):
+        monkeypatch.setenv("AZURE_REDIS_HOST", "myredis.redis.cache.windows.net")
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.azure_host == "myredis.redis.cache.windows.net"
+
+    def test_azure_port_default(self, monkeypatch):
+        monkeypatch.delenv("AZURE_REDIS_PORT", raising=False)
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.azure_port == 6380
+
+    def test_azure_port_from_env(self, monkeypatch):
+        monkeypatch.setenv("AZURE_REDIS_PORT", "6381")
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.azure_port == 6381
+
+    def test_azure_use_ssl_default(self, monkeypatch):
+        monkeypatch.delenv("AZURE_REDIS_USE_SSL", raising=False)
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.azure_use_ssl is True
+
+    def test_azure_use_ssl_false_from_env(self, monkeypatch):
+        monkeypatch.setenv("AZURE_REDIS_USE_SSL", "false")
+        from backend.config import RedisSettings
+        settings = RedisSettings()
+        assert settings.azure_use_ssl is False
+
+    def test_redis_settings_in_aggregate_settings(self):
+        from backend.config import RedisSettings, Settings
+        settings = Settings()
+        assert isinstance(settings.redis, RedisSettings)
+
+    def test_redis_accessible_via_get_settings(self):
+        from backend.config import RedisSettings, get_settings
+        # Clear the lru_cache to get a fresh Settings instance
+        get_settings.cache_clear()
+        settings = get_settings()
+        assert isinstance(settings.redis, RedisSettings)
+        get_settings.cache_clear()
