@@ -64,9 +64,9 @@ class OIDCSettings(BaseSettings):
     """OIDC / OAuth 2.0 authentication settings."""
 
     enabled: bool = Field(
-        default=False,
+        default=True,
         alias="AUTH_ENABLED",
-        description="Enable JWT authentication for all campaign endpoints.",
+        description="Enable JWT authentication for all campaign endpoints. Disable only for local development.",
     )
     authority: str = Field(
         default="",

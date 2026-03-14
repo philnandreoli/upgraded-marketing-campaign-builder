@@ -46,6 +46,32 @@ _RESUMABLE_STATUSES = [
 _AUTO_RESUME_DELAY_SECONDS = 1
 
 
+def _check_auth_safety(app_env: str, auth_enabled: bool) -> None:
+    """Refuse to start when authentication is disabled outside development/test.
+
+    Leaving ``AUTH_ENABLED=false`` in production silently removes **all** access
+    control, exposing every API endpoint to unauthenticated requests
+    (OWASP A05:2021 — Security Misconfiguration).  Fail-secure: block startup
+    rather than silently allow misconfigured deployments.
+
+    Development and test environments are exempt so that local runs and CI
+    pipelines can still disable auth for convenience.
+    """
+    if not auth_enabled:
+        if app_env.lower() not in ("development", "test"):
+            logger.critical(
+                "AUTH_ENABLED is False in non-development environment '%s'. "
+                "Refusing to start. Set AUTH_ENABLED=true for production.",
+                app_env,
+            )
+            raise SystemExit(1)
+        else:
+            logger.warning(
+                "Authentication is DISABLED. This is acceptable for local "
+                "development but must never be used in production."
+            )
+
+
 def _check_cors_safety(app_env: str, allowed_origins: list[str]) -> None:
     """Refuse to start when wildcard CORS origins are used outside development.
 
@@ -69,6 +95,10 @@ def make_startup_handler(app: object) -> Callable[[], None]:
     settings = get_settings()
 
     async def on_startup() -> None:
+        # Auth safety guard — refuse to start when authentication is disabled
+        # outside of development/test environments.
+        _check_auth_safety(settings.app.env, settings.oidc.enabled)
+
         # CORS safety guard — refuse to start in non-development environments
         # when wildcard origins are still configured.
         _check_cors_safety(settings.app.env, settings.cors.allowed_origins)

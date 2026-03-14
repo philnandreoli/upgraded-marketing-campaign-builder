@@ -233,6 +233,20 @@ All settings are loaded from environment variables (or a `.env` file) using **py
 | `EventSettings` | `EVENT_CHANNEL_NAME` (PostgreSQL NOTIFY channel for worker → API relay) |
 | `DatabaseSettings` | `DB_AUTH_MODE`, `DATABASE_URL`, `AZURE_POSTGRES_HOST/DATABASE/USER`, `API_AUTO_MIGRATE` |
 
+### Authentication configuration
+
+`AUTH_ENABLED` controls JWT/OIDC authentication for all campaign API endpoints.
+
+| Environment | Required value | Notes |
+|-------------|----------------|-------|
+| Local development | `false` | Auth can be disabled for convenience |
+| Test / CI | `false` | Allowed so automated pipelines can run without tokens |
+| Staging / Production | `true` | **Mandatory** — leaving this `false` exposes all endpoints |
+
+> **Important:** The API **refuses to start** if `APP_ENV` is not `development` or `test` and `AUTH_ENABLED=false`. Always set `AUTH_ENABLED=true` before deploying to any shared or production environment.
+
+When `AUTH_ENABLED=true` you must also configure `OIDC_AUTHORITY` and `OIDC_CLIENT_ID` so the API can validate bearer tokens.
+
 ### CORS configuration
 
 `CORS_ALLOWED_ORIGINS` controls which browser origins may make cross-origin requests to the API.
