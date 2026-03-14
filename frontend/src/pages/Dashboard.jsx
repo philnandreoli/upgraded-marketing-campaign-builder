@@ -99,6 +99,13 @@ export default function Dashboard({ events }) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
   };
 
+  // Clean up any pending debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
