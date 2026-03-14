@@ -1658,6 +1658,84 @@ a:hover { color: var(--color-primary-hover); }
 }
 
 /* ------------------------------------------------------------------ */
+/* Dashboard — Clickable Stat Cards                                    */
+/* ------------------------------------------------------------------ */
+
+.stat-card--clickable {
+  cursor: pointer;
+  text-align: left;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.stat-card--clickable:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(13,148,136,0.15);
+}
+.stat-card--active {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 2px rgba(13,148,136,0.25) !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard — Filter Tab Bar                                          */
+/* ------------------------------------------------------------------ */
+
+.filter-tabs {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  scrollbar-width: none;           /* Firefox */
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;             /* room for focus ring */
+  margin-bottom: 1.25rem;
+}
+.filter-tabs::-webkit-scrollbar { display: none; }
+
+.filter-tab {
+  flex-shrink: 0;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.filter-tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.filter-tab--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.filter-tab--active:hover {
+  color: #fff;
+}
+
+/* "View all" link inside filtered empty state */
+.empty-state-reset {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-primary);
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ */
 /* Dashboard — Campaign Cards                                          */
 /* ------------------------------------------------------------------ */
 
