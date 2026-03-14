@@ -34,6 +34,7 @@ from backend.tests.mock_store import InMemoryCampaignStore
 _ADMIN = User(id="admin-1", email="admin@example.com", roles=[UserRole.ADMIN])
 _MEMBER = User(id="member-1", email="member@example.com", roles=[UserRole.CAMPAIGN_BUILDER])
 _OUTSIDER = User(id="outsider-1", email="outsider@example.com", roles=[UserRole.VIEWER])
+_DEACTIVATED = User(id="deactivated-1", email="deactivated@example.com", roles=[UserRole.VIEWER], is_active=False)
 
 _CAMPAIGN_ID = "campaign-abc"
 
@@ -67,6 +68,7 @@ def fresh_store():
     store._users[_MEMBER.id] = _MEMBER
     store._users[_ADMIN.id] = _ADMIN
     store._users[_OUTSIDER.id] = _OUTSIDER
+    store._users[_DEACTIVATED.id] = _DEACTIVATED
     return store
 
 
@@ -235,6 +237,34 @@ class TestWsGlobalAuthEnabled:
              patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
             with client.websocket_connect(f"/ws?ticket={ticket}"):
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Deactivated user — campaign WS and global WS
+# ---------------------------------------------------------------------------
+
+class TestDeactivatedUserWs:
+    """Deactivated users must be rejected with close code 4001."""
+
+    def test_deactivated_user_campaign_ws_rejected_with_4001(self, client, fresh_store):
+        """A valid ticket belonging to a deactivated user is rejected with 4001."""
+        ticket = _make_ticket(_DEACTIVATED)
+        with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
+             patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with client.websocket_connect(f"/ws/{_CAMPAIGN_ID}?ticket={ticket}"):
+                    pass
+        assert exc_info.value.code == 4001
+
+    def test_deactivated_user_global_ws_rejected_with_4001(self, client, fresh_store):
+        """A valid ticket belonging to a deactivated user is rejected on the global WS."""
+        ticket = _make_ticket(_DEACTIVATED)
+        with patch("backend.api.websocket.get_settings", return_value=_auth_enabled_settings()), \
+             patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                with client.websocket_connect(f"/ws?ticket={ticket}"):
+                    pass
+        assert exc_info.value.code == 4001
 
 
 # ---------------------------------------------------------------------------
