@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { createCampaign } from "../api";
 import DatePicker from "../components/DatePicker";
 import { useUser } from "../UserContext";
@@ -100,6 +100,7 @@ function WorkspaceDropdown({ value, options, onChange, labelId }) {
 
 export default function NewCampaign() {
   const navigate = useNavigate();
+  const { workspaceId: routeWorkspaceId } = useParams();
   const [searchParams] = useSearchParams();
   const workspaceLabelId = useId();
   const { isAdmin } = useUser();
@@ -126,9 +127,13 @@ export default function NewCampaign() {
     [isAdmin, workspaces]
   );
 
-  // Pre-select workspace from ?workspace= query param, then personal workspace,
-  // then the first available creatable workspace.
+  // Pre-select workspace from route param, then ?workspace= query param,
+  // then personal workspace, then the first available creatable workspace.
   useEffect(() => {
+    if (routeWorkspaceId) {
+      setSelectedWorkspaceId(routeWorkspaceId);
+      return;
+    }
     if (creatableWorkspaces.length === 0) return;
     const paramId = searchParams.get("workspace");
     if (paramId && creatableWorkspaces.some((ws) => ws.id === paramId)) {
@@ -138,7 +143,7 @@ export default function NewCampaign() {
     } else {
       setSelectedWorkspaceId(creatableWorkspaces[0].id);
     }
-  }, [creatableWorkspaces, personalWorkspace, searchParams]);
+  }, [creatableWorkspaces, personalWorkspace, routeWorkspaceId, searchParams]);
 
   const set = (field) => (e) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -207,26 +212,28 @@ export default function NewCampaign() {
       <h2 className="page-title">Create New Campaign</h2>
 
       <form onSubmit={handleSubmit} style={{ maxWidth: 640 }}>
-        {/* Workspace picker — shown before Step 1 */}
-        <fieldset className="form-section">
-          <legend className="form-section-title">Workspace</legend>
+        {/* Workspace picker — hidden when workspace is provided via route param */}
+        {!routeWorkspaceId && (
+          <fieldset className="form-section">
+            <legend className="form-section-title">Workspace</legend>
 
-          {creatableWorkspaces.length === 0 ? (
-            <p style={{ color: "var(--color-danger)", fontSize: "0.85rem" }}>
-              You don&apos;t have Creator access to any workspace. Contact an admin to get started.
-            </p>
-          ) : (
-            <div className="form-group">
-              <label id={workspaceLabelId} htmlFor="workspace-select">Create in workspace *</label>
-              <WorkspaceDropdown
-                value={selectedWorkspaceId}
-                options={creatableWorkspaces}
-                onChange={setSelectedWorkspaceId}
-                labelId={workspaceLabelId}
-              />
-            </div>
-          )}
-        </fieldset>
+            {creatableWorkspaces.length === 0 ? (
+              <p style={{ color: "var(--color-danger)", fontSize: "0.85rem" }}>
+                You don&apos;t have Creator access to any workspace. Contact an admin to get started.
+              </p>
+            ) : (
+              <div className="form-group">
+                <label id={workspaceLabelId} htmlFor="workspace-select">Create in workspace *</label>
+                <WorkspaceDropdown
+                  value={selectedWorkspaceId}
+                  options={creatableWorkspaces}
+                  onChange={setSelectedWorkspaceId}
+                  labelId={workspaceLabelId}
+                />
+              </div>
+            )}
+          </fieldset>
+        )}
 
         <fieldset className="form-section">
           <legend className="form-section-title">
