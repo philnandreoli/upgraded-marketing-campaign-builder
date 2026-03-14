@@ -9,10 +9,13 @@ services:
       - "AI-Managed-AIServices.services.ai.azure.com:20.62.58.5"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/campaigns
+      REDIS_URL: redis://redis:6379/0
       # Local dev uses in-process execution — no worker service needed.
       WORKFLOW_EXECUTOR: in_process
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # Uncomment to test the full worker topology locally (requires Azure Service Bus credentials in .env):
@@ -44,6 +47,16 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
