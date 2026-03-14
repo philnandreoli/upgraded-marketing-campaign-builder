@@ -16,6 +16,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from backend.services.database import Base, UserRow, WorkspaceMemberRow, WorkspaceRow
 from backend.services.auth import _provision_user, validate_token
+import backend.infrastructure.auth as _auth_module
 
 
 # ---------------------------------------------------------------------------
@@ -281,3 +282,108 @@ class TestValidateTokenDeactivatedUser:
         assert isinstance(user, User)
         assert user.id == "active-user"
         assert user.is_active is True
+
+
+# ---------------------------------------------------------------------------
+# JWKS cache fallback — unknown kid triggers forced refresh
+# ---------------------------------------------------------------------------
+
+class TestJWKSCacheFallback:
+    """Tests for the JWKS cache fallback on an unknown key ID."""
+
+    def _make_user_row(self) -> UserRow:
+        return UserRow(
+            id="active-user",
+            email="active@example.com",
+            display_name="Active",
+            role="viewer",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            is_active=True,
+        )
+
+    def _mock_jwks(self, kid: str):
+        """Return a (mock_jwk, mock_jwks_set) pair for the given kid."""
+        mock_jwk = MagicMock()
+        mock_jwk.key_id = kid
+        mock_jwk.key = MagicMock()
+        mock_jwks = MagicMock()
+        mock_jwks.keys = [mock_jwk]
+        return mock_jwk, mock_jwks
+
+    async def test_unknown_kid_triggers_refresh_and_succeeds(self, db_session):
+        """When the cached JWKS doesn't contain the token's kid, a single forced
+        refresh is performed and validation succeeds with the refreshed keys."""
+        from backend.models.user import User
+
+        # Reset cooldown so the refresh is allowed.
+        _auth_module._last_forced_refresh = 0.0
+
+        _, mock_jwks_old = self._mock_jwks("old-kid")   # stale cache: wrong kid
+        mock_jwk_new, mock_jwks_new = self._mock_jwks("new-kid")  # fresh keys
+
+        # PyJWKSet.from_dict returns the old JWKS on the first call (cache hit),
+        # then the new JWKS on the second call (after forced refresh).
+        jwkset_side_effects = [mock_jwks_old, mock_jwks_new]
+
+        fake_payload = {
+            "oid": "active-user",
+            "preferred_username": "active@example.com",
+            "name": "Active",
+        }
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "old-kid"}]), \
+             patch("backend.infrastructure.auth._refresh_jwks_cache", new_callable=AsyncMock, return_value=[{"kid": "new-kid"}]) as mock_refresh, \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", side_effect=jwkset_side_effects), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "new-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", return_value=fake_payload), \
+             patch("backend.infrastructure.auth._provision_user", new_callable=AsyncMock, return_value=self._make_user_row()):
+
+            user = await validate_token("fake.jwt.token", db_session)
+
+        assert isinstance(user, User)
+        assert user.id == "active-user"
+        mock_refresh.assert_called_once()
+
+    async def test_unknown_kid_with_cooldown_active_raises_401(self, db_session):
+        """When the cooldown is active, a forced refresh is NOT attempted and
+        a 401 is raised immediately."""
+        import time
+        from fastapi import HTTPException
+
+        # Set _last_forced_refresh to now so the cooldown is active.
+        _auth_module._last_forced_refresh = time.time()
+
+        _, mock_jwks_old = self._mock_jwks("old-kid")
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "old-kid"}]), \
+             patch("backend.infrastructure.auth._refresh_jwks_cache", new_callable=AsyncMock) as mock_refresh, \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks_old), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "new-kid"}):
+
+            with pytest.raises(HTTPException) as exc_info:
+                await validate_token("fake.jwt.token", db_session)
+
+        assert exc_info.value.status_code == 401
+        mock_refresh.assert_not_called()
+
+    async def test_unknown_kid_refresh_still_fails_raises_401(self, db_session):
+        """If the refreshed JWKS still doesn't contain the token's kid, a 401
+        is raised (the key genuinely doesn't exist)."""
+        from fastapi import HTTPException
+
+        _auth_module._last_forced_refresh = 0.0
+
+        _, mock_jwks_old = self._mock_jwks("old-kid")
+        # After refresh, cache still only has 'old-kid' — token's 'new-kid' absent.
+        _, mock_jwks_after_refresh = self._mock_jwks("old-kid")
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "old-kid"}]), \
+             patch("backend.infrastructure.auth._refresh_jwks_cache", new_callable=AsyncMock, return_value=[{"kid": "old-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", side_effect=[mock_jwks_old, mock_jwks_after_refresh]), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "new-kid"}):
+
+            with pytest.raises(HTTPException) as exc_info:
+                await validate_token("fake.jwt.token", db_session)
+
+        assert exc_info.value.status_code == 401
