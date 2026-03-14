@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
-from backend.models.user import CampaignMember, CampaignMemberRole, User
+from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 
 
@@ -61,13 +61,16 @@ class InMemoryCampaignStore:
         """Return all campaigns whose status is in *statuses*."""
         return [c for c in self._campaigns.values() if c.status in statuses]
 
-    async def list_accessible(self, user_id: str, is_admin: bool = False) -> list[Campaign]:
+    async def list_accessible(self, user_id: str) -> list[Campaign]:
         """Return campaigns accessible to *user_id*.
 
-        Admins see all campaigns; other users see campaigns they are a direct
-        member of *or* campaigns belonging to a workspace they are a member of.
+        Admin status is resolved from the ``_users`` store rather than being
+        accepted as a caller-supplied flag.  Admins see all campaigns; other
+        users see campaigns they are a direct member of *or* campaigns belonging
+        to a workspace they are a member of.
         """
-        if is_admin:
+        user = self._users.get(user_id)
+        if user is not None and user.is_admin:
             return list(self._campaigns.values())
 
         # Workspaces the user is a member of
@@ -93,8 +96,21 @@ class InMemoryCampaignStore:
                 seen.add(campaign.id)
         return result
 
-    async def move_campaign(self, campaign_id: str, workspace_id: Optional[str]) -> Campaign:
-        """Move a campaign to a different workspace (or orphan it)."""
+    async def move_campaign(
+        self,
+        campaign_id: str,
+        workspace_id: Optional[str],
+        *,
+        acting_user_id: Optional[str] = None,
+    ) -> Campaign:
+        """Move a campaign to a different workspace (or orphan it).
+
+        When *acting_user_id* is provided the caller must be a platform admin.
+        """
+        if acting_user_id is not None:
+            user = self._users.get(acting_user_id)
+            if user is None or not user.is_admin:
+                raise PermissionError("Admin access required to move campaigns")
         campaign = self._campaigns.get(campaign_id)
         if campaign is None:
             raise ValueError(f"Campaign {campaign_id!r} not found")
@@ -163,7 +179,20 @@ class InMemoryCampaignStore:
         """Return the User for *user_id*, or ``None`` if not found."""
         return self._users.get(user_id)
 
-    async def delete(self, campaign_id: str) -> bool:
+    def add_user(self, user: User) -> None:
+        """Register a user in the in-memory store (test helper)."""
+        self._users[user.id] = user
+
+    async def delete(self, campaign_id: str, *, acting_user_id: Optional[str] = None) -> bool:
+        """Delete a campaign by ID.
+
+        When *acting_user_id* is provided the caller must be an ``owner`` member
+        of the campaign.
+        """
+        if acting_user_id is not None:
+            role_str = self._members.get((campaign_id, acting_user_id))
+            if role_str != CampaignMemberRole.OWNER.value:
+                raise PermissionError("User does not have delete permission")
         if campaign_id in self._campaigns:
             del self._campaigns[campaign_id]
             # Remove all member entries for this campaign
@@ -214,7 +243,26 @@ class InMemoryCampaignStore:
         workspace.updated_at = datetime.utcnow()
         return workspace
 
-    async def delete_workspace(self, workspace_id: str) -> bool:
+    async def delete_workspace(
+        self,
+        workspace_id: str,
+        *,
+        acting_user_id: Optional[str] = None,
+    ) -> bool:
+        """Delete a workspace.
+
+        When *acting_user_id* is provided the caller must be a platform admin
+        or a ``creator`` member of the workspace.
+        """
+        if acting_user_id is not None:
+            user = self._users.get(acting_user_id)
+            is_admin = user is not None and user.is_admin
+            if not is_admin:
+                role_str = self._workspace_members.get((workspace_id, acting_user_id))
+                if role_str != WorkspaceRole.CREATOR.value:
+                    raise PermissionError(
+                        "User does not have permission to delete this workspace"
+                    )
         if workspace_id not in self._workspaces:
             return False
         del self._workspaces[workspace_id]

@@ -147,7 +147,7 @@ async def list_campaigns(
     """Return campaigns visible to the current user (summary view)."""
     store = get_campaign_store()
     if user is not None:
-        campaigns = await store.list_accessible(user.id, is_admin=user.is_admin)
+        campaigns = await store.list_accessible(user.id)
     else:
         campaigns = await store.list_all()
 

@@ -115,9 +115,11 @@ class TestCampaignStoreUnit:
 
     @pytest.mark.asyncio
     async def test_list_accessible_admin_sees_all(self, store, brief):
+        from backend.models.user import User, UserRole
+        store.add_user(User(id="admin-user", roles=[UserRole.ADMIN, UserRole.CAMPAIGN_BUILDER]))
         await store.create(brief, owner_id="user-1")
         await store.create(brief, owner_id="user-2")
-        accessible = await store.list_accessible("admin-user", is_admin=True)
+        accessible = await store.list_accessible("admin-user")
         assert len(accessible) == 2
 
     @pytest.mark.asyncio
@@ -382,8 +384,139 @@ class TestWorkspaceMembershipUnit:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests — real PostgreSQL store (skipped when DB unavailable)
+# Defense-in-depth authorization tests
 # ---------------------------------------------------------------------------
+
+class TestStoreLayerAuthorization:
+    """Verify that destructive store operations enforce ownership/role checks
+    when an *acting_user_id* is supplied, and remain backward-compatible when
+    the parameter is omitted."""
+
+    # ------------------------------------------------------------------
+    # delete
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_delete_owner_succeeds(self, store, brief):
+        c = await store.create(brief, owner_id="owner-1")
+        result = await store.delete(c.id, acting_user_id="owner-1")
+        assert result is True
+        assert await store.get(c.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_non_owner_raises(self, store, brief):
+        from backend.models.user import CampaignMemberRole
+        c = await store.create(brief, owner_id="owner-1")
+        await store.add_member(c.id, "editor-1", CampaignMemberRole.EDITOR)
+        with pytest.raises(PermissionError):
+            await store.delete(c.id, acting_user_id="editor-1")
+
+    @pytest.mark.asyncio
+    async def test_delete_non_member_raises(self, store, brief):
+        c = await store.create(brief, owner_id="owner-1")
+        with pytest.raises(PermissionError):
+            await store.delete(c.id, acting_user_id="stranger")
+
+    @pytest.mark.asyncio
+    async def test_delete_no_acting_user_bypasses_check(self, store, brief):
+        """Without acting_user_id the legacy path works for any caller."""
+        c = await store.create(brief, owner_id="owner-1")
+        assert await store.delete(c.id) is True
+
+    # ------------------------------------------------------------------
+    # move_campaign
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_move_campaign_admin_succeeds(self, store, brief):
+        from backend.models.user import User, UserRole
+        store.add_user(User(id="admin-1", roles=[UserRole.ADMIN, UserRole.CAMPAIGN_BUILDER]))
+        ws1 = await store.create_workspace("WS1", owner_id="admin-1")
+        ws2 = await store.create_workspace("WS2", owner_id="admin-1")
+        c = await store.create(brief, workspace_id=ws1.id)
+        moved = await store.move_campaign(c.id, ws2.id, acting_user_id="admin-1")
+        assert moved.workspace_id == ws2.id
+
+    @pytest.mark.asyncio
+    async def test_move_campaign_non_admin_raises(self, store, brief):
+        from backend.models.user import User, UserRole
+        store.add_user(User(id="builder-1", roles=[UserRole.CAMPAIGN_BUILDER]))
+        ws = await store.create_workspace("WS", owner_id="owner-1")
+        c = await store.create(brief, workspace_id=ws.id)
+        with pytest.raises(PermissionError):
+            await store.move_campaign(c.id, None, acting_user_id="builder-1")
+
+    @pytest.mark.asyncio
+    async def test_move_campaign_unknown_user_raises(self, store, brief):
+        c = await store.create(brief, owner_id="owner-1")
+        with pytest.raises(PermissionError):
+            await store.move_campaign(c.id, None, acting_user_id="no-such-user")
+
+    @pytest.mark.asyncio
+    async def test_move_campaign_no_acting_user_bypasses_check(self, store, brief):
+        ws1 = await store.create_workspace("WS1", owner_id="user-1")
+        ws2 = await store.create_workspace("WS2", owner_id="user-1")
+        c = await store.create(brief, workspace_id=ws1.id)
+        moved = await store.move_campaign(c.id, ws2.id)
+        assert moved.workspace_id == ws2.id
+
+    # ------------------------------------------------------------------
+    # delete_workspace
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_creator_succeeds(self, store):
+        ws = await store.create_workspace("WS", owner_id="creator-1")
+        result = await store.delete_workspace(ws.id, acting_user_id="creator-1")
+        assert result is True
+        assert await store.get_workspace(ws.id) is None
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_admin_succeeds(self, store):
+        from backend.models.user import User, UserRole
+        store.add_user(User(id="admin-1", roles=[UserRole.ADMIN, UserRole.CAMPAIGN_BUILDER]))
+        ws = await store.create_workspace("WS", owner_id="someone-else")
+        result = await store.delete_workspace(ws.id, acting_user_id="admin-1")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_viewer_raises(self, store):
+        ws = await store.create_workspace("WS", owner_id="owner-1")
+        await store.add_workspace_member(ws.id, "viewer-1", WorkspaceRole.VIEWER)
+        with pytest.raises(PermissionError):
+            await store.delete_workspace(ws.id, acting_user_id="viewer-1")
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_non_member_raises(self, store):
+        ws = await store.create_workspace("WS", owner_id="owner-1")
+        with pytest.raises(PermissionError):
+            await store.delete_workspace(ws.id, acting_user_id="stranger")
+
+    @pytest.mark.asyncio
+    async def test_delete_workspace_no_acting_user_bypasses_check(self, store):
+        ws = await store.create_workspace("WS", owner_id="owner-1")
+        assert await store.delete_workspace(ws.id) is True
+
+    # ------------------------------------------------------------------
+    # list_accessible — admin status from DB, not from caller flag
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_list_accessible_unknown_user_not_admin(self, store, brief):
+        """A user not in the store should not receive admin-level access."""
+        await store.create(brief, owner_id="someone-else")
+        accessible = await store.list_accessible("ghost-user")
+        assert accessible == []
+
+    @pytest.mark.asyncio
+    async def test_list_accessible_non_admin_user_filtered(self, store, brief):
+        from backend.models.user import User, UserRole
+        store.add_user(User(id="viewer-1", roles=[UserRole.VIEWER]))
+        await store.create(brief, owner_id="someone-else")
+        # viewer-1 is not a member of any campaign
+        accessible = await store.list_accessible("viewer-1")
+        assert accessible == []
+
 
 def _db_available() -> bool:
     """Check whether the PostgreSQL database is reachable."""

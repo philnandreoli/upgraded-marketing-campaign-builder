@@ -68,6 +68,8 @@ _VIEWER = User(id="rbac-viewer-001", email="viewer@rbac.test", display_name="Vie
 @contextmanager
 def _as_user(user: User, store: InMemoryCampaignStore):
     """TestClient context with *user* as the authenticated principal."""
+    # Register the user in the store so store-layer admin checks work correctly.
+    store.add_user(user)
     app.dependency_overrides[get_current_user] = lambda: user
     mock_executor = MagicMock()
     mock_executor.dispatch = AsyncMock()

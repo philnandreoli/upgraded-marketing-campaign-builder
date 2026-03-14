@@ -16,7 +16,7 @@ from typing import Optional
 from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
-from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole
+from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from backend.core.exceptions import ConcurrentUpdateError
 from backend.infrastructure.database import (
@@ -168,14 +168,18 @@ class CampaignStore:
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows]
 
-    async def list_accessible(self, user_id: str, is_admin: bool = False) -> list[Campaign]:
+    async def list_accessible(self, user_id: str) -> list[Campaign]:
         """Return all campaigns accessible to *user_id*.
 
-        Admins see every campaign.  Other users see campaigns where they
+        Admins (determined by looking up the user's actual platform role in the
+        database) see every campaign.  Other users see campaigns where they
         appear in the campaign_members table (any role) *or* where they are
         a member of the campaign's workspace.
         """
         async with async_session() as session:
+            # Determine admin status from the database — do not trust a caller-supplied flag.
+            user_row = await session.get(UserRow, user_id)
+            is_admin = user_row is not None and UserRole.ADMIN in roles_from_db(user_row.role)
             if is_admin:
                 result = await session.execute(
                     select(CampaignRow).order_by(CampaignRow.created_at.desc())
@@ -200,13 +204,26 @@ class CampaignStore:
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows]
 
-    async def move_campaign(self, campaign_id: str, workspace_id: Optional[str]) -> Campaign:
+    async def move_campaign(
+        self,
+        campaign_id: str,
+        workspace_id: Optional[str],
+        *,
+        acting_user_id: Optional[str] = None,
+    ) -> Campaign:
         """Move a campaign to a different workspace (or orphan it when *workspace_id* is ``None``).
 
         Updates both the indexed column on ``campaigns`` and the JSON document.
-        Admin-only enforcement is expected at the API layer.
+
+        When *acting_user_id* is provided the caller's platform role is looked up
+        from the database and a ``PermissionError`` is raised unless the user holds
+        the ``admin`` platform role.
         """
         async with async_session() as session:
+            if acting_user_id is not None:
+                user_row = await session.get(UserRow, acting_user_id)
+                if user_row is None or UserRole.ADMIN not in roles_from_db(user_row.role):
+                    raise PermissionError("Admin access required to move campaigns")
             row = await session.get(CampaignRow, campaign_id)
             if row is None:
                 raise ValueError(f"Campaign {campaign_id!r} not found")
@@ -320,8 +337,18 @@ class CampaignStore:
                 is_active=row.is_active,
             )
 
-    async def delete(self, campaign_id: str) -> bool:
+    async def delete(self, campaign_id: str, *, acting_user_id: Optional[str] = None) -> bool:
+        """Delete a campaign by ID.
+
+        When *acting_user_id* is provided the caller's campaign membership is
+        verified and a ``PermissionError`` is raised unless the user holds the
+        ``owner`` role for this campaign.
+        """
         async with async_session() as session:
+            if acting_user_id is not None:
+                member_row = await session.get(CampaignMemberRow, (campaign_id, acting_user_id))
+                if member_row is None or member_row.role != CampaignMemberRole.OWNER.value:
+                    raise PermissionError("User does not have delete permission")
             result = await session.execute(
                 sa_delete(CampaignRow).where(CampaignRow.id == campaign_id)
             )
@@ -399,12 +426,32 @@ class CampaignStore:
             await session.commit()
             return self._workspace_from_row(row)
 
-    async def delete_workspace(self, workspace_id: str) -> bool:
+    async def delete_workspace(
+        self,
+        workspace_id: str,
+        *,
+        acting_user_id: Optional[str] = None,
+    ) -> bool:
         """Delete a workspace, orphaning its campaigns (sets workspace_id = NULL).
+
+        When *acting_user_id* is provided the caller must be either a platform
+        admin or the ``creator`` member of this workspace.  A ``PermissionError``
+        is raised if neither condition is met.
 
         Returns ``True`` if the workspace existed and was deleted, ``False`` otherwise.
         """
         async with async_session() as session:
+            if acting_user_id is not None:
+                user_row = await session.get(UserRow, acting_user_id)
+                is_admin = user_row is not None and UserRole.ADMIN in roles_from_db(user_row.role)
+                if not is_admin:
+                    member_row = await session.get(
+                        WorkspaceMemberRow, (workspace_id, acting_user_id)
+                    )
+                    if member_row is None or member_row.role != WorkspaceRole.CREATOR.value:
+                        raise PermissionError(
+                            "User does not have permission to delete this workspace"
+                        )
             row = await session.get(WorkspaceRow, workspace_id)
             if row is None:
                 return False
