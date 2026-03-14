@@ -86,14 +86,6 @@ export default function AppNavbar({
         <NavLink to="/workspaces" className={({ isActive }) => navLinkClass(isActive)}>
           Workspaces
         </NavLink>
-        {!isViewer && (
-          <NavLink to="/new" className={({ isActive }) => navLinkClass(isActive, "navbar-link--create")}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            Create Campaign
-          </NavLink>
-        )}
         {isAdmin && (
           <NavLink to="/admin" className={({ isActive }) => navLinkClass(isActive)}>
             Admin

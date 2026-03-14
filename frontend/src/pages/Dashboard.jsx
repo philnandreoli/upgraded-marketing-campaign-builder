@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
@@ -66,9 +65,9 @@ export default function Dashboard({ events }) {
           content, and channel planning for you.
         </p>
         {!isViewer && (
-          <Link to="/new" className="btn btn-primary">
-            + Create your first campaign
-          </Link>
+          <p className="empty-state-body">
+            Select a workspace to create your first campaign.
+          </p>
         )}
       </div>
     );
@@ -126,11 +125,6 @@ export default function Dashboard({ events }) {
 
       <div className="section-header">
         <h2>Campaigns</h2>
-        {!isViewer && (
-          <Link to="/new" className="btn btn-primary">
-            + Create Campaign
-          </Link>
-        )}
       </div>
 
       <div className="workspace-list">
