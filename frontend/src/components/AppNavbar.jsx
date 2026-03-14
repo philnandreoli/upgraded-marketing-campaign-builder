@@ -53,7 +53,6 @@ function LogoMark() {
  *   connected    {boolean}  WebSocket live/offline status
  *   activeAccount {object}  MSAL account object (may be undefined)
  *   isAdmin      {boolean}
- *   isViewer     {boolean}
  *   authEnabled  {boolean}  Whether MSAL auth is configured
  *   onLogout     {Function} Callback to trigger logoutRedirect
  */
@@ -61,7 +60,6 @@ export default function AppNavbar({
   connected,
   activeAccount,
   isAdmin,
-  isViewer,
   authEnabled,
   onLogout,
 }) {

@@ -85,7 +85,7 @@ function AuthenticatedApp() {
   const { events, connected } = useWebSocket(null);
   const { instance, accounts } = useMsal();
   const activeAccount = accounts[0];
-  const { isAdmin, isViewer } = useUser();
+  const { isAdmin } = useUser();
 
   return (
     <div className="app-shell">
@@ -93,7 +93,6 @@ function AuthenticatedApp() {
         connected={connected}
         activeAccount={activeAccount}
         isAdmin={isAdmin}
-        isViewer={isViewer}
         authEnabled={authEnabled}
         onLogout={() => instance.logoutRedirect()}
       />
