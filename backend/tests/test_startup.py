@@ -1,5 +1,6 @@
 """
-Tests for the auto-resume startup logic in backend/apps/api/startup.py.
+Tests for the auto-resume startup logic and security guards in
+backend/apps/api/startup.py.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import pytest
 
 from backend.models.campaign import CampaignBrief, CampaignStatus
 from backend.tests.mock_store import InMemoryCampaignStore
+from backend.apps.api.startup import _check_auth_safety as _real_check_auth_safety
 
 
 # ---------------------------------------------------------------------------
@@ -278,3 +280,55 @@ class TestMakeStartupHandlerAutoResume:
                     pass  # EventSubscriber setup may fail in test; that's OK
 
         mock_future.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _check_auth_safety — startup security guard for AUTH_ENABLED
+# ---------------------------------------------------------------------------
+
+
+class TestAuthStartupGuard:
+    """Validate that the startup guard rejects disabled auth outside dev/test."""
+
+    def test_auth_disabled_in_production_raises_system_exit(self):
+        """SystemExit(1) is raised when auth is disabled in a production environment."""
+        with pytest.raises(SystemExit) as exc_info:
+            _real_check_auth_safety("production", False)
+        assert exc_info.value.code == 1
+
+    def test_auth_disabled_in_staging_raises_system_exit(self):
+        """SystemExit(1) is raised when auth is disabled in any non-development env."""
+        with pytest.raises(SystemExit) as exc_info:
+            _real_check_auth_safety("staging", False)
+        assert exc_info.value.code == 1
+
+    def test_auth_disabled_in_unknown_env_raises_system_exit(self):
+        """An unrecognised APP_ENV is treated as non-development and blocks startup."""
+        with pytest.raises(SystemExit) as exc_info:
+            _real_check_auth_safety("unknown", False)
+        assert exc_info.value.code == 1
+
+    def test_auth_disabled_in_development_is_allowed(self):
+        """No SystemExit when auth is disabled in development (opt-out for local dev)."""
+        # Should not raise
+        _real_check_auth_safety("development", False)
+
+    def test_auth_disabled_in_test_is_allowed(self):
+        """No SystemExit when auth is disabled in test environments (e.g. CI)."""
+        # Should not raise
+        _real_check_auth_safety("test", False)
+
+    def test_auth_disabled_env_check_is_case_insensitive(self):
+        """APP_ENV comparison is case-insensitive — 'Development' should be allowed."""
+        # Should not raise
+        _real_check_auth_safety("Development", False)
+
+    def test_auth_enabled_in_production_is_allowed(self):
+        """No SystemExit when auth is enabled, regardless of environment."""
+        # Should not raise
+        _real_check_auth_safety("production", True)
+
+    def test_auth_enabled_in_development_is_allowed(self):
+        """No SystemExit when auth is enabled in development."""
+        # Should not raise
+        _real_check_auth_safety("development", True)
