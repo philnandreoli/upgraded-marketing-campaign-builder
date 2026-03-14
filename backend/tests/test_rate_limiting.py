@@ -15,6 +15,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,6 +46,8 @@ _BUILDER = User(
     roles=[UserRole.CAMPAIGN_BUILDER],
 )
 
+_RL_WS_ID = "rl-workspace-001"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -57,6 +60,18 @@ def _patch_stores():
     fresh_store = InMemoryCampaignStore()
     mock_executor = MagicMock()
     mock_executor.dispatch = AsyncMock()
+
+    # Pre-create workspace and add builder as CREATOR
+    async def _setup():
+        from backend.models.workspace import WorkspaceRole
+        ws = await fresh_store.create_workspace(name="RL Test Workspace", owner_id=_BUILDER.id)
+        ws.id = _RL_WS_ID
+        fresh_store._workspaces = {_RL_WS_ID: ws}
+        fresh_store._workspace_members = {
+            (_RL_WS_ID, _BUILDER.id): WorkspaceRole.CREATOR.value,
+            (_RL_WS_ID, _ADMIN.id): WorkspaceRole.CREATOR.value,
+        }
+    asyncio.get_event_loop().run_until_complete(_setup())
 
     with (
         patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store),
@@ -146,26 +161,26 @@ def _make_user_row(user_id: str, role: str = "admin") -> UserRow:
 class TestCreateCampaignRateLimit:
     def test_first_request_succeeds(self):
         with _as_user(_BUILDER) as client:
-            r = client.post("/api/campaigns", json=_CAMPAIGN_PAYLOAD)
+            r = client.post(f"/api/workspaces/{_RL_WS_ID}/campaigns", json=_CAMPAIGN_PAYLOAD)
             assert r.status_code == 201
 
     def test_eleventh_request_is_rate_limited(self):
         """The 11th POST /api/campaigns within one minute must return 429."""
         with _as_user(_BUILDER) as client:
             for _ in range(10):
-                r = client.post("/api/campaigns", json=_CAMPAIGN_PAYLOAD)
+                r = client.post(f"/api/workspaces/{_RL_WS_ID}/campaigns", json=_CAMPAIGN_PAYLOAD)
                 assert r.status_code == 201, f"Expected 201, got {r.status_code}"
 
-            r = client.post("/api/campaigns", json=_CAMPAIGN_PAYLOAD)
+            r = client.post(f"/api/workspaces/{_RL_WS_ID}/campaigns", json=_CAMPAIGN_PAYLOAD)
             assert r.status_code == 429
 
     def test_rate_limit_response_has_retry_after_header(self):
         """429 responses must include a Retry-After header."""
         with _as_user(_BUILDER) as client:
             for _ in range(10):
-                client.post("/api/campaigns", json=_CAMPAIGN_PAYLOAD)
+                client.post(f"/api/workspaces/{_RL_WS_ID}/campaigns", json=_CAMPAIGN_PAYLOAD)
 
-            r = client.post("/api/campaigns", json=_CAMPAIGN_PAYLOAD)
+            r = client.post(f"/api/workspaces/{_RL_WS_ID}/campaigns", json=_CAMPAIGN_PAYLOAD)
             assert r.status_code == 429
             assert "retry-after" in r.headers
 

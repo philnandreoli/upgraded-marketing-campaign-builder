@@ -5,6 +5,7 @@ export default function ClarificationSection({
   questions,
   savedAnswers,
   campaignId,
+  workspaceId,
   status,
   onSubmitted,
   readOnly = false,
@@ -33,7 +34,7 @@ export default function ClarificationSection({
     e.preventDefault();
     setSubmitting(true);
     try {
-      await submitClarification(campaignId, answers);
+      await submitClarification(workspaceId, campaignId, answers);
       onSubmitted?.();
     } catch (err) {
       alert("Failed to submit answers: " + err.message);

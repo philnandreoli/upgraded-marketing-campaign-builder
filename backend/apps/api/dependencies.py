@@ -102,26 +102,28 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
 
 
 async def get_campaign_for_read(
+    workspace_id: str,
     campaign_id: str,
     user: Optional[User] = Depends(get_current_user),
 ) -> Campaign:
     """FastAPI dependency: load a campaign and authorize READ access."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
-    if campaign is None:
+    if campaign is None or campaign.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.READ, store)
     return campaign
 
 
 async def get_campaign_for_write(
+    workspace_id: str,
     campaign_id: str,
     user: Optional[User] = Depends(get_current_user),
 ) -> Campaign:
     """FastAPI dependency: load a campaign and authorize WRITE access."""
     store = get_campaign_store()
     campaign = await store.get(campaign_id)
-    if campaign is None:
+    if campaign is None or campaign.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.WRITE, store)
     return campaign

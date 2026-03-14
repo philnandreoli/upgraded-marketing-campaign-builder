@@ -57,12 +57,11 @@ export async function getMe() {
   return res.json();
 }
 
-export async function createCampaign(brief, workspaceId = null) {
-  const body = workspaceId !== null ? { ...brief, workspace_id: workspaceId } : brief;
-  const res = await fetch(`${API_BASE}/api/campaigns`, {
+export async function createCampaign(brief, workspaceId) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify(body),
+    body: JSON.stringify(brief),
   });
   if (!res.ok) {
     let detail = `Create failed: ${res.status}`;
@@ -75,34 +74,34 @@ export async function createCampaign(brief, workspaceId = null) {
   return res.json();
 }
 
-export async function listCampaigns() {
-  const res = await fetch(`${API_BASE}/api/campaigns`, {
+export async function listCampaigns(workspaceId) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns`, {
     headers: await authHeaders(),
   });
   if (!res.ok) throw new Error(`List failed: ${res.status}`);
   return res.json();
 }
 
-export async function getCampaign(id) {
-  const res = await fetch(`${API_BASE}/api/campaigns/${id}`, {
+export async function getCampaign(workspaceId, id) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(id)}`, {
     headers: await authHeaders(),
   });
   if (!res.ok) throw new Error(`Get failed: ${res.status}`);
   return res.json();
 }
 
-export async function getCampaignEvents(campaignId, { limit = 100, offset = 0 } = {}) {
+export async function getCampaignEvents(workspaceId, campaignId, { limit = 100, offset = 0 } = {}) {
   const params = new URLSearchParams({ limit, offset });
   const res = await fetch(
-    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/events?${params}`,
+    `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/events?${params}`,
     { headers: await authHeaders() }
   );
   if (!res.ok) throw new Error(`Get events failed: ${res.status}`);
   return res.json();
 }
 
-export async function deleteCampaign(id) {
-  const res = await fetch(`${API_BASE}/api/campaigns/${id}`, {
+export async function deleteCampaign(workspaceId, id) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(id)}`, {
     method: "DELETE",
     headers: await authHeaders(),
   });
@@ -115,8 +114,8 @@ export async function submitReview() {
   throw new Error("submitReview is deprecated. Use submitContentApproval.");
 }
 
-export async function submitContentApproval(campaignId, pieces, rejectCampaign = false) {
-  const url = `${API_BASE}/api/campaigns/${campaignId}/content-approve`;
+export async function submitContentApproval(workspaceId, campaignId, pieces, rejectCampaign = false) {
+  const url = `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content-approve`;
   const payload = {
     campaign_id: campaignId,
     pieces,
@@ -138,9 +137,9 @@ export async function submitContentApproval(campaignId, pieces, rejectCampaign =
   return res.json();
 }
 
-export async function updatePieceNotes(campaignId, pieceIndex, notes) {
+export async function updatePieceNotes(workspaceId, campaignId, pieceIndex, notes) {
   const res = await fetch(
-    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/notes`,
+    `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/notes`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
@@ -151,9 +150,9 @@ export async function updatePieceNotes(campaignId, pieceIndex, notes) {
   return res.json();
 }
 
-export async function updatePieceDecision(campaignId, pieceIndex, { approved, editedContent = null, notes = "" }) {
+export async function updatePieceDecision(workspaceId, campaignId, pieceIndex, { approved, editedContent = null, notes = "" }) {
   const res = await fetch(
-    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/decision`,
+    `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/decision`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
@@ -167,8 +166,8 @@ export async function updatePieceDecision(campaignId, pieceIndex, { approved, ed
   return res.json();
 }
 
-export async function submitClarification(campaignId, answers) {
-  const res = await fetch(`${API_BASE}/api/campaigns/${campaignId}/clarify`, {
+export async function submitClarification(workspaceId, campaignId, answers) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/clarify`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({ campaign_id: campaignId, answers }),
@@ -222,14 +221,10 @@ export async function listAllCampaigns() {
   return res.json();
 }
 
-export async function moveCampaign(campaignId, workspaceId) {
-  const res = await fetch(`${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/workspace`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({ workspace_id: workspaceId }),
-  });
-  if (!res.ok) throw new Error(`Move campaign failed: ${res.status}`);
-  return res.json();
+export async function moveCampaign() {
+  // This endpoint has been removed. Campaign workspace is now set at creation time
+  // via the URL path and cannot be changed after creation.
+  throw new Error("moveCampaign is no longer supported. Campaign workspace is set at creation time.");
 }
 
 export async function searchEntraUsers(search) {
@@ -255,16 +250,16 @@ export async function provisionUser(entraId, email, displayName, roles) {
 // Campaign member management API
 // ---------------------------------------------------------------------------
 
-export async function listCampaignMembers(campaignId) {
-  const res = await fetch(`${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members`, {
+export async function listCampaignMembers(workspaceId, campaignId) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/members`, {
     headers: await authHeaders(),
   });
   if (!res.ok) throw new Error(`List members failed: ${res.status}`);
   return res.json();
 }
 
-export async function addCampaignMember(campaignId, userId, role) {
-  const res = await fetch(`${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members`, {
+export async function addCampaignMember(workspaceId, campaignId, userId, role) {
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/members`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({ user_id: userId, role }),
@@ -273,18 +268,18 @@ export async function addCampaignMember(campaignId, userId, role) {
   return res.json();
 }
 
-export async function removeCampaignMember(campaignId, userId) {
+export async function removeCampaignMember(workspaceId, campaignId, userId) {
   const res = await fetch(
-    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(userId)}`,
+    `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(userId)}`,
     { method: "DELETE", headers: await authHeaders() }
   );
   if (!res.ok && res.status !== 204)
     throw new Error(`Remove member failed: ${res.status}`);
 }
 
-export async function updateCampaignMemberRole(campaignId, userId, role) {
+export async function updateCampaignMemberRole(workspaceId, campaignId, userId, role) {
   const res = await fetch(
-    `${API_BASE}/api/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(userId)}`,
+    `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/members/${encodeURIComponent(userId)}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
