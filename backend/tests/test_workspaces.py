@@ -240,6 +240,35 @@ class TestListWorkspaces:
         ids = [w["id"] for w in r.json()]
         assert "ws-contrib" in ids
 
+    def test_list_workspaces_includes_owner_and_created_at(self, _isolated_store):
+        """owner_id, owner_display_name, and created_at must be present in each summary."""
+        _isolated_store._workspaces["ws-owned"] = _make_workspace("ws-owned", "Owned", _BUILDER.id)
+        _isolated_store._workspace_members[("ws-owned", _BUILDER.id)] = "creator"
+        _isolated_store._users[_BUILDER.id] = _BUILDER
+
+        with _as_user(_BUILDER) as c:
+            r = c.get("/api/workspaces")
+        assert r.status_code == 200
+        data = r.json()
+        ws = next(w for w in data if w["id"] == "ws-owned")
+        assert ws["owner_id"] == _BUILDER.id
+        assert ws["owner_display_name"] == _BUILDER.display_name
+        assert ws["created_at"] is not None
+
+    def test_list_workspaces_handles_missing_owner(self, _isolated_store):
+        """When the owner user record does not exist, owner_display_name is None."""
+        _isolated_store._workspaces["ws-orphan"] = _make_workspace("ws-orphan", "Orphan", "unknown-user")
+        _isolated_store._workspace_members[("ws-orphan", _ADMIN.id)] = "creator"
+
+        with _as_user(_ADMIN) as c:
+            r = c.get("/api/workspaces")
+        assert r.status_code == 200
+        data = r.json()
+        ws = next((w for w in data if w["id"] == "ws-orphan"), None)
+        assert ws is not None
+        assert ws["owner_id"] == "unknown-user"
+        assert ws["owner_display_name"] is None
+
 
 class TestUpdateWorkspace:
     """PATCH /api/workspaces/{id}"""

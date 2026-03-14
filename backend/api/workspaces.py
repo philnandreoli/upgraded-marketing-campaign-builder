@@ -115,6 +115,9 @@ class WorkspaceSummary(BaseModel):
     role: str  # the current user's role in this workspace
     member_count: int = 0
     campaign_count: int = 0
+    owner_id: Optional[str] = None
+    owner_display_name: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +155,15 @@ async def list_workspaces(
     else:
         workspaces = await store.list_workspaces("local", is_admin=True)
 
+    # Fetch owner display names — one query per unique owner_id (deduplicated)
+    owner_ids = {ws.owner_id for ws in workspaces if ws.owner_id}
+    owner_map: dict[str, Optional[str]] = {}
+    for oid in owner_ids:
+        owner_user = await store.get_user(oid)
+        owner_map[oid] = (
+            owner_user.display_name if owner_user is not None else None
+        )
+
     result: list[WorkspaceSummary] = []
     for ws in workspaces:
         if user is not None:
@@ -171,6 +183,9 @@ async def list_workspaces(
                 role=role_str,
                 member_count=len(members),
                 campaign_count=len(campaigns),
+                owner_id=ws.owner_id,
+                owner_display_name=owner_map.get(ws.owner_id) if ws.owner_id else None,
+                created_at=ws.created_at,
             )
         )
     return result
