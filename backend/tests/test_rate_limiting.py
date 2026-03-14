@@ -27,6 +27,7 @@ from backend.models.user import User, UserRole
 from backend.services.auth import get_current_user
 from backend.services.database import Base, UserRow, get_db
 from backend.tests.mock_store import InMemoryCampaignStore
+from backend.infrastructure.ticket_store import InMemoryTicketStore
 
 # ---------------------------------------------------------------------------
 # Shared users
@@ -97,6 +98,7 @@ def _patch_stores():
         ),
         patch("backend.apps.api.startup.init_db", new_callable=AsyncMock),
         patch("backend.apps.api.startup.close_db", new_callable=AsyncMock),
+        patch("backend.api.websocket.get_ticket_store", return_value=InMemoryTicketStore()),
     ):
         yield fresh_store
 
