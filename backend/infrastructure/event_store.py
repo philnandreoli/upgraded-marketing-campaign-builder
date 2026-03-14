@@ -10,14 +10,41 @@ written here by the worker's ``_on_event`` callback and read back by the
 from __future__ import annotations
 
 import json
+import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from enum import Enum
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import select
 
 from backend.infrastructure.database import CampaignEventRow, async_session
 from backend.models.events import CampaignEventLog
+
+logger = logging.getLogger(__name__)
+
+
+class StrictEventEncoder(json.JSONEncoder):
+    """JSON encoder that handles known types explicitly.
+
+    Raises a logged warning for unexpected types rather than silently
+    converting them via ``str()``, which can mask bugs and leak sensitive data.
+    """
+
+    def default(self, obj: object) -> object:
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, Enum):
+            return obj.value
+        logger.warning(
+            "Unexpected type %s in event payload — falling back to str(). "
+            "This may indicate a bug.",
+            type(obj).__name__,
+        )
+        return str(obj)
 
 
 class EventStore:
@@ -38,7 +65,7 @@ class EventStore:
             campaign_id=campaign_id,
             event_type=event_type,
             stage=stage,
-            payload=json.dumps(payload, default=str),
+            payload=json.dumps(payload, cls=StrictEventEncoder),
             owner_id=owner_id,
             created_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )

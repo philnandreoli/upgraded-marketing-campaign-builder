@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from enum import Enum
 from typing import Optional
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -257,6 +259,70 @@ class TestEventStoreModule:
             events = await store.get_events("camp-1")
 
         assert events == []
+
+
+# ---------------------------------------------------------------------------
+# Tests for StrictEventEncoder
+# ---------------------------------------------------------------------------
+
+
+class TestStrictEventEncoder:
+    """Tests for the explicit JSON encoder used in save_event."""
+
+    def test_datetime_serialized_as_isoformat(self):
+        from backend.infrastructure.event_store import StrictEventEncoder
+
+        dt = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        result = json.dumps({"ts": dt}, cls=StrictEventEncoder)
+        assert json.loads(result)["ts"] == "2025-06-15T12:00:00+00:00"
+
+    def test_date_serialized_as_isoformat(self):
+        from backend.infrastructure.event_store import StrictEventEncoder
+
+        d = date(2025, 6, 15)
+        result = json.dumps({"d": d}, cls=StrictEventEncoder)
+        assert json.loads(result)["d"] == "2025-06-15"
+
+    def test_uuid_serialized_as_string(self):
+        from backend.infrastructure.event_store import StrictEventEncoder
+
+        uid = UUID("12345678-1234-5678-1234-567812345678")
+        result = json.dumps({"id": uid}, cls=StrictEventEncoder)
+        assert json.loads(result)["id"] == "12345678-1234-5678-1234-567812345678"
+
+    def test_enum_serialized_as_value(self):
+        from backend.infrastructure.event_store import StrictEventEncoder
+
+        class Status(Enum):
+            ACTIVE = "active"
+
+        result = json.dumps({"status": Status.ACTIVE}, cls=StrictEventEncoder)
+        assert json.loads(result)["status"] == "active"
+
+    def test_unexpected_type_logs_warning(self, caplog):
+        from backend.infrastructure.event_store import StrictEventEncoder
+
+        class _Opaque:
+            def __str__(self):
+                return "opaque-value"
+
+        import logging
+        with caplog.at_level(logging.WARNING, logger="backend.infrastructure.event_store"):
+            result = json.dumps({"obj": _Opaque()}, cls=StrictEventEncoder)
+
+        assert json.loads(result)["obj"] == "opaque-value"
+        assert any("_Opaque" in record.message for record in caplog.records)
+        assert any("Unexpected type" in record.message for record in caplog.records)
+
+    def test_unexpected_type_falls_back_to_str(self):
+        from backend.infrastructure.event_store import StrictEventEncoder
+
+        class _Custom:
+            def __str__(self):
+                return "custom-repr"
+
+        result = json.dumps({"val": _Custom()}, cls=StrictEventEncoder)
+        assert json.loads(result)["val"] == "custom-repr"
 
 
 # ---------------------------------------------------------------------------
