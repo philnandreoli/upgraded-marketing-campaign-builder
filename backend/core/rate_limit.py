@@ -13,7 +13,7 @@ Recommended per-endpoint limits (OWASP A04:2021 — Insecure Design):
 | Global API (default)            | 100 req/min   |
 | ``POST /api/campaigns``         | 10 req/min    |
 | Admin endpoints (``/api/admin``)|  30 req/min   |
-| ``POST /api/ws/ticket``         | 10 req/min    |
+| ``POST /api/ws/ticket``         | 30 req/min    |
 """
 
 from __future__ import annotations

@@ -271,14 +271,14 @@ class TestWsTicketRateLimit:
             # or 401 when auth is not configured — both are non-429.
             assert r.status_code != 429
 
-    def test_eleventh_ticket_request_is_rate_limited(self):
-        """The 11th POST /api/ws/ticket within one minute must return 429."""
+    def test_thirty_first_ticket_request_is_rate_limited(self):
+        """The 31st POST /api/ws/ticket within one minute must return 429."""
         from backend.infrastructure.auth import require_authenticated
 
         app.dependency_overrides[require_authenticated] = lambda: _BUILDER
         try:
             client = TestClient(app, raise_server_exceptions=False)
-            for _ in range(10):
+            for _ in range(30):
                 r = client.post("/api/ws/ticket")
                 assert r.status_code == 200, f"Expected 200, got {r.status_code}"
 
@@ -293,7 +293,7 @@ class TestWsTicketRateLimit:
         app.dependency_overrides[require_authenticated] = lambda: _BUILDER
         try:
             client = TestClient(app, raise_server_exceptions=False)
-            for _ in range(10):
+            for _ in range(30):
                 client.post("/api/ws/ticket")
 
             r = client.post("/api/ws/ticket")
