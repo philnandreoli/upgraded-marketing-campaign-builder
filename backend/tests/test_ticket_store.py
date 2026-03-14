@@ -18,6 +18,7 @@ from backend.infrastructure.ticket_store import (
     RedisTicketStore,
     TicketStore,
     _KEY_PREFIX,
+    _require_redis_url,
     get_ticket_store,
 )
 
@@ -285,3 +286,55 @@ class TestGetTicketStore:
         with patch("backend.infrastructure.ticket_store._ticket_store", in_memory):
             store = get_ticket_store()
         assert store is in_memory
+
+    def test_local_mode_raises_if_redis_url_empty(self):
+        """get_ticket_store() raises RuntimeError when REDIS_MODE=local and REDIS_URL is empty."""
+        mock_settings = MagicMock()
+        mock_settings.redis.mode = "local"
+        mock_settings.redis.url = ""
+
+        with patch("backend.infrastructure.ticket_store.get_settings", return_value=mock_settings):
+            with pytest.raises(RuntimeError, match="REDIS_URL environment variable is required"):
+                get_ticket_store()
+
+    def test_azure_mode_does_not_require_redis_url(self):
+        """get_ticket_store() does not raise when REDIS_MODE=azure even if REDIS_URL is empty."""
+        mock_settings = MagicMock()
+        mock_settings.redis.mode = "azure"
+        mock_settings.redis.url = ""
+
+        with patch("backend.infrastructure.ticket_store.get_settings", return_value=mock_settings):
+            store = get_ticket_store()
+        assert isinstance(store, RedisTicketStore)
+
+
+# ---------------------------------------------------------------------------
+# _require_redis_url helper
+# ---------------------------------------------------------------------------
+
+
+class TestRequireRedisUrl:
+    """Tests for the _require_redis_url() helper."""
+
+    def test_returns_url_when_set(self):
+        """_require_redis_url() returns the URL when REDIS_URL is set."""
+        mock_settings = MagicMock()
+        mock_settings.redis.url = "redis://localhost:6379/0"
+
+        with patch("backend.infrastructure.ticket_store.get_settings", return_value=mock_settings):
+            result = _require_redis_url()
+        assert result == "redis://localhost:6379/0"
+
+    def test_raises_when_url_empty(self):
+        """_require_redis_url() raises RuntimeError when REDIS_URL is empty."""
+        mock_settings = MagicMock()
+        mock_settings.redis.url = ""
+
+        with patch("backend.infrastructure.ticket_store.get_settings", return_value=mock_settings):
+            with pytest.raises(RuntimeError) as exc_info:
+                _require_redis_url()
+
+        error_message = str(exc_info.value)
+        assert "REDIS_URL environment variable is required" in error_message
+        assert "REDIS_MODE=local" in error_message
+        assert "redis://redis:6379/0" in error_message

@@ -30,10 +30,12 @@ from backend.apps.api.startup import _check_cors_safety as _real_check_cors_safe
 @pytest.fixture(autouse=True)
 def _patch_db_lifecycle():
     """Prevent TestClient from triggering real DB init/close or startup guards."""
+    mock_ticket_store = MagicMock(close=AsyncMock())
     with patch("backend.apps.api.startup.init_db", new_callable=AsyncMock), \
          patch("backend.apps.api.startup.close_db", new_callable=AsyncMock), \
          patch("backend.apps.api.startup._check_cors_safety"), \
-         patch("backend.apps.api.startup._check_auth_safety"):
+         patch("backend.apps.api.startup._check_auth_safety"), \
+         patch("backend.infrastructure.ticket_store.get_ticket_store", return_value=mock_ticket_store):
         yield
 
 

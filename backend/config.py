@@ -303,7 +303,8 @@ class RedisSettings(BaseSettings):
 
     ``local`` (default)
         Standard Redis URL connection.  Set ``REDIS_URL`` to point at your
-        local Redis instance (defaults to ``redis://redis:6379/0``).
+        local Redis instance.  ``REDIS_URL`` has no default — the API raises
+        a :class:`RuntimeError` on startup if it is unset in local mode.
 
     ``azure``
         Azure Cache for Redis with token-based authentication via
@@ -321,7 +322,7 @@ class RedisSettings(BaseSettings):
         ),
     )
     url: str = Field(
-        default="redis://redis:6379/0",
+        default="",
         alias="REDIS_URL",
         description="Redis connection URL (local mode only).",
     )

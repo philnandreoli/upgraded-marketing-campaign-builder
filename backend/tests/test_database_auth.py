@@ -396,7 +396,7 @@ class TestRedisSettings:
         monkeypatch.delenv("REDIS_URL", raising=False)
         from backend.config import RedisSettings
         settings = RedisSettings()
-        assert settings.url == "redis://redis:6379/0"
+        assert settings.url == ""
 
     def test_local_url_from_env(self, monkeypatch):
         monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/1")
