@@ -126,9 +126,11 @@ def make_startup_handler(app: object) -> Callable[[], None]:
             subscriber.start()
             app.state.event_subscriber = subscriber  # type: ignore[union-attr]
 
-        # Start the background task that evicts expired WS tickets.
-        from backend.api.websocket import start_ticket_cleanup_task  # noqa: PLC0415
-        start_ticket_cleanup_task()
+        # Eagerly initialise the Redis-backed ticket store singleton.
+        # The store uses lazy Redis connection, so connectivity errors will surface
+        # on the first ticket operation rather than here.
+        from backend.infrastructure.ticket_store import get_ticket_store  # noqa: PLC0415
+        get_ticket_store()
 
         # Auto-resume stuck pipelines after a server restart.  This only
         # applies to the in-process executor (local dev / single-process
@@ -184,6 +186,8 @@ def make_shutdown_handler(app: object) -> Callable[[], None]:
         subscriber = getattr(getattr(app, "state", None), "event_subscriber", None)
         if subscriber is not None:
             await subscriber.stop()
+        from backend.infrastructure.ticket_store import get_ticket_store  # noqa: PLC0415
+        await get_ticket_store().close()
         await close_db()
 
     return on_shutdown
