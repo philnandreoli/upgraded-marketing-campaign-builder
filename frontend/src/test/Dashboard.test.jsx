@@ -88,16 +88,16 @@ const campaignForOwner = {
 
 describe('Dashboard – New Campaign button', () => {
   it('is shown for campaign_builder role', async () => {
-    // Provide a campaign so Dashboard renders the header with the "Create Campaign" link
+    // Provide a campaign so Dashboard renders the workspace header with the "+" create link
     await renderDashboard({ isViewer: false, isAdmin: false, userId: 'user-1' }, [campaignForOwner], [WS_OWNER]);
     await waitFor(() => screen.getByText('MyProduct'));
-    expect(screen.getByText(/\+ create campaign/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/create campaign in owner workspace/i)).toBeInTheDocument();
   });
 
   it('is shown for admin role', async () => {
     await renderDashboard({ isAdmin: true, isViewer: false, userId: 'user-1' }, [campaignForOwner], [WS_OWNER]);
     await waitFor(() => screen.getByText('MyProduct'));
-    expect(screen.getByText(/\+ create campaign/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/create campaign in owner workspace/i)).toBeInTheDocument();
   });
 
   it('is hidden for viewer role', async () => {
