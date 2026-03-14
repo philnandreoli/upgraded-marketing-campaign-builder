@@ -25,6 +25,17 @@ logger = logging.getLogger(__name__)
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
 
+# Input validation for OData filter construction.
+# Allows alphanumeric characters, spaces, hyphens, periods, underscores, and
+# common email/name characters (@). This prevents OData injection while
+# supporting typical name and email prefix searches.
+_SAFE_SEARCH_PATTERN = re.compile(r"^[a-zA-Z0-9\s.\-@_]+$")
+_MAX_SEARCH_LENGTH = 100
+
+
+class InvalidSearchInputError(ValueError):
+    """Raised when the search term fails input validation."""
+
 
 def _extract_tenant_id(authority: str) -> Optional[str]:
     """Extract the tenant ID from an OIDC authority URL.
@@ -80,9 +91,17 @@ async def search_entra_users(
         A list of user dicts with keys: id, displayName, mail, userPrincipalName.
 
     Raises:
-        ValueError: If the tenant ID cannot be extracted from the authority URL.
+        ValueError: If the tenant ID cannot be extracted from the authority URL,
+            or if the search term contains invalid characters.
         httpx.HTTPStatusError: If the Graph API returns an error response.
     """
+    # Validate and sanitize the search term before constructing OData filters.
+    search = search.strip()
+    if not search or len(search) > _MAX_SEARCH_LENGTH:
+        return []
+    if not _SAFE_SEARCH_PATTERN.match(search):
+        raise InvalidSearchInputError("Search contains invalid characters")
+
     tenant_id = _extract_tenant_id(authority)
     if not tenant_id:
         raise ValueError(

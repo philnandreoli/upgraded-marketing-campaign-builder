@@ -558,6 +558,41 @@ class TestSearchEntraDirectory:
 
         assert r.status_code == 502
 
+    async def test_returns_400_for_invalid_characters(self, admin_client):
+        """Returns 400 when the search term contains invalid OData characters."""
+        client, _ = admin_client
+        from unittest.mock import MagicMock
+        from backend.config import OIDCSettings, Settings
+
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.oidc = MagicMock(spec=OIDCSettings)
+        mock_settings.oidc.graph_client_secret = "secret"
+        mock_settings.oidc.authority = "https://login.microsoftonline.com/tenant-id/v2.0"
+        mock_settings.oidc.client_id = "client-id"
+
+        with patch("backend.api.admin.get_settings", return_value=mock_settings):
+            r = await client.get("/api/admin/entra/users?search=alice%27%29%3Bselect+1--")
+        assert r.status_code == 400
+        assert "invalid characters" in r.json()["detail"].lower()
+
+    async def test_returns_empty_list_for_overlong_search(self, admin_client):
+        """Returns empty list when the search term exceeds the maximum length."""
+        client, _ = admin_client
+        from unittest.mock import MagicMock
+        from backend.config import OIDCSettings, Settings
+
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.oidc = MagicMock(spec=OIDCSettings)
+        mock_settings.oidc.graph_client_secret = "secret"
+        mock_settings.oidc.authority = "https://login.microsoftonline.com/tenant-id/v2.0"
+        mock_settings.oidc.client_id = "client-id"
+
+        overlong_search = "a" * 101
+        with patch("backend.api.admin.get_settings", return_value=mock_settings):
+            r = await client.get(f"/api/admin/entra/users?search={overlong_search}")
+        assert r.status_code == 200
+        assert r.json() == []
+
     async def test_returns_403_for_non_admin(self, db_engine):
         """Non-admin users cannot search Entra directory."""
         session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)

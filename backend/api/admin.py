@@ -29,7 +29,7 @@ from backend.models.user import User, UserRole, roles_from_db, roles_to_db
 from backend.infrastructure.auth import require_admin
 from backend.infrastructure.campaign_store import get_campaign_store
 from backend.infrastructure.database import CampaignMemberRow, UserRow, get_db
-from backend.infrastructure.graph import search_entra_users
+from backend.infrastructure.graph import InvalidSearchInputError, search_entra_users
 from backend.core.rate_limit import limiter
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -281,6 +281,8 @@ async def search_entra_directory(
             client_id=settings.oidc.client_id,
             client_secret=settings.oidc.graph_client_secret,
         )
+    except InvalidSearchInputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
