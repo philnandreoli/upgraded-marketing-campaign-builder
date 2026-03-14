@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getCampaign, getCampaignEvents } from "../api";
+import { getCampaign } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import StrategySection from "../components/StrategySection.jsx";
 import ContentSection from "../components/ContentSection.jsx";
@@ -8,7 +8,6 @@ import ChannelPlanSection from "../components/ChannelPlanSection.jsx";
 import AnalyticsSection from "../components/AnalyticsSection.jsx";
 import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
-import EventLog from "../components/EventLog.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import Toast from "../components/Toast.jsx";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
@@ -59,7 +58,6 @@ export default function CampaignDetail() {
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
   const [badgePulse, setBadgePulse] = useState(false);
-  const [historicalEvents, setHistoricalEvents] = useState([]);
   const { events } = useWebSocket(id);
   const { isViewer, isAdmin, user } = useUser();
   const prevStatusRef = useRef(null);
@@ -83,27 +81,6 @@ export default function CampaignDetail() {
     } catch (err) {
       setError(err.message);
     }
-  }, [id, workspaceId]);
-
-  // Load historical events once on mount — pre-populate the event log with
-  // events that were persisted during previous or ongoing pipeline runs.
-  useEffect(() => {
-    if (!workspaceId) return;
-    getCampaignEvents(workspaceId, id)
-      .then((evts) => {
-        // Normalise persisted events to match the WebSocket event shape:
-        // stored events use `event_type` while the EventLog component reads `event`.
-        setHistoricalEvents(
-          evts.map((e) => ({
-            ...e,
-            event: e.event_type,
-            ...(e.payload || {}),
-          }))
-        );
-      })
-      .catch(() => {
-        // Non-fatal — live WebSocket events will still appear.
-      });
   }, [id, workspaceId]);
 
   // Set up polling; defer initial fetch so setState isn't synchronous in the effect
@@ -181,27 +158,11 @@ export default function CampaignDetail() {
     return !TERMINAL_STATES.includes(cs) && !PAUSE_STATES.includes(cs);
   }, [campaign]);
 
-  // Merge historical events (loaded on page open) with live WebSocket events.
-  // Historical events are shown first (chronological order from the DB).
-  // Live events are deduplicated against historical ones by `id` so that
-  // events already persisted do not appear twice.
-  const historicalIds = useMemo(
-    () => new Set(historicalEvents.map((e) => e.id).filter(Boolean)),
-    [historicalEvents]
-  );
-  const mergedEvents = useMemo(
-    () => [
-      ...historicalEvents,
-      ...events.filter((e) => !e.id || !historicalIds.has(e.id)),
-    ],
-    [historicalEvents, events, historicalIds]
-  );
-
   // At approval stage, hide content & revision tabs (approval tab shows the content)
   const isAtApproval = campaign?.status === "content_approval" || campaign?.status === "approved" || campaign?.status === "rejected" || campaign?.status === "manual_review_required";
   const HIDDEN_AT_APPROVAL = ["content", "content_revision"];
 
-  // Clickable tabs: completed stages + the currently active stage + event log
+  // Clickable tabs: completed stages + the currently active stage
   const clickableTabs = useMemo(() => {
     const t = [];
     if (campaign) {
@@ -225,7 +186,6 @@ export default function CampaignDetail() {
           }
         }
       }
-      t.push("events");
     }
     return t;
   }, [campaign, stageStates, isAtApproval]);
@@ -234,10 +194,8 @@ export default function CampaignDetail() {
   const activeTab = useMemo(() => {
     if (clickableTabs.length === 0) return null;
     if (userTab && clickableTabs.includes(userTab)) return userTab;
-    // Auto-select the last data tab (skip "events" if there's a pipeline tab)
-    return clickableTabs.length > 1
-      ? clickableTabs[clickableTabs.length - 2]
-      : clickableTabs[0];
+    // Auto-select the last pipeline tab
+    return clickableTabs[clickableTabs.length - 1];
   }, [clickableTabs, userTab]);
 
   if (error) {
@@ -321,8 +279,6 @@ export default function CampaignDetail() {
             status={campaign.status}
           />
         );
-      case "events":
-        return <EventLog events={mergedEvents} isPipelineRunning={isPipelineRunning} />;
       default:
         return (
           <div className="card empty-state">
@@ -349,13 +305,6 @@ export default function CampaignDetail() {
           </button>
         );
       })}
-      <button
-        className={`pipeline-tab completed${activeTab === "events" ? " selected" : ""}`}
-        onClick={() => setUserTab("events")}
-      >
-        <span className="pipeline-tab-icon" aria-hidden="true">✓</span>
-        Event Log
-      </button>
     </div>
   );
 
@@ -488,12 +437,6 @@ export default function CampaignDetail() {
 
             {/* Team members (compact) */}
             <TeamMembersCompact campaignId={id} canManage={canManage} />
-
-            {/* Event log */}
-            <div className="card sidebar-events">
-              <h3 style={{ marginBottom: "0.6rem" }}>Event Log</h3>
-              <EventLog events={mergedEvents} isPipelineRunning={isPipelineRunning} />
-            </div>
           </aside>
         </div>
       ) : (

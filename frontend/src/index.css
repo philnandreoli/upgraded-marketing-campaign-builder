@@ -717,15 +717,6 @@ a:hover { color: var(--color-primary-hover); }
 .stage-error-message p + p { margin-top: 0.35rem; }
 .stage-error-message .stage-error-detail { color: var(--color-text-muted); font-size: 0.82rem; }
 
-/* Event log */
-.event-log {
-  max-height: 300px; overflow-y: auto;
-  font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.7;
-  padding: 0.75rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius);
-}
-.event-log-entry { padding: 0.15rem 0; border-bottom: 1px solid var(--color-border); }
-.event-name { color: var(--color-primary-hover); font-weight: 600; }
-
 /* Content grid */
 .content-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.75rem; }
 .content-piece { background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0.85rem; }
@@ -1025,7 +1016,6 @@ a:hover { color: var(--color-primary-hover); }
 .sidebar-stage-completed .sidebar-stage-label { color: var(--color-success); }
 .sidebar-stage-active .sidebar-stage-label { color: var(--color-primary-hover); font-weight: 700; }
 .sidebar-stage-error .sidebar-stage-label { color: var(--color-danger); }
-.sidebar-events .event-log { max-height: 220px; }
 .sidebar-meta-goal { font-size: 0.82rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
 .sidebar-meta-channels { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
 
