@@ -121,7 +121,7 @@ export default function WorkspaceSection({
             </button>
           ) : (
             <Link
-              to={`/new?workspace=${workspace.id}`}
+              to={`/workspaces/${workspace.id}/campaigns/new`}
               className="btn btn-primary workspace-new-btn"
               onClick={(e) => e.stopPropagation()}
               aria-label={`Create campaign in ${workspace.name}`}
@@ -149,7 +149,7 @@ export default function WorkspaceSection({
                     + Create Campaign
                   </button>
                 ) : (
-                  <Link to={`/new?workspace=${workspace.id}`} className="btn btn-primary">
+                  <Link to={`/workspaces/${workspace.id}/campaigns/new`} className="btn btn-primary">
                     + Create Campaign
                   </Link>
                 )

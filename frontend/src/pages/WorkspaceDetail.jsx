@@ -179,7 +179,7 @@ export default function WorkspaceDetail({ events = [] }) {
       <div className="section-header" style={{ marginTop: "1.5rem" }}>
         <h2>Campaigns</h2>
         {isCreatorOrAdmin && (
-          <Link to={`/new?workspace=${workspace.id}`} className="btn btn-primary">
+          <Link to={`/workspaces/${workspace.id}/campaigns/new`} className="btn btn-primary">
             + Create Campaign
           </Link>
         )}
