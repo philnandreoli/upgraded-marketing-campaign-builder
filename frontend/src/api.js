@@ -4,6 +4,18 @@ import { msalInstance, loginRequest } from "./authConfig.js";
 const API_BASE = "";
 
 /**
+ * Error thrown when the ticket endpoint responds with HTTP 429 (Too Many Requests).
+ * Carries the number of seconds the caller should wait before retrying.
+ */
+export class RateLimitError extends Error {
+  constructor(retryAfter) {
+    super(`Rate limited: retry after ${retryAfter}s`);
+    this.name = "RateLimitError";
+    this.retryAfter = retryAfter;
+  }
+}
+
+/**
  * Acquire a bearer token silently.
  * Returns an empty string when auth is not configured (no client ID set).
  *
@@ -408,21 +420,17 @@ export async function getWsUrl(campaignId = null) {
   }
   // Exchange the JWT for a short-lived, single-use opaque ticket so that the
   // full JWT never appears in the WebSocket upgrade URL (OWASP A07:2021).
-  try {
-    const resp = await fetch(`${API_BASE}/api/ws/ticket`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!resp.ok) {
-      throw new Error(`Ticket request failed: ${resp.status}`);
-    }
-    const { ticket } = await resp.json();
-    return `${path}?ticket=${encodeURIComponent(ticket)}`;
-  } catch (err) {
-    console.error("Failed to obtain WS ticket:", err);
-    // Fall back to a connection without auth — the server will reject it if
-    // auth is required, producing a clean 4001 close code rather than a
-    // silent hang.
-    return path;
+  const resp = await fetch(`${API_BASE}/api/ws/ticket`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (resp.status === 429) {
+    const retryAfter = parseInt(resp.headers.get("Retry-After") ?? "60", 10);
+    throw new RateLimitError(retryAfter);
   }
+  if (!resp.ok) {
+    throw new Error(`Ticket request failed: ${resp.status}`);
+  }
+  const { ticket } = await resp.json();
+  return `${path}?ticket=${encodeURIComponent(ticket)}`;
 }

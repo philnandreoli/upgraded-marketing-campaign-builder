@@ -143,7 +143,7 @@ manager = ConnectionManager()
 # ---------------------------------------------------------------------------
 
 @ticket_router.post("/ticket")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def create_ws_ticket(request: Request, response: Response, user: User = Depends(require_authenticated)) -> dict:
     """Issue a short-lived, single-use ticket for WebSocket authentication.
 
