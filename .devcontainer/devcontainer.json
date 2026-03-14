@@ -15,8 +15,8 @@
 		}
 	},
 
-	// Forward both the backend and database ports
-	"forwardPorts": [5432, 8000, 5173],
+	// Forward both the backend, database, and Redis ports
+	"forwardPorts": [5432, 6379, 8000, 5173],
 
 	// Install Python + Node dependencies after the container is created
 	"postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && sudo apt update && sudo apt install -y postgresql-client && pip3 install --user -r requirements.txt && nvm install node && cd frontend && npm install",
