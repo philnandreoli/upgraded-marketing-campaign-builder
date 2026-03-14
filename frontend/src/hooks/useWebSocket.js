@@ -34,7 +34,7 @@ export default function useWebSocket(campaignId = null) {
       console.error("Failed to obtain WS ticket:", err);
       failureCountRef.current += 1;
       if (failureCountRef.current >= MAX_FAILURES) {
-        setConnectionFailed(true);
+        queueMicrotask(() => setConnectionFailed(true));
         return;
       }
       const delayMs =
