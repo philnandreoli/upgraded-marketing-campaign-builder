@@ -230,13 +230,31 @@ class RedisTicketStore(TicketStore):
 _ticket_store: TicketStore | None = None
 
 
+def _require_redis_url() -> str:
+    """Return ``REDIS_URL``, raising :class:`RuntimeError` if it is unset.
+
+    Only called in local Redis mode.  Azure mode uses managed-identity tokens
+    and does not need ``REDIS_URL``.
+    """
+    settings = get_settings()
+    if not settings.redis.url:
+        raise RuntimeError(
+            "REDIS_URL environment variable is required when using "
+            "local Redis mode (REDIS_MODE=local). Set it in your .env "
+            "file or environment. "
+            "Example: redis://redis:6379/0"
+        )
+    return settings.redis.url
+
+
 def get_ticket_store() -> TicketStore:
     """Return the application-wide ``TicketStore`` singleton.
 
     Selects the implementation based on ``settings.redis``:
 
     - ``local`` mode → :class:`RedisTicketStore` connected via
-      ``REDIS_URL`` (default ``redis://redis:6379/0``).
+      ``REDIS_URL``.  Raises :class:`RuntimeError` at startup if
+      ``REDIS_URL`` is not set.
     - ``azure`` mode → :class:`RedisTicketStore` connected to Azure Cache
       for Redis with SSL and managed identity token credentials.
 
@@ -250,5 +268,7 @@ def get_ticket_store() -> TicketStore:
     global _ticket_store
     if _ticket_store is None:
         settings = get_settings()
+        if settings.redis.mode == "local":
+            _require_redis_url()
         _ticket_store = RedisTicketStore(settings.redis)
     return _ticket_store
