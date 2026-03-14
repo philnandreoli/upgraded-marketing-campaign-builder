@@ -58,7 +58,7 @@ function RoleDropdown({ value, onChange, className, disabled }) {
 // ---------------------------------------------------------------------------
 // Role selector — inline dropdown that PATCHes the member role on change
 // ---------------------------------------------------------------------------
-function MemberRoleSelect({ campaignId, userId, currentRole, onUpdated }) {
+function MemberRoleSelect({ workspaceId, campaignId, userId, currentRole, onUpdated }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -67,7 +67,7 @@ function MemberRoleSelect({ campaignId, userId, currentRole, onUpdated }) {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateCampaignMemberRole(campaignId, userId, newRole);
+      const updated = await updateCampaignMemberRole(workspaceId, campaignId, userId, newRole);
       onUpdated(updated);
     } catch (err) {
       setError(err.message);
@@ -97,7 +97,7 @@ function MemberRoleSelect({ campaignId, userId, currentRole, onUpdated }) {
 // ---------------------------------------------------------------------------
 // Add-member form — user search autocomplete + role selector
 // ---------------------------------------------------------------------------
-function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
+function AddMemberForm({ workspaceId, campaignId, existingUserIds, onAdded }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -149,7 +149,7 @@ function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
     setAdding(true);
     setAddError(null);
     try {
-      const member = await addCampaignMember(campaignId, selectedUser.id, role);
+      const member = await addCampaignMember(workspaceId, campaignId, selectedUser.id, role);
       onAdded(member, selectedUser);
       setSearch("");
       setSelectedUser(null);
@@ -239,7 +239,7 @@ function AddMemberForm({ campaignId, existingUserIds, onAdded }) {
 // ---------------------------------------------------------------------------
 // Compact add-member form for sidebar — inline search + role + add
 // ---------------------------------------------------------------------------
-function CompactAddMemberForm({ campaignId, existingUserIds, onAdded }) {
+function CompactAddMemberForm({ workspaceId, campaignId, existingUserIds, onAdded }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -281,7 +281,7 @@ function CompactAddMemberForm({ campaignId, existingUserIds, onAdded }) {
     setAdding(true);
     setAddError(null);
     try {
-      const member = await addCampaignMember(campaignId, selectedUser.id, role);
+      const member = await addCampaignMember(workspaceId, campaignId, selectedUser.id, role);
       onAdded(member, selectedUser);
       setSearch("");
       setSelectedUser(null);
@@ -341,7 +341,7 @@ function CompactAddMemberForm({ campaignId, existingUserIds, onAdded }) {
 // ---------------------------------------------------------------------------
 // TeamMembersCompact — sidebar variant (names only + expandable add form)
 // ---------------------------------------------------------------------------
-export function TeamMembersCompact({ campaignId, canManage }) {
+export function TeamMembersCompact({ workspaceId, campaignId, canManage }) {
   const [members, setMembers] = useState([]);
   const [userMap, setUserMap] = useState({});
   const [loading, setLoading] = useState(true);
@@ -349,11 +349,11 @@ export function TeamMembersCompact({ campaignId, canManage }) {
 
   const load = useCallback(async () => {
     try {
-      const data = await listCampaignMembers(campaignId);
+      const data = await listCampaignMembers(workspaceId, campaignId);
       setMembers(data);
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [campaignId]);
+  }, [workspaceId, campaignId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -444,6 +444,7 @@ export function TeamMembersCompact({ campaignId, canManage }) {
 
       {showAddForm && canManage && (
         <CompactAddMemberForm
+          workspaceId={workspaceId}
           campaignId={campaignId}
           existingUserIds={existingUserIds}
           onAdded={handleMemberAdded}
@@ -456,7 +457,7 @@ export function TeamMembersCompact({ campaignId, canManage }) {
 // ---------------------------------------------------------------------------
 // TeamMembersSection — main exported component
 // ---------------------------------------------------------------------------
-export default function TeamMembersSection({ campaignId, canManage }) {
+export default function TeamMembersSection({ workspaceId, campaignId, canManage }) {
   const [members, setMembers] = useState([]);
   const [userMap, setUserMap] = useState({}); // userId -> { display_name, email }
   const [loading, setLoading] = useState(true);
@@ -466,14 +467,14 @@ export default function TeamMembersSection({ campaignId, canManage }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await listCampaignMembers(campaignId);
+      const data = await listCampaignMembers(workspaceId, campaignId);
       setMembers(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [campaignId]);
+  }, [workspaceId, campaignId]);
 
   useEffect(() => {
     load();
@@ -503,7 +504,7 @@ export default function TeamMembersSection({ campaignId, canManage }) {
     if (!confirm("Remove this member from the campaign?")) return;
     setRemoveError(null);
     try {
-      await removeCampaignMember(campaignId, userId);
+      await removeCampaignMember(workspaceId, campaignId, userId);
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
     } catch (err) {
       setRemoveError(err.message);
@@ -574,6 +575,7 @@ export default function TeamMembersSection({ campaignId, canManage }) {
                   <td style={{ padding: "0.6rem 0.75rem" }}>
                     {canManage && m.role !== "owner" && !m.via_workspace ? (
                       <MemberRoleSelect
+                        workspaceId={workspaceId}
                         campaignId={campaignId}
                         userId={m.user_id}
                         currentRole={m.role}
@@ -641,6 +643,7 @@ export default function TeamMembersSection({ campaignId, canManage }) {
 
       {canManage && (
         <AddMemberForm
+          workspaceId={workspaceId}
           campaignId={campaignId}
           existingUserIds={existingUserIds}
           onAdded={handleMemberAdded}

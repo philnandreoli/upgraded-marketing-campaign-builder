@@ -60,10 +60,27 @@ _BUILDER = User(id="rbac-builder-001", email="builder@rbac.test", display_name="
 _BUILDER2 = User(id="rbac-builder-002", email="builder2@rbac.test", display_name="Builder2", roles=[UserRole.CAMPAIGN_BUILDER])
 _VIEWER = User(id="rbac-viewer-001", email="viewer@rbac.test", display_name="Viewer", roles=[UserRole.VIEWER])
 
+TEST_WS_ID = "test-workspace-001"
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+def _ensure_workspace(store: InMemoryCampaignStore, ws_id: str = TEST_WS_ID) -> None:
+    """Ensure a workspace with the given ID exists in *store*."""
+    from datetime import timezone
+    if ws_id not in store._workspaces:
+        from backend.models.workspace import Workspace
+        store._workspaces[ws_id] = Workspace(
+            id=ws_id,
+            name="Test Workspace",
+            owner_id="workspace-owner",
+            is_personal=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+
 
 @contextmanager
 def _as_user(user: User, store: InMemoryCampaignStore):
@@ -89,13 +106,17 @@ def _as_user(user: User, store: InMemoryCampaignStore):
 
 
 def _make_campaign(store: InMemoryCampaignStore, owner: User) -> Campaign:
-    """Directly insert a campaign owned by *owner* into *store*."""
+    """Directly insert a campaign owned by *owner* into *store* under TEST_WS_ID."""
+    _ensure_workspace(store)
     campaign = Campaign(
         brief=CampaignBrief(product_or_service="RBAC Test", goal="Test authorization"),
         owner_id=owner.id,
+        workspace_id=TEST_WS_ID,
     )
     store._campaigns[campaign.id] = campaign
     store._members[(campaign.id, owner.id)] = CampaignMemberRole.OWNER.value
+    # Add owner as workspace CREATOR so list/access works
+    store._workspace_members[(TEST_WS_ID, owner.id)] = "creator"
     return campaign
 
 
@@ -111,7 +132,7 @@ class TestAdminRoleCapabilities:
         _make_campaign(store, _BUILDER)
         _make_campaign(store, _BUILDER2)
         with _as_user(_ADMIN, store) as c:
-            r = c.get("/api/campaigns")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
         assert r.status_code == 200
         assert len(r.json()) == 2
 
@@ -119,7 +140,7 @@ class TestAdminRoleCapabilities:
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER)
         with _as_user(_ADMIN, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 200
         assert r.json()["id"] == campaign.id
 
@@ -127,7 +148,7 @@ class TestAdminRoleCapabilities:
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER)
         with _as_user(_ADMIN, store) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 204
 
     def test_admin_can_add_member_to_any_campaign(self):
@@ -137,15 +158,16 @@ class TestAdminRoleCapabilities:
         store._users[_VIEWER.id] = _VIEWER
         with _as_user(_ADMIN, store) as c:
             r = c.post(
-                f"/api/campaigns/{campaign.id}/members",
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members",
                 json={"user_id": _VIEWER.id, "role": "viewer"},
             )
         assert r.status_code == 201
 
     def test_admin_can_create_campaign(self):
         store = InMemoryCampaignStore()
+        _ensure_workspace(store)
         with _as_user(_ADMIN, store) as c:
-            r = c.post("/api/campaigns", json={"product_or_service": "Prod", "goal": "Goal"})
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "Prod", "goal": "Goal"})
         assert r.status_code == 201
 
 
@@ -158,22 +180,24 @@ class TestCampaignBuilderCapabilities:
 
     def test_builder_can_create_campaign(self):
         store = InMemoryCampaignStore()
+        _ensure_workspace(store)
+        store._workspace_members[(TEST_WS_ID, _BUILDER.id)] = "creator"
         with _as_user(_BUILDER, store) as c:
-            r = c.post("/api/campaigns", json={"product_or_service": "Prod", "goal": "Goal"})
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "Prod", "goal": "Goal"})
         assert r.status_code == 201
 
     def test_builder_can_read_own_campaign(self):
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER)
         with _as_user(_BUILDER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 200
 
     def test_builder_can_delete_own_campaign(self):
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER)
         with _as_user(_BUILDER, store) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 204
 
     def test_builder_editor_can_read_campaign(self):
@@ -181,7 +205,7 @@ class TestCampaignBuilderCapabilities:
         campaign = _make_campaign(store, _BUILDER2)
         store._members[(campaign.id, _BUILDER.id)] = CampaignMemberRole.EDITOR.value
         with _as_user(_BUILDER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 200
 
     def test_builder_editor_cannot_delete_campaign(self):
@@ -189,7 +213,7 @@ class TestCampaignBuilderCapabilities:
         campaign = _make_campaign(store, _BUILDER2)
         store._members[(campaign.id, _BUILDER.id)] = CampaignMemberRole.EDITOR.value
         with _as_user(_BUILDER, store) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 403
 
     def test_builder_viewer_member_can_read_campaign(self):
@@ -197,7 +221,7 @@ class TestCampaignBuilderCapabilities:
         campaign = _make_campaign(store, _BUILDER2)
         store._members[(campaign.id, _BUILDER.id)] = CampaignMemberRole.VIEWER.value
         with _as_user(_BUILDER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 200
 
     def test_builder_viewer_member_cannot_delete_campaign(self):
@@ -205,7 +229,7 @@ class TestCampaignBuilderCapabilities:
         campaign = _make_campaign(store, _BUILDER2)
         store._members[(campaign.id, _BUILDER.id)] = CampaignMemberRole.VIEWER.value
         with _as_user(_BUILDER, store) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 403
 
     def test_builder_cannot_access_non_member_campaign(self):
@@ -213,17 +237,16 @@ class TestCampaignBuilderCapabilities:
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER2)
         with _as_user(_BUILDER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 404
 
     def test_builder_non_member_campaign_not_in_list(self):
-        """Campaign builder's list only shows campaigns they have access to."""
+        """Non-workspace-member gets 404 when listing campaigns in a workspace they don't belong to."""
         store = InMemoryCampaignStore()
-        _make_campaign(store, _BUILDER2)  # no membership for _BUILDER
+        _make_campaign(store, _BUILDER2)  # no membership for _BUILDER in workspace
         with _as_user(_BUILDER, store) as c:
-            r = c.get("/api/campaigns")
-        assert r.status_code == 200
-        assert r.json() == []
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
+        assert r.status_code == 404  # _BUILDER is not in the workspace
 
     def test_builder_cannot_access_admin_users_endpoint(self):
         """Campaign builders are forbidden from the admin users list."""
@@ -245,7 +268,7 @@ class TestCampaignBuilderCapabilities:
         store._users[_VIEWER.id] = _VIEWER
         with _as_user(_BUILDER, store) as c:
             r = c.post(
-                f"/api/campaigns/{campaign.id}/members",
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members",
                 json={"user_id": _VIEWER.id, "role": "viewer"},
             )
         assert r.status_code == 201
@@ -258,7 +281,7 @@ class TestCampaignBuilderCapabilities:
         store._users[_VIEWER.id] = _VIEWER
         with _as_user(_BUILDER, store) as c:
             r = c.post(
-                f"/api/campaigns/{campaign.id}/members",
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members",
                 json={"user_id": _VIEWER.id, "role": "viewer"},
             )
         assert r.status_code == 403
@@ -273,8 +296,10 @@ class TestViewerRoleCapabilities:
 
     def test_viewer_cannot_create_campaign(self):
         store = InMemoryCampaignStore()
+        _ensure_workspace(store)
+        store._workspace_members[(TEST_WS_ID, _VIEWER.id)] = "viewer"
         with _as_user(_VIEWER, store) as c:
-            r = c.post("/api/campaigns", json={"product_or_service": "P", "goal": "G"})
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "P", "goal": "G"})
         assert r.status_code == 403
 
     def test_viewer_member_can_read_campaign(self):
@@ -282,7 +307,7 @@ class TestViewerRoleCapabilities:
         campaign = _make_campaign(store, _BUILDER)
         store._members[(campaign.id, _VIEWER.id)] = CampaignMemberRole.VIEWER.value
         with _as_user(_VIEWER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 200
 
     def test_viewer_member_cannot_delete_campaign(self):
@@ -290,7 +315,7 @@ class TestViewerRoleCapabilities:
         campaign = _make_campaign(store, _BUILDER)
         store._members[(campaign.id, _VIEWER.id)] = CampaignMemberRole.VIEWER.value
         with _as_user(_VIEWER, store) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 403
 
     def test_viewer_cannot_access_non_member_campaign(self):
@@ -298,18 +323,21 @@ class TestViewerRoleCapabilities:
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER)
         with _as_user(_VIEWER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 404
 
     def test_viewer_list_only_shows_member_campaigns(self):
+        """Workspace VIEWER member can list all workspace campaigns."""
         store = InMemoryCampaignStore()
         my_campaign = _make_campaign(store, _BUILDER)
         store._members[(my_campaign.id, _VIEWER.id)] = CampaignMemberRole.VIEWER.value
-        _make_campaign(store, _BUILDER2)  # no membership for viewer
+        _make_campaign(store, _BUILDER2)  # no campaign membership for viewer
+        # Add _VIEWER as workspace VIEWER member so they can access the list endpoint
+        store._workspace_members[(TEST_WS_ID, _VIEWER.id)] = "viewer"
         with _as_user(_VIEWER, store) as c:
-            items = c.get("/api/campaigns").json()
-        assert len(items) == 1
-        assert items[0]["id"] == my_campaign.id
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()
+        # Workspace list shows all workspace campaigns to any workspace member
+        assert len(items) == 2
 
     def test_viewer_cannot_access_admin_users_endpoint(self):
         store = InMemoryCampaignStore()
@@ -330,7 +358,7 @@ class TestViewerRoleCapabilities:
         store._users[_BUILDER2.id] = _BUILDER2
         with _as_user(_VIEWER, store) as c:
             r = c.post(
-                f"/api/campaigns/{campaign.id}/members",
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members",
                 json={"user_id": _BUILDER2.id, "role": "viewer"},
             )
         assert r.status_code == 403
@@ -443,7 +471,7 @@ class TestEdgeCases:
 
         # Verify access exists before removal
         with _as_user(_VIEWER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 200
 
         # Remove the member
@@ -451,7 +479,7 @@ class TestEdgeCases:
 
         # Verify access is revoked
         with _as_user(_VIEWER, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 404
 
     def test_non_member_gets_404_not_403(self):
@@ -459,7 +487,7 @@ class TestEdgeCases:
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER)
         with _as_user(_BUILDER2, store) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
         assert r.status_code == 404
 
     def test_inactive_user_is_rejected_when_added_as_member(self):
@@ -476,7 +504,7 @@ class TestEdgeCases:
         store._users[inactive_user.id] = inactive_user
         with _as_user(_BUILDER, store) as c:
             r = c.post(
-                f"/api/campaigns/{campaign.id}/members",
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members",
                 json={"user_id": inactive_user.id, "role": "viewer"},
             )
         assert r.status_code == 404
@@ -487,6 +515,6 @@ class TestEdgeCases:
         campaign = _make_campaign(store, _BUILDER)
 
         with _as_user(_ADMIN, store) as c:
-            assert len(c.get("/api/campaigns").json()) == 1
-            c.delete(f"/api/campaigns/{campaign.id}")
-            assert len(c.get("/api/campaigns").json()) == 0
+            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()) == 1
+            c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
+            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()) == 0

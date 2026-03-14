@@ -6,12 +6,12 @@ Endpoints:
   GET    /api/workspaces                        — List workspaces the user belongs to
   GET    /api/workspaces/{id}                   — Get workspace details
   PATCH  /api/workspaces/{id}                   — Update workspace name/description
-  DELETE /api/workspaces/{id}                   — Delete workspace (orphans campaigns)
-  GET    /api/workspaces/{id}/campaigns         — List campaigns in workspace
+  DELETE /api/workspaces/{id}                   — Delete workspace
 
 Membership routes live in workspace_members.py.
+Campaign routes live in campaigns.py (mounted under /api/workspaces/{id}).
 Shared RBAC helpers (_authorize_workspace, WorkspaceAction) and Pydantic DTOs are
-defined here and imported by workspace_members.py.
+defined here and imported by workspace_members.py and campaigns.py.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from backend.apps.api.schemas.campaigns import CampaignSummary
 from backend.models.user import User, UserRole
 from backend.models.workspace import Workspace, WorkspaceRole
 from backend.infrastructure.auth import get_current_user
@@ -230,34 +229,6 @@ async def delete_workspace(
         raise HTTPException(status_code=409, detail="Personal workspaces cannot be deleted")
     await store.delete_workspace(workspace_id)
     return Response(status_code=204)
-
-
-@router.get("/workspaces/{workspace_id}/campaigns", response_model=list[CampaignSummary])
-async def list_workspace_campaigns(
-    workspace_id: str,
-    user: Optional[User] = Depends(get_current_user),
-) -> list[CampaignSummary]:
-    """List campaigns in a workspace. Requires workspace membership or admin."""
-    store = get_campaign_store()
-    workspace = await store.get_workspace(workspace_id)
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
-    campaigns = await store.list_workspace_campaigns(workspace_id)
-    return [
-        CampaignSummary(
-            id=c.id,
-            status=c.status.value,
-            product_or_service=c.brief.product_or_service,
-            goal=c.brief.goal,
-            owner_id=c.owner_id,
-            workspace_id=c.workspace_id,
-            workspace_name=workspace.name,
-            created_at=c.created_at.isoformat(),
-            updated_at=c.updated_at.isoformat(),
-        )
-        for c in campaigns
-    ]
 
 
 # ---------------------------------------------------------------------------

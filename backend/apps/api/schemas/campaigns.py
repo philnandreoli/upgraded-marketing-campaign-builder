@@ -61,11 +61,9 @@ class CampaignSummary(BaseModel):
 class CreateCampaignRequest(CampaignBrief):
     """Request body for campaign creation.
 
-    Extends CampaignBrief with an optional workspace_id to associate
-    the new campaign with a workspace at creation time.
+    workspace_id is now a required URL path parameter; it is no longer
+    accepted in the request body.
     """
-
-    workspace_id: Optional[str] = None
 
 
 class AssignWorkspaceRequest(BaseModel):

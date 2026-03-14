@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { listCampaigns, deleteCampaign, moveCampaign } from "../api";
+import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
 import { SkeletonCard } from "../components/Skeleton";
@@ -19,13 +19,17 @@ export default function Dashboard({ events }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setCampaigns(await listCampaigns());
+      // Fetch campaigns for each workspace and flatten into a single list
+      const campaignArrays = await Promise.all(
+        workspaces.map((ws) => listCampaigns(ws.id).catch(() => []))
+      );
+      setCampaigns(campaignArrays.flat());
     } catch {
       /* silent */
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [workspaces]);
 
   useEffect(() => {
     load();
@@ -36,14 +40,9 @@ export default function Dashboard({ events }) {
     if (events.length > 0) load();
   }, [events.length]);
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id, workspaceId) => {
     if (!confirm("Delete this campaign?")) return;
-    await deleteCampaign(id);
-    load();
-  };
-
-  const handleMove = async (campaignId, workspaceId) => {
-    await moveCampaign(campaignId, workspaceId);
+    await deleteCampaign(workspaceId, id);
     load();
   };
 
@@ -145,7 +144,6 @@ export default function Dashboard({ events }) {
             user={user}
             onDelete={handleDelete}
             allWorkspaces={workspaces}
-            onMove={handleMove}
           />
         ))}
         {/* Orphaned campaigns: admin only */}
@@ -158,7 +156,6 @@ export default function Dashboard({ events }) {
             user={user}
             onDelete={handleDelete}
             allWorkspaces={workspaces}
-            onMove={handleMove}
           />
         )}
       </div>

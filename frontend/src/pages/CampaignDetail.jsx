@@ -50,7 +50,8 @@ function getTabIcon(state, isPipelineRunning) {
 }
 
 export default function CampaignDetail() {
-  const { id } = useParams();
+  const { workspaceId, id } = useParams();
+  // For backward compat with old /campaign/:id route: derive workspaceId from loaded campaign
   const [campaign, setCampaign] = useState(null);
   const [error, setError] = useState(null);
   const [userTab, setUserTab] = useState(null);
@@ -66,6 +67,9 @@ export default function CampaignDetail() {
   // canManage: admins always can; campaign owners can too
   const canManage = isAdmin || (campaign?.owner_id != null && user?.id === campaign.owner_id);
 
+  // Effective workspace ID: from URL params if present, else from loaded campaign
+  const effectiveWorkspaceId = workspaceId || campaign?.workspace_id;
+
   const handleViewMode = (mode) => {
     setViewMode(mode);
     localStorage.setItem(VIEW_MODE_KEY, mode);
@@ -73,17 +77,19 @@ export default function CampaignDetail() {
   const pollRef = useRef(null);
 
   const load = useCallback(async () => {
+    if (!workspaceId) return;
     try {
-      setCampaign(await getCampaign(id));
+      setCampaign(await getCampaign(workspaceId, id));
     } catch (err) {
       setError(err.message);
     }
-  }, [id]);
+  }, [id, workspaceId]);
 
   // Load historical events once on mount — pre-populate the event log with
   // events that were persisted during previous or ongoing pipeline runs.
   useEffect(() => {
-    getCampaignEvents(id)
+    if (!workspaceId) return;
+    getCampaignEvents(workspaceId, id)
       .then((evts) => {
         // Normalise persisted events to match the WebSocket event shape:
         // stored events use `event_type` while the EventLog component reads `event`.
@@ -98,7 +104,7 @@ export default function CampaignDetail() {
       .catch(() => {
         // Non-fatal — live WebSocket events will still appear.
       });
-  }, [id]);
+  }, [id, workspaceId]);
 
   // Set up polling; defer initial fetch so setState isn't synchronous in the effect
   useEffect(() => {
@@ -263,6 +269,7 @@ export default function CampaignDetail() {
             questions={campaign.clarification_questions}
             savedAnswers={campaign.clarification_answers}
             campaignId={campaign.id}
+            workspaceId={effectiveWorkspaceId}
             status={campaign.status}
             onSubmitted={load}
             readOnly={isViewer}
@@ -309,6 +316,7 @@ export default function CampaignDetail() {
             socialPlatforms={campaign.brief?.social_media_platforms || []}
             isApprovalMode={!isViewer}
             campaignId={campaign.id}
+            workspaceId={effectiveWorkspaceId}
             onApprovalSubmitted={load}
             status={campaign.status}
           />
@@ -417,7 +425,7 @@ export default function CampaignDetail() {
         </div>
       </div>
 
-      {viewMode === "focus" && <TeamMembersSection campaignId={id} canManage={canManage} />}
+      {viewMode === "focus" && <TeamMembersSection campaignId={id} workspaceId={effectiveWorkspaceId} canManage={canManage} />}
 
       {viewMode === "split" ? (
         <div className="detail-split-layout">

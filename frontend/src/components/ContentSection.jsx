@@ -47,6 +47,7 @@ export default function ContentSection({
   socialPlatforms = [],
   isApprovalMode = false,
   campaignId,
+  workspaceId,
   onApprovalSubmitted,
   status,
 }) {
@@ -88,7 +89,7 @@ export default function ContentSection({
           notes: notes[i] || "",
         };
       });
-      await submitContentApproval(campaignId, pieces);
+      await submitContentApproval(workspaceId, campaignId, pieces);
       onApprovalSubmitted?.();
     } catch (err) {
       alert("Failed to submit content approval: " + err.message);
@@ -101,7 +102,7 @@ export default function ContentSection({
     if (!confirm("Are you sure you want to reject the entire campaign?")) return;
     setSubmitting(true);
     try {
-      await submitContentApproval(campaignId, [], true);
+      await submitContentApproval(workspaceId, campaignId, [], true);
       onApprovalSubmitted?.();
     } catch (err) {
       alert("Failed to reject campaign: " + err.message);
@@ -113,7 +114,7 @@ export default function ContentSection({
   const handleSaveNotes = async (pieceIndex) => {
     setSavingNotes((prev) => ({ ...prev, [pieceIndex]: true }));
     try {
-      await updatePieceNotes(campaignId, pieceIndex, notes[pieceIndex] || "");
+      await updatePieceNotes(workspaceId, campaignId, pieceIndex, notes[pieceIndex] || "");
     } catch (err) {
       alert("Failed to save notes: " + err.message);
     } finally {
@@ -125,7 +126,7 @@ export default function ContentSection({
     setSavingDecision((prev) => ({ ...prev, [pieceIndex]: true }));
     try {
       const editedContent = editing[pieceIndex] !== undefined ? editing[pieceIndex] : null;
-      await updatePieceDecision(campaignId, pieceIndex, {
+      await updatePieceDecision(workspaceId, campaignId, pieceIndex, {
         approved,
         editedContent,
         notes: notes[pieceIndex] || "",

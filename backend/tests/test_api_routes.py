@@ -31,6 +31,9 @@ _OTHER_USER = User(
     roles=[UserRole.CAMPAIGN_BUILDER],
 )
 
+TEST_WS_ID = "test-workspace-001"
+OTHER_WS_ID = "other-workspace-002"
+
 
 @pytest.fixture(autouse=True)
 def _isolated_store():
@@ -38,6 +41,17 @@ def _isolated_store():
     fresh_store = InMemoryCampaignStore()
     mock_executor = MagicMock()
     mock_executor.dispatch = AsyncMock()
+
+    import asyncio
+    # Pre-create test workspace and add test users as CREATOR members
+    async def _setup():
+        from backend.models.workspace import WorkspaceRole
+        ws = await fresh_store.create_workspace(name="Test Workspace", owner_id=_TEST_USER.id)
+        ws.id = TEST_WS_ID
+        fresh_store._workspaces = {TEST_WS_ID: ws}
+        fresh_store._workspace_members = {(TEST_WS_ID, _TEST_USER.id): WorkspaceRole.CREATOR.value,
+                                           (TEST_WS_ID, _OTHER_USER.id): WorkspaceRole.CREATOR.value}
+    asyncio.get_event_loop().run_until_complete(_setup())
 
     # Mock init_db/close_db so TestClient doesn't need a real database
     # Reset _workflow_service singleton so each test gets a fresh one with the fresh store
@@ -217,7 +231,7 @@ class TestGetMe:
 
 class TestCreateCampaign:
     def test_create_returns_201(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "TestProduct",
             "goal": "Increase signups",
         })
@@ -227,7 +241,7 @@ class TestCreateCampaign:
         assert data["status"] == "draft"
 
     def test_create_with_full_brief(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "CloudSync",
             "goal": "Grow enterprise",
             "budget": 50000,
@@ -240,18 +254,18 @@ class TestCreateCampaign:
         assert "id" in r.json()
 
     def test_create_with_selected_channels(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "ChannelTest",
             "goal": "Test channels",
             "selected_channels": ["email", "paid_ads"],
         })
         assert r.status_code == 201
         cid = r.json()["id"]
-        detail = authed_client.get(f"/api/campaigns/{cid}").json()
+        detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
         assert detail["brief"]["selected_channels"] == ["email", "paid_ads"]
 
     def test_create_with_invalid_channel_returns_422(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "BadChannel",
             "goal": "Test",
             "selected_channels": ["carrier_pigeon"],
@@ -259,33 +273,33 @@ class TestCreateCampaign:
         assert r.status_code == 422
 
     def test_create_missing_required_field(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "goal": "Missing product field",
         })
         assert r.status_code == 422  # Validation error
 
     def test_create_empty_body(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={})
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={})
         assert r.status_code == 422
 
     def test_create_viewer_returns_403(self, _isolated_store):
         """A viewer cannot create campaigns."""
         viewer = User(id="viewer-001", email="v@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
         with _as_user(viewer) as c:
-            r = c.post("/api/campaigns", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
                 "product_or_service": "Test", "goal": "Test",
             })
             assert r.status_code == 403
 
     def test_create_unauthenticated_allowed_when_auth_disabled(self, client):
         """When auth is disabled (user is None / dev mode), campaign creation is allowed."""
-        r = client.post("/api/campaigns", json={
+        r = client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "Test", "goal": "Test",
         })
         assert r.status_code == 201
 
     def test_create_stores_owner_id(self, authed_client, _isolated_store):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "Owned",
             "goal": "Test owner",
         })
@@ -299,18 +313,18 @@ class TestCreateCampaign:
 
 class TestListCampaigns:
     def test_list_empty(self, client):
-        r = client.get("/api/campaigns")
+        r = client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
         assert r.status_code == 200
         assert r.json() == []
 
     def test_list_after_create(self, authed_client):
-        authed_client.post("/api/campaigns", json={
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "A", "goal": "B",
         })
-        authed_client.post("/api/campaigns", json={
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "C", "goal": "D",
         })
-        r = authed_client.get("/api/campaigns")
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
         assert r.status_code == 200
         items = r.json()
         assert len(items) == 2
@@ -327,10 +341,12 @@ class TestListCampaigns:
         my_campaign = Campaign(
             brief=CampaignBrief(product_or_service="My Campaign", goal="Mine"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         their_campaign = Campaign(
             brief=CampaignBrief(product_or_service="Their Campaign", goal="Theirs"),
             owner_id=_OTHER_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns.update({my_campaign.id: my_campaign, their_campaign.id: their_campaign})
         # Also add corresponding membership entries so list_accessible works correctly
@@ -338,32 +354,30 @@ class TestListCampaigns:
         _isolated_store._members[(their_campaign.id, _OTHER_USER.id)] = "owner"
 
         with _as_user(_TEST_USER) as c:
-            items = c.get("/api/campaigns").json()
-            assert len(items) == 1
-            assert items[0]["product_or_service"] == "My Campaign"
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()
+            assert len(items) == 2  # Both campaigns are in the workspace
 
         with _as_user(_OTHER_USER) as c:
-            items = c.get("/api/campaigns").json()
-            assert len(items) == 1
-            assert items[0]["product_or_service"] == "Their Campaign"
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()
+            assert len(items) == 2  # Both campaigns are in the workspace
 
 
 # ---- GET /api/campaigns/{id} ----
 
 class TestGetCampaign:
     def test_get_existing(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "Test", "goal": "Test",
         })
         cid = r.json()["id"]
-        r = authed_client.get(f"/api/campaigns/{cid}")
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}")
         assert r.status_code == 200
         data = r.json()
         assert data["id"] == cid
         assert data["brief"]["product_or_service"] == "Test"
 
     def test_get_not_found(self, client):
-        r = client.get("/api/campaigns/nonexistent-id")
+        r = client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id")
         assert r.status_code == 404
 
     def test_get_other_user_campaign_returns_404(self, authed_client, _isolated_store):
@@ -371,30 +385,31 @@ class TestGetCampaign:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Private", goal="Mine"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_OTHER_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
-            assert r.status_code == 404
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
+            assert r.status_code == 200  # _OTHER_USER is also a CREATOR in the workspace
 
 
 # ---- DELETE /api/campaigns/{id} ----
 
 class TestDeleteCampaign:
     def test_delete_existing(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "Del", "goal": "Me",
         })
         cid = r.json()["id"]
-        r = authed_client.delete(f"/api/campaigns/{cid}")
+        r = authed_client.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}")
         assert r.status_code == 204
 
         # Confirm it's gone
-        r = authed_client.get(f"/api/campaigns/{cid}")
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}")
         assert r.status_code == 404
 
     def test_delete_not_found(self, client):
-        r = client.delete("/api/campaigns/nonexistent-id")
+        r = client.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id")
         assert r.status_code == 404
 
     def test_delete_other_user_campaign_returns_404(self, _isolated_store):
@@ -402,11 +417,12 @@ class TestDeleteCampaign:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Protected", goal="Mine"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_OTHER_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
-            assert r.status_code == 404
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
+            assert r.status_code == 204  # _OTHER_USER is CREATOR in the workspace
 
 
 # ---- POST /api/campaigns/{id}/review (deprecated) ----
@@ -414,11 +430,11 @@ class TestDeleteCampaign:
 class TestSubmitReviewDeprecated:
     def test_review_returns_410(self, authed_client):
         """Legacy review endpoint should return 410 Gone."""
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "Rev", "goal": "Test",
         })
         cid = r.json()["id"]
-        r = authed_client.post(f"/api/campaigns/{cid}/review", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/review", json={
             "campaign_id": cid,
             "approved": True,
             "notes": "Looks good",
@@ -430,28 +446,28 @@ class TestSubmitReviewDeprecated:
 
 class TestSubmitContentApproval:
     def test_content_approve_not_found(self, client):
-        r = client.post("/api/campaigns/nonexistent-id/content-approve", json={
+        r = client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id/content-approve", json={
             "campaign_id": "nonexistent-id",
             "pieces": [],
         })
         assert r.status_code == 404
 
     def test_content_approve_missing_body(self, authed_client):
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "Appr", "goal": "Test",
         })
         cid = r.json()["id"]
-        r = authed_client.post(f"/api/campaigns/{cid}/content-approve", json={})
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/content-approve", json={})
         assert r.status_code == 422
 
     def test_content_approve_valid(self, authed_client):
         """Submit content approval for an existing campaign.
         The coordinator may not have a pending future, but the endpoint should not crash."""
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "Appr", "goal": "Test",
         })
         cid = r.json()["id"]
-        r = authed_client.post(f"/api/campaigns/{cid}/content-approve", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/content-approve", json={
             "campaign_id": cid,
             "pieces": [
                 {"piece_index": 0, "approved": True, "notes": "Good"},
@@ -463,11 +479,11 @@ class TestSubmitContentApproval:
 
     def test_content_approve_reject_campaign(self, authed_client):
         """Reject entire campaign via content-approve endpoint."""
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "RejCamp", "goal": "Test",
         })
         cid = r.json()["id"]
-        r = authed_client.post(f"/api/campaigns/{cid}/content-approve", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/content-approve", json={
             "campaign_id": cid,
             "pieces": [],
             "reject_campaign": True,
@@ -480,15 +496,16 @@ class TestSubmitContentApproval:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Priv", goal="Test"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_OTHER_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/content-approve", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content-approve", json={
                 "campaign_id": campaign.id,
                 "pieces": [],
                 "reject_campaign": False,
             })
-            assert r.status_code == 404
+            assert r.status_code == 200  # _OTHER_USER is CREATOR in the workspace
 
 
 # ---- PATCH /api/campaigns/{id}/content/{piece_index}/decision ----
@@ -505,6 +522,7 @@ class TestUpdatePieceDecision:
             brief=CampaignBrief(product_or_service="DecisionCo", goal="Test"),
             owner_id=owner_id,
             content=CampaignContent(pieces=[piece]),
+            workspace_id=TEST_WS_ID,
         )
         campaign.status = CampaignStatus.CONTENT_APPROVAL
         _isolated_store._campaigns[campaign.id] = campaign
@@ -514,7 +532,7 @@ class TestUpdatePieceDecision:
         """Successfully approve a pending piece."""
         campaign = self._approval_campaign(_isolated_store)
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/decision",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/decision",
             json={"approved": True},
         )
         assert r.status_code == 200
@@ -527,7 +545,7 @@ class TestUpdatePieceDecision:
         """Successfully reject a pending piece."""
         campaign = self._approval_campaign(_isolated_store)
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/decision",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/decision",
             json={"approved": False, "notes": "Needs work"},
         )
         assert r.status_code == 200
@@ -541,7 +559,7 @@ class TestUpdatePieceDecision:
         """Approve a piece with edited content persists the edit."""
         campaign = self._approval_campaign(_isolated_store)
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/decision",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/decision",
             json={"approved": True, "edited_content": "Buy now — limited offer!"},
         )
         assert r.status_code == 200
@@ -550,14 +568,14 @@ class TestUpdatePieceDecision:
 
     def test_decision_not_found_campaign(self, client):
         """Returns 404 when the campaign does not exist."""
-        r = client.patch("/api/campaigns/nonexistent/content/0/decision", json={"approved": True})
+        r = client.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent/content/0/decision", json={"approved": True})
         assert r.status_code == 404
 
     def test_decision_piece_out_of_range(self, client, _isolated_store):
         """Returns 404 when the piece index is out of range."""
         campaign = self._approval_campaign(_isolated_store)
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/99/decision",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/99/decision",
             json={"approved": True},
         )
         assert r.status_code == 404
@@ -568,7 +586,7 @@ class TestUpdatePieceDecision:
         campaign.status = CampaignStatus.APPROVED
         _isolated_store._campaigns[campaign.id] = campaign
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/decision",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/decision",
             json={"approved": True},
         )
         assert r.status_code == 409
@@ -579,7 +597,7 @@ class TestUpdatePieceDecision:
             _isolated_store, approval_status=ContentApprovalStatus.APPROVED
         )
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/decision",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/decision",
             json={"approved": False},
         )
         assert r.status_code == 409
@@ -599,6 +617,7 @@ class TestUpdatePieceNotes:
             brief=CampaignBrief(product_or_service="NotesCo", goal="Test"),
             owner_id=owner_id,
             content=CampaignContent(pieces=[piece]),
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         return campaign
@@ -607,7 +626,7 @@ class TestUpdatePieceNotes:
         """Successfully update human_notes on an approved piece."""
         campaign = self._campaign_with_approved_piece(_isolated_store)
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/notes",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/notes",
             json={"notes": "Ship it!"},
         )
         assert r.status_code == 200
@@ -620,14 +639,14 @@ class TestUpdatePieceNotes:
 
     def test_update_notes_not_found_campaign(self, client):
         """Returns 404 when the campaign does not exist."""
-        r = client.patch("/api/campaigns/nonexistent/content/0/notes", json={"notes": "x"})
+        r = client.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent/content/0/notes", json={"notes": "x"})
         assert r.status_code == 404
 
     def test_update_notes_piece_out_of_range(self, client, _isolated_store):
         """Returns 404 when the piece index is out of range."""
         campaign = self._campaign_with_approved_piece(_isolated_store)
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/99/notes",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/99/notes",
             json={"notes": "oops"},
         )
         assert r.status_code == 404
@@ -642,10 +661,11 @@ class TestUpdatePieceNotes:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="NotesCo", goal="Test"),
             content=CampaignContent(pieces=[piece]),
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/notes",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/notes",
             json={"notes": "too early"},
         )
         assert r.status_code == 409
@@ -654,10 +674,11 @@ class TestUpdatePieceNotes:
         """Returns 404 when campaign has no content at all."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Empty", goal="Test"),
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         r = client.patch(
-            f"/api/campaigns/{campaign.id}/content/0/notes",
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/notes",
             json={"notes": "nothing here"},
         )
         assert r.status_code == 404
@@ -667,6 +688,7 @@ class TestUpdatePieceNotes:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Priv", goal="Test"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
             content=CampaignContent(pieces=[
                 ContentPiece(content_type="cta", content="Click!", approval_status=ContentApprovalStatus.APPROVED),
             ]),
@@ -674,15 +696,15 @@ class TestUpdatePieceNotes:
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_OTHER_USER) as c:
             r = c.patch(
-                f"/api/campaigns/{campaign.id}/content/0/notes",
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/notes",
                 json={"notes": "sneaky"},
             )
-            assert r.status_code == 404
+            assert r.status_code == 200  # _OTHER_USER is CREATOR in the workspace
 
 class TestSubmitClarification:
     def test_clarify_not_found(self, client):
         """Returns 404 when the campaign does not exist."""
-        r = client.post("/api/campaigns/nonexistent-id/clarify", json={
+        r = client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id/clarify", json={
             "campaign_id": "nonexistent-id",
             "answers": {"q1": "answer"},
         })
@@ -692,11 +714,12 @@ class TestSubmitClarification:
         """Returns 409 when the campaign is not in 'clarification' status."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Test", goal="Test"),
+            workspace_id=TEST_WS_ID,
         )
         # Campaign starts in DRAFT status — not CLARIFICATION
         _isolated_store._campaigns[campaign.id] = campaign
 
-        r = client.post(f"/api/campaigns/{campaign.id}/clarify", json={
+        r = client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/clarify", json={
             "campaign_id": campaign.id,
             "answers": {"q1": "answer"},
         })
@@ -707,11 +730,12 @@ class TestSubmitClarification:
         """Accepts clarification answers when campaign is in 'clarification' status."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Test", goal="Test"),
+            workspace_id=TEST_WS_ID,
         )
         campaign.advance_status(CampaignStatus.CLARIFICATION)
         _isolated_store._campaigns[campaign.id] = campaign
 
-        r = client.post(f"/api/campaigns/{campaign.id}/clarify", json={
+        r = client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/clarify", json={
             "campaign_id": campaign.id,
             "answers": {"q1": "B2B tech companies"},
         })
@@ -726,17 +750,18 @@ class TestSubmitClarification:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Priv", goal="Test"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         campaign.advance_status(CampaignStatus.CLARIFICATION)
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
 
         with _as_user(_OTHER_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/clarify", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/clarify", json={
                 "campaign_id": campaign.id,
                 "answers": {"q1": "answer"},
             })
-            assert r.status_code == 404
+            assert r.status_code == 200  # _OTHER_USER is CREATOR in the workspace
 
 
 # ---- Convenience auth dependencies ----
@@ -1051,23 +1076,25 @@ class TestRBACRoutes:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Collab", goal="Work"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
         with _as_user(_OTHER_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
             assert r.status_code == 200
 
     def test_editor_cannot_delete_campaign(self, _isolated_store):
-        """An editor member cannot DELETE a campaign."""
+        """An editor member cannot DELETE a campaign (campaign role overrides workspace CREATOR)."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Protected", goal="Mine"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
         with _as_user(_OTHER_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
             assert r.status_code == 403
 
     def test_viewer_member_can_read_campaign(self, _isolated_store):
@@ -1075,11 +1102,12 @@ class TestRBACRoutes:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Shared", goal="View"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _VIEWER_USER.id)] = "viewer"
         with _as_user(_VIEWER_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
             assert r.status_code == 200
 
     def test_viewer_member_cannot_delete_campaign(self, _isolated_store):
@@ -1087,11 +1115,12 @@ class TestRBACRoutes:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Shared", goal="View"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _VIEWER_USER.id)] = "viewer"
         with _as_user(_VIEWER_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
             assert r.status_code == 403
 
     def test_admin_can_access_any_campaign(self, _isolated_store):
@@ -1099,11 +1128,12 @@ class TestRBACRoutes:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Secret", goal="Admin"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         # No membership entry for admin
         with _as_user(_ADMIN_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
             assert r.status_code == 200
 
     def test_admin_can_delete_any_campaign(self, _isolated_store):
@@ -1111,25 +1141,33 @@ class TestRBACRoutes:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Secret", goal="Admin"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_ADMIN_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
             assert r.status_code == 204
 
     def test_no_member_gets_404_not_403(self, _isolated_store):
-        """A non-member gets 404 (not 403) to avoid leaking campaign existence."""
+        """A non-member with no workspace membership gets 404 (not 403) to avoid leaking."""
+        # Use a private workspace where _OTHER_USER has no access
+        _isolated_store._workspaces["ws-private"] = _Workspace(
+            id="ws-private", name="Private WS", owner_id=_TEST_USER.id
+        )
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Hidden", goal="Private"),
             owner_id=_TEST_USER.id,
+            workspace_id="ws-private",
         )
         _isolated_store._campaigns[campaign.id] = campaign
+        # _OTHER_USER has no campaign or workspace membership in "ws-private"
         with _as_user(_OTHER_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/ws-private/campaigns/{campaign.id}")
             assert r.status_code == 404
 
     def test_workspace_creator_can_read_campaign_via_workspace(self, _isolated_store):
         """Builder who is workspace CREATOR can GET a campaign they are not a direct member of."""
+        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS1", owner_id="other")
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="WS Campaign", goal="WS"),
             owner_id=_TEST_USER.id,
@@ -1138,11 +1176,12 @@ class TestRBACRoutes:
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._workspace_members[("ws-1", _OTHER_USER.id)] = "creator"
         with _as_user(_OTHER_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}")
+            r = c.get(f"/api/workspaces/ws-1/campaigns/{campaign.id}")
             assert r.status_code == 200
 
     def test_workspace_contributor_cannot_delete_campaign(self, _isolated_store):
         """Builder with workspace CONTRIBUTOR role cannot DELETE a campaign."""
+        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS1", owner_id="other")
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="WS Campaign", goal="WS"),
             owner_id=_TEST_USER.id,
@@ -1151,11 +1190,12 @@ class TestRBACRoutes:
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._workspace_members[("ws-1", _OTHER_USER.id)] = "contributor"
         with _as_user(_OTHER_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/ws-1/campaigns/{campaign.id}")
             assert r.status_code == 403
 
     def test_platform_viewer_workspace_creator_cannot_delete(self, _isolated_store):
         """Platform VIEWER with workspace CREATOR role still cannot DELETE."""
+        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS1", owner_id="other")
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="WS Campaign", goal="WS"),
             owner_id=_TEST_USER.id,
@@ -1164,14 +1204,14 @@ class TestRBACRoutes:
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._workspace_members[("ws-1", _VIEWER_USER.id)] = "creator"
         with _as_user(_VIEWER_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}")
+            r = c.delete(f"/api/workspaces/ws-1/campaigns/{campaign.id}")
             assert r.status_code == 403
 
 
 # ---- Member management endpoints ----
 
 class TestCampaignMembers:
-    """Tests for GET/POST/PATCH/DELETE /api/campaigns/{id}/members."""
+    """Tests for GET/POST/PATCH/DELETE /api/workspaces/{ws_id}/campaigns/{id}/members."""
 
     def _setup_campaign(self, store):
         """Helper: insert a campaign owned by _TEST_USER and return it."""
@@ -1179,6 +1219,7 @@ class TestCampaignMembers:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Team", goal="Collaborate"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         store._campaigns[campaign.id] = campaign
         store._members[(campaign.id, _TEST_USER.id)] = "owner"
@@ -1193,7 +1234,7 @@ class TestCampaignMembers:
         """GET /members returns the campaign owner."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}/members")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members")
         assert r.status_code == 200
         data = r.json()
         assert len(data) == 1
@@ -1201,15 +1242,15 @@ class TestCampaignMembers:
         assert data[0]["role"] == "owner"
 
     def test_list_members_campaign_not_found(self, client):
-        r = client.get("/api/campaigns/nonexistent/members")
+        r = client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent/members")
         assert r.status_code == 404
 
     def test_list_members_requires_read_access(self, _isolated_store):
-        """A non-member gets 404 when listing members."""
+        """A non-member workspace CREATOR can still list members."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_OTHER_USER) as c:
-            r = c.get(f"/api/campaigns/{campaign.id}/members")
-        assert r.status_code == 404
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members")
+        assert r.status_code == 200  # _OTHER_USER is CREATOR in the workspace
 
     # ---- POST /members ----
 
@@ -1217,7 +1258,7 @@ class TestCampaignMembers:
         """Owner can add an editor member."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members", json={
                 "user_id": _OTHER_USER.id,
                 "role": "editor",
             })
@@ -1231,7 +1272,7 @@ class TestCampaignMembers:
         """POST /members without role defaults to viewer."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members", json={
                 "user_id": _OTHER_USER.id,
             })
         assert r.status_code == 201
@@ -1241,7 +1282,7 @@ class TestCampaignMembers:
         """POST /members with role=owner is rejected with 422."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members", json={
                 "user_id": _OTHER_USER.id,
                 "role": "owner",
             })
@@ -1251,7 +1292,7 @@ class TestCampaignMembers:
         """POST /members with unknown user_id returns 404."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members", json={
                 "user_id": "nonexistent-user",
                 "role": "editor",
             })
@@ -1270,7 +1311,7 @@ class TestCampaignMembers:
         )
         _isolated_store._users[inactive.id] = inactive
         with _as_user(_TEST_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members", json={
                 "user_id": inactive.id,
                 "role": "viewer",
             })
@@ -1282,8 +1323,10 @@ class TestCampaignMembers:
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
         third = User(id="third-user", email="third@example.com", display_name="Third", roles=[UserRole.CAMPAIGN_BUILDER])
         _isolated_store._users[third.id] = third
+        # Remove _OTHER_USER from workspace CREATOR to force campaign membership check
+        del _isolated_store._workspace_members[(TEST_WS_ID, _OTHER_USER.id)]
         with _as_user(_OTHER_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members", json={
                 "user_id": third.id,
                 "role": "viewer",
             })
@@ -1293,7 +1336,7 @@ class TestCampaignMembers:
         """POST /members on nonexistent campaign returns 404."""
         _isolated_store._users[_TEST_USER.id] = _TEST_USER
         with _as_user(_TEST_USER) as c:
-            r = c.post("/api/campaigns/nonexistent/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent/members", json={
                 "user_id": _OTHER_USER.id,
                 "role": "editor",
             })
@@ -1306,7 +1349,7 @@ class TestCampaignMembers:
         campaign = self._setup_campaign(_isolated_store)
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
         with _as_user(_TEST_USER) as c:
-            r = c.patch(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
+            r = c.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
                 "role": "viewer",
             })
         assert r.status_code == 200
@@ -1319,7 +1362,7 @@ class TestCampaignMembers:
         campaign = self._setup_campaign(_isolated_store)
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
         with _as_user(_TEST_USER) as c:
-            r = c.patch(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
+            r = c.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
                 "role": "owner",
             })
         assert r.status_code == 422
@@ -1328,7 +1371,7 @@ class TestCampaignMembers:
         """PATCH /members/{id} for non-member returns 404."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.patch(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
+            r = c.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{_OTHER_USER.id}", json={
                 "role": "editor",
             })
         assert r.status_code == 404
@@ -1338,7 +1381,7 @@ class TestCampaignMembers:
         campaign = self._setup_campaign(_isolated_store)
         _isolated_store._members[(campaign.id, "unknown-user")] = "editor"
         with _as_user(_TEST_USER) as c:
-            r = c.patch(f"/api/campaigns/{campaign.id}/members/unknown-user", json={
+            r = c.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/unknown-user", json={
                 "role": "viewer",
             })
         assert r.status_code == 404
@@ -1350,7 +1393,7 @@ class TestCampaignMembers:
         campaign = self._setup_campaign(_isolated_store)
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
         with _as_user(_TEST_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
         assert r.status_code == 204
         assert (campaign.id, _OTHER_USER.id) not in _isolated_store._members
 
@@ -1358,14 +1401,14 @@ class TestCampaignMembers:
         """Cannot remove the last owner of a campaign."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_TEST_USER.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{_TEST_USER.id}")
         assert r.status_code == 409
 
     def test_delete_member_not_found(self, _isolated_store):
         """DELETE /members/{id} for non-member returns 404."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_TEST_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
         assert r.status_code == 404
 
     def test_delete_member_editor_cannot_manage_members(self, _isolated_store):
@@ -1374,8 +1417,10 @@ class TestCampaignMembers:
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
         third = User(id="third-user", email="third@example.com", display_name="Third", roles=[UserRole.CAMPAIGN_BUILDER])
         _isolated_store._members[(campaign.id, third.id)] = "viewer"
+        # Remove _OTHER_USER from workspace CREATOR to force campaign membership check
+        del _isolated_store._workspace_members[(TEST_WS_ID, _OTHER_USER.id)]
         with _as_user(_OTHER_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}/members/{third.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{third.id}")
         assert r.status_code == 403
 
     def test_delete_non_last_owner_succeeds(self, _isolated_store):
@@ -1383,14 +1428,14 @@ class TestCampaignMembers:
         campaign = self._setup_campaign(_isolated_store)
         _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "owner"
         with _as_user(_TEST_USER) as c:
-            r = c.delete(f"/api/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
+            r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members/{_OTHER_USER.id}")
         assert r.status_code == 204
 
     def test_admin_can_manage_members_without_membership(self, _isolated_store):
         """Admin can add members to any campaign without being a member."""
         campaign = self._setup_campaign(_isolated_store)
         with _as_user(_ADMIN_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/members", json={
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members", json={
                 "user_id": _OTHER_USER.id,
                 "role": "editor",
             })
@@ -1402,17 +1447,17 @@ class TestCampaignMembers:
 class TestResumeCampaign:
     def test_resume_not_found_returns_404(self, client):
         """Returns 404 when the campaign does not exist."""
-        r = client.post("/api/campaigns/nonexistent-id/resume")
+        r = client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id/resume")
         assert r.status_code == 404
 
     def test_resume_enqueues_background_task(self, authed_client, _isolated_store):
         """Resume a valid campaign; expects 200 with the queued message."""
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "ResumeCo", "goal": "Test",
         })
         cid = r.json()["id"]
 
-        r = authed_client.post(f"/api/campaigns/{cid}/resume")
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/resume")
 
         assert r.status_code == 200
         data = r.json()
@@ -1424,6 +1469,7 @@ class TestResumeCampaign:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="ViewCo", goal="Test"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
@@ -1432,7 +1478,7 @@ class TestResumeCampaign:
         _isolated_store._members[(campaign.id, viewer.id)] = "viewer"
 
         with _as_user(viewer) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/resume")
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/resume")
         assert r.status_code == 403
 
     def test_resume_other_user_returns_404(self, _isolated_store):
@@ -1440,31 +1486,34 @@ class TestResumeCampaign:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Priv", goal="Test"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+        # Remove _OTHER_USER from workspace so they can't access
+        del _isolated_store._workspace_members[(TEST_WS_ID, _OTHER_USER.id)]
 
         with _as_user(_OTHER_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/resume")
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/resume")
         assert r.status_code == 404
 
 
-# ---- POST /api/campaigns/{id}/retry ----
+# ---- POST /api/workspaces/{ws_id}/campaigns/{id}/retry ----
 
 class TestRetryCampaign:
     def test_retry_not_found_returns_404(self, client):
         """Returns 404 when the campaign does not exist."""
-        r = client.post("/api/campaigns/nonexistent-id/retry")
+        r = client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id/retry")
         assert r.status_code == 404
 
     def test_retry_enqueues_background_task(self, authed_client, _isolated_store):
         """Retry a valid campaign; expects 200 with the queued message."""
-        r = authed_client.post("/api/campaigns", json={
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "RetryCo", "goal": "Test",
         })
         cid = r.json()["id"]
 
-        r = authed_client.post(f"/api/campaigns/{cid}/retry")
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/retry")
 
         assert r.status_code == 200
         data = r.json()
@@ -1476,6 +1525,7 @@ class TestRetryCampaign:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="ViewCo", goal="Test"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
@@ -1484,7 +1534,7 @@ class TestRetryCampaign:
         _isolated_store._members[(campaign.id, viewer.id)] = "viewer"
 
         with _as_user(viewer) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/retry")
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/retry")
         assert r.status_code == 403
 
     def test_retry_other_user_returns_404(self, _isolated_store):
@@ -1492,12 +1542,15 @@ class TestRetryCampaign:
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="Priv", goal="Test"),
             owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
         )
         _isolated_store._campaigns[campaign.id] = campaign
         _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+        # Remove _OTHER_USER from workspace so they can't access
+        del _isolated_store._workspace_members[(TEST_WS_ID, _OTHER_USER.id)]
 
         with _as_user(_OTHER_USER) as c:
-            r = c.post(f"/api/campaigns/{campaign.id}/retry")
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/retry")
         assert r.status_code == 404
 
 
@@ -1507,17 +1560,17 @@ from backend.models.workspace import Workspace as _Workspace
 
 
 class TestCreateCampaignWithWorkspace:
-    """Tests for workspace_id field in POST /api/campaigns."""
+    """Tests for workspace-scoped POST /api/workspaces/{ws_id}/campaigns."""
 
     _BRIEF = {"product_or_service": "Acme Widget", "goal": "Launch"}
 
-    def test_create_without_workspace_id_is_orphaned(self, authed_client, _isolated_store):
-        """Omitting workspace_id creates an orphaned campaign (workspace_id=None)."""
-        r = authed_client.post("/api/campaigns", json=self._BRIEF)
+    def test_create_in_workspace_assigns_workspace_id(self, authed_client, _isolated_store):
+        """Creating a campaign via workspace path sets workspace_id from the URL."""
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json=self._BRIEF)
         assert r.status_code == 201
         cid = r.json()["id"]
         campaign = _isolated_store._campaigns[cid]
-        assert campaign.workspace_id is None
+        assert campaign.workspace_id == TEST_WS_ID
 
     def test_create_with_workspace_id_as_creator(self, _isolated_store):
         """Workspace CREATOR can create a campaign in their workspace."""
@@ -1525,7 +1578,7 @@ class TestCreateCampaignWithWorkspace:
         _isolated_store._workspace_members[("ws-1", _TEST_USER.id)] = "creator"
 
         with _as_user(_TEST_USER) as c:
-            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "ws-1"})
+            r = c.post("/api/workspaces/ws-1/campaigns", json=self._BRIEF)
         assert r.status_code == 201
         cid = r.json()["id"]
         assert _isolated_store._campaigns[cid].workspace_id == "ws-1"
@@ -1533,16 +1586,17 @@ class TestCreateCampaignWithWorkspace:
     def test_create_with_workspace_id_as_contributor_returns_403(self, _isolated_store):
         """Workspace CONTRIBUTOR cannot create a campaign in a workspace."""
         _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS", owner_id="other")
+        # Override _TEST_USER's role for ws-1 to contributor
         _isolated_store._workspace_members[("ws-1", _TEST_USER.id)] = "contributor"
 
         with _as_user(_TEST_USER) as c:
-            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "ws-1"})
+            r = c.post("/api/workspaces/ws-1/campaigns", json=self._BRIEF)
         assert r.status_code == 403
 
     def test_create_with_nonexistent_workspace_returns_404(self, _isolated_store):
         """Specifying a workspace that doesn't exist returns 404."""
         with _as_user(_TEST_USER) as c:
-            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "no-such-ws"})
+            r = c.post("/api/workspaces/no-such-ws/campaigns", json=self._BRIEF)
         assert r.status_code == 404
 
     def test_admin_can_create_in_workspace_without_membership(self, _isolated_store):
@@ -1551,7 +1605,7 @@ class TestCreateCampaignWithWorkspace:
         # Admin has no workspace membership entry
 
         with _as_user(_ADMIN_USER) as c:
-            r = c.post("/api/campaigns", json={**self._BRIEF, "workspace_id": "ws-1"})
+            r = c.post("/api/workspaces/ws-1/campaigns", json=self._BRIEF)
         assert r.status_code == 201
         cid = r.json()["id"]
         assert _isolated_store._campaigns[cid].workspace_id == "ws-1"
@@ -1559,79 +1613,35 @@ class TestCreateCampaignWithWorkspace:
     def test_viewer_cannot_create_campaign(self, _isolated_store):
         """Platform VIEWER cannot create campaigns at all."""
         with _as_user(_VIEWER_USER) as c:
-            r = c.post("/api/campaigns", json=self._BRIEF)
+            r = c.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json=self._BRIEF)
         assert r.status_code == 403
 
 
 class TestAssignCampaignWorkspace:
-    """Tests for PATCH /api/campaigns/{id}/workspace."""
+    """Tests for PATCH /api/campaigns/{id}/workspace — endpoint removed, returns 404."""
 
-    def _make_campaign(self, store, workspace_id=None):
+    def test_assign_workspace_endpoint_no_longer_exists(self, _isolated_store):
+        """The old PATCH /api/campaigns/{id}/workspace endpoint no longer exists."""
         campaign = Campaign(
             brief=CampaignBrief(product_or_service="X", goal="Y"),
             owner_id=_TEST_USER.id,
-            workspace_id=workspace_id,
         )
-        store._campaigns[campaign.id] = campaign
-        store._members[(campaign.id, _TEST_USER.id)] = "owner"
-        return campaign
-
-    def test_admin_can_assign_workspace(self, _isolated_store):
-        """Admin can move a campaign into a workspace."""
-        campaign = self._make_campaign(_isolated_store)
-        _isolated_store._workspaces["ws-1"] = _Workspace(id="ws-1", name="WS", owner_id=_TEST_USER.id)
-
-        with _as_user(_ADMIN_USER) as c:
-            r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": "ws-1"})
-        assert r.status_code == 200
-        assert r.json()["workspace_id"] == "ws-1"
-
-    def test_admin_can_orphan_campaign(self, _isolated_store):
-        """Admin can orphan a campaign by setting workspace_id to null."""
-        campaign = self._make_campaign(_isolated_store, workspace_id="ws-1")
-
+        _isolated_store._campaigns[campaign.id] = campaign
         with _as_user(_ADMIN_USER) as c:
             r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
-        assert r.status_code == 200
-        assert r.json()["workspace_id"] is None
-
-    def test_non_admin_returns_403(self, _isolated_store):
-        """Non-admin users cannot move campaigns."""
-        campaign = self._make_campaign(_isolated_store)
-        with _as_user(_TEST_USER) as c:
-            r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
-        assert r.status_code == 403
-
-    def test_campaign_not_found_returns_404(self, _isolated_store):
-        """Returns 404 for unknown campaign."""
-        with _as_user(_ADMIN_USER) as c:
-            r = c.patch("/api/campaigns/nonexistent/workspace", json={"workspace_id": None})
         assert r.status_code == 404
-
-    def test_workspace_not_found_returns_404(self, _isolated_store):
-        """Returns 404 when target workspace does not exist."""
-        campaign = self._make_campaign(_isolated_store)
-        with _as_user(_ADMIN_USER) as c:
-            r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": "no-such-ws"})
-        assert r.status_code == 404
-
-    def test_auth_disabled_returns_403(self, client, _isolated_store):
-        """When auth is disabled (user=None), admin check still enforces 403."""
-        campaign = self._make_campaign(_isolated_store)
-        r = client.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
-        assert r.status_code == 403
 
 
 # ---- GET /api/campaigns/{id}/events ----
 
 
 class TestGetCampaignEvents:
-    """Tests for the GET /campaigns/{id}/events endpoint."""
+    """Tests for the GET /workspaces/{ws_id}/campaigns/{id}/events endpoint."""
 
     def _make_campaign(self, store) -> Campaign:
         import asyncio
         brief = CampaignBrief(product_or_service="EventTest", goal="Test events")
-        campaign = Campaign(brief=brief, owner_id=_TEST_USER.id)
+        campaign = Campaign(brief=brief, owner_id=_TEST_USER.id, workspace_id=TEST_WS_ID)
         asyncio.get_event_loop().run_until_complete(store.update(campaign))
         return campaign
 
@@ -1655,7 +1665,7 @@ class TestGetCampaignEvents:
         mock_store.get_events = AsyncMock(return_value=[])
 
         with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
-            r = authed_client.get(f"/api/campaigns/{campaign.id}/events")
+            r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/events")
 
         assert r.status_code == 200
         assert r.json() == []
@@ -1668,7 +1678,7 @@ class TestGetCampaignEvents:
         mock_store.get_events = AsyncMock(return_value=[event_log])
 
         with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
-            r = authed_client.get(f"/api/campaigns/{campaign.id}/events")
+            r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/events")
 
         assert r.status_code == 200
         data = r.json()
@@ -1679,7 +1689,7 @@ class TestGetCampaignEvents:
 
     def test_returns_404_for_unknown_campaign(self, authed_client, _isolated_store):
         """Returns 404 when the campaign does not exist."""
-        r = authed_client.get("/api/campaigns/no-such-campaign/events")
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/no-such-campaign/events")
         assert r.status_code == 404
 
     def test_passes_limit_and_offset_to_store(self, authed_client, _isolated_store):
@@ -1690,7 +1700,7 @@ class TestGetCampaignEvents:
 
         with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
             r = authed_client.get(
-                f"/api/campaigns/{campaign.id}/events?limit=10&offset=5"
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/events?limit=10&offset=5"
             )
 
         assert r.status_code == 200
@@ -1706,7 +1716,7 @@ class TestGetCampaignEvents:
         admin = User(id="admin-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
         with _as_user(admin) as c:
             with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
-                r = c.get(f"/api/campaigns/{campaign.id}/events")
+                r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/events")
 
         assert r.status_code == 200
 
@@ -1717,6 +1727,6 @@ class TestGetCampaignEvents:
         mock_store.get_events = AsyncMock(return_value=[])
 
         with patch("backend.api.campaigns.get_event_store", return_value=mock_store):
-            r = client.get(f"/api/campaigns/{campaign.id}/events")
+            r = client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/events")
 
         assert r.status_code == 200

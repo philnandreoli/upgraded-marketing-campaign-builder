@@ -32,14 +32,14 @@ function getInitials(name) {
     .join("");
 }
 
-function CampaignCard({ c, isAdmin, isViewer, user, onDelete }) {
+function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId }) {
   return (
     <div className="campaign-card card" data-status={c.status}>
       <div className="campaign-card-avatar">
         {getInitials(c.product_or_service)}
       </div>
       <div className="campaign-card-body">
-        <Link to={`/campaign/${c.id}`} className="campaign-card-title">
+        <Link to={`/workspaces/${workspaceId}/campaigns/${c.id}`} className="campaign-card-title">
           {c.product_or_service}
         </Link>
         <p className="campaign-card-goal">{c.goal}</p>
@@ -109,7 +109,7 @@ export default function WorkspaceDetail({ events = [] }) {
 
   const handleDelete = async (campaignId) => {
     if (!confirm("Delete this campaign?")) return;
-    await deleteCampaign(campaignId);
+    await deleteCampaign(id, campaignId);
     loadCampaigns();
   };
 
@@ -211,6 +211,7 @@ export default function WorkspaceDetail({ events = [] }) {
                       isViewer={isViewer}
                       user={user}
                       onDelete={handleDelete}
+                      workspaceId={id}
                     />
                   ))}
                 </div>

@@ -194,7 +194,7 @@ export default function NewCampaign() {
           : [],
       };
       const res = await createCampaign(brief, selectedWorkspaceId);
-      navigate(`/campaign/${res.id}`);
+      navigate(`/workspaces/${encodeURIComponent(selectedWorkspaceId)}/campaigns/${res.id}`);
     } catch (err) {
       setError(err.message);
     } finally {
