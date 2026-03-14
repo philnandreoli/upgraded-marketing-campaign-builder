@@ -8,7 +8,7 @@
  *  - Orphaned section: visible only to admins
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect } from 'vitest';
 import Dashboard from '../pages/Dashboard';
@@ -255,5 +255,158 @@ describe('Dashboard – Workspace sections', () => {
     await waitFor(() => screen.getByText('DraftProd'));
     expect(screen.getAllByText('In Progress').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Approved').length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Filter tabs
+// ---------------------------------------------------------------------------
+
+const WS_FILTER = { id: 'ws-filter', name: 'Filter Workspace', is_personal: true, role: 'creator' };
+
+const campaignDraft = {
+  id: 'cf-1',
+  product_or_service: 'DraftCampaign',
+  goal: 'G',
+  status: 'draft',
+  owner_id: 'user-1',
+  workspace_id: 'ws-filter',
+  workspace_name: 'Filter Workspace',
+};
+const campaignApproved = {
+  id: 'cf-2',
+  product_or_service: 'ApprovedCampaign',
+  goal: 'G',
+  status: 'approved',
+  owner_id: 'user-1',
+  workspace_id: 'ws-filter',
+  workspace_name: 'Filter Workspace',
+};
+const campaignAwaiting = {
+  id: 'cf-3',
+  product_or_service: 'AwaitingCampaign',
+  goal: 'G',
+  status: 'content_approval',
+  owner_id: 'user-1',
+  workspace_id: 'ws-filter',
+  workspace_name: 'Filter Workspace',
+};
+const campaignOtherOwner = {
+  id: 'cf-4',
+  product_or_service: 'OtherOwnerCampaign',
+  goal: 'G',
+  status: 'draft',
+  owner_id: 'user-other',
+  workspace_id: 'ws-filter',
+  workspace_name: 'Filter Workspace',
+};
+
+describe('Dashboard – Filter tabs', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('renders all 7 filter tabs', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'My Campaigns' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Awaiting My Action' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'In Progress' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Needs Approval' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Manual Review' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Approved' })).toBeInTheDocument();
+  });
+
+  it('defaults to "All" tab and shows all campaigns', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.getByText('ApprovedCampaign')).toBeInTheDocument();
+  });
+
+  it('"In Progress" tab shows only in-progress campaigns', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'In Progress' }));
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
+  });
+
+  it('"Approved" tab shows only approved campaigns', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    expect(screen.getByText('ApprovedCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
+  });
+
+  it('"Needs Approval" tab shows content_approval campaigns', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignDraft, campaignAwaiting],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Needs Approval' }));
+    expect(screen.getByText('AwaitingCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
+  });
+
+  it('"My Campaigns" tab filters to current user campaigns only', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignDraft, campaignOtherOwner],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'My Campaigns' }));
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('OtherOwnerCampaign')).not.toBeInTheDocument();
+  });
+
+  it('shows empty-state message when no campaigns match the filter', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    expect(screen.getByText(/no campaigns match this filter/i)).toBeInTheDocument();
+  });
+
+  it('empty-state "view all campaigns" resets to All tab', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    fireEvent.click(screen.getByText(/view all campaigns/i));
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('persists active filter in localStorage', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    expect(localStorage.getItem('dashboard-active-filter')).toBe('approved');
+  });
+
+  it('clicking "In Progress" stat card activates In Progress tab', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('button', { name: /filter by in progress/i }));
+    expect(screen.getByRole('tab', { name: 'In Progress' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
+  });
+
+  it('clicking "Awaiting Approval" stat card activates Needs Approval tab', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignDraft, campaignAwaiting],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    fireEvent.click(screen.getByRole('button', { name: /filter by awaiting approval/i }));
+    expect(screen.getByRole('tab', { name: 'Needs Approval' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('AwaitingCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
   });
 });
