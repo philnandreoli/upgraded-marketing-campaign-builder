@@ -79,9 +79,9 @@ class OIDCSettings(BaseSettings):
         description="Application (client) ID registered in the identity provider.",
     )
     jwks_cache_ttl: int = Field(
-        default=3600,
+        default=900,
         alias="OIDC_JWKS_CACHE_TTL",
-        description="Seconds to cache the OIDC provider's public keys (default: 3600).",
+        description="Seconds to cache the OIDC provider's public keys (default: 900).",
     )
     graph_client_secret: Optional[str] = Field(
         default=None,

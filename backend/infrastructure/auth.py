@@ -45,6 +45,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 _jwks_uri: Optional[str] = None
 _jwks_cache: dict = {}
 
+# Forced-refresh cooldown: limits how often the cache can be bypassed when an
+# unknown key ID is encountered, guarding against cache-busting attacks.
+_last_forced_refresh: float = 0.0
+_FORCED_REFRESH_COOLDOWN: int = 30  # seconds
+
 
 async def _fetch_jwks_uri(authority: str) -> str:
     discovery_url = f"{authority.rstrip('/')}/.well-known/openid-configuration"
@@ -84,6 +89,26 @@ async def _get_public_keys() -> list[dict]:
         "authority": authority,
         "keys": keys,
         "expires_at": now + ttl,
+    }
+    return keys
+
+
+async def _refresh_jwks_cache() -> list[dict]:
+    """Bypass the cache TTL and immediately re-fetch JWKS from the OIDC provider."""
+    global _jwks_uri, _jwks_cache
+
+    settings = get_settings()
+    authority = settings.oidc.authority
+    ttl = settings.oidc.jwks_cache_ttl
+
+    if _jwks_uri is None or _jwks_cache.get("authority") != authority:
+        _jwks_uri = await _fetch_jwks_uri(authority)
+
+    keys = await _fetch_jwks(_jwks_uri)
+    _jwks_cache = {
+        "authority": authority,
+        "keys": keys,
+        "expires_at": time.time() + ttl,
     }
     return keys
 
@@ -215,6 +240,8 @@ async def validate_token(token: str, db: AsyncSession) -> User:
     Raises HTTPException 401 if the token is invalid/expired and 503 if the
     OIDC provider is unreachable.
     """
+    global _last_forced_refresh
+
     settings = get_settings()
 
     credentials_exception = HTTPException(
@@ -232,10 +259,28 @@ async def validate_token(token: str, db: AsyncSession) -> User:
         # Decode to get the kid/alg, then look up the signing key.
         signing_key = None
         unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
         for jwk in jwks.keys:
-            if jwk.key_id == unverified_header.get("kid"):
+            if jwk.key_id == kid:
                 signing_key = jwk.key
                 break
+
+        if signing_key is None:
+            # Unknown kid — the OIDC provider may have rotated its signing keys.
+            # Attempt a single forced cache refresh if the cooldown has elapsed.
+            now = time.time()
+            if now - _last_forced_refresh > _FORCED_REFRESH_COOLDOWN:
+                _last_forced_refresh = now
+                logger.info("Unknown kid in cached JWKS — forcing one-time refresh")
+                keys = await _refresh_jwks_cache()
+                jwks = jwt.PyJWKSet.from_dict({"keys": keys})
+                for jwk in jwks.keys:
+                    if jwk.key_id == kid:
+                        signing_key = jwk.key
+                        break
+            else:
+                logger.debug("Unknown kid in cached JWKS — cooldown active, skipping forced refresh")
+
         if signing_key is None:
             raise credentials_exception
 
