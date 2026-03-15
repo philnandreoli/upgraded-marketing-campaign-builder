@@ -98,8 +98,15 @@ def main() -> None:
 
     try:
         run_migrations()
-    except Exception as exc:
+    except BaseException as exc:
+        import time
+        import traceback
+
+        traceback.print_exc()
         logger.exception("Migration job failed: %s", exc)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        time.sleep(5)
         sys.exit(1)
 
     logger.info("Migration job completed successfully")

@@ -319,6 +319,10 @@ resource "azurerm_container_app_job" "migration" {
         value = var.environment
       }
       env {
+        name  = "PYTHONUNBUFFERED"
+        value = "1"
+      }
+      env {
         name  = "DB_AUTH_MODE"
         value = "azure"
       }
