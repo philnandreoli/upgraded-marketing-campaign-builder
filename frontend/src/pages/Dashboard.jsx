@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
@@ -6,6 +7,8 @@ import { SkeletonCard } from "../components/Skeleton";
 import WorkspaceSection from "../components/WorkspaceSection";
 import FilterTabs from "../components/FilterTabs";
 import SearchBar from "../components/SearchBar";
+import SavedViews from "../components/SavedViews";
+import useSavedViews from "../hooks/useSavedViews";
 import {
   IN_PROGRESS_STATUSES,
   AWAITING_APPROVAL_STATUSES,
@@ -69,20 +72,47 @@ function matchesSearch(campaign, query) {
 }
 
 export default function Dashboard({ events }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState(
-    () => localStorage.getItem(FILTER_TAB_STORAGE_KEY) ?? "all"
+    () =>
+      searchParams.get("status") ??
+      localStorage.getItem(FILTER_TAB_STORAGE_KEY) ??
+      "all"
   );
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const initialSearch = searchParams.get("q") ?? "";
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [debouncedQuery, setDebouncedQuery] = useState(initialSearch);
   const debounceRef = useRef(null);
   const { isViewer, isAdmin, user } = useUser();
   const { workspaces } = useWorkspace();
+  const { views, addView, removeView, renameView } = useSavedViews();
+
+  const updateSearchParams = (filter, query) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (filter === "all") {
+          next.delete("status");
+        } else {
+          next.set("status", filter);
+        }
+        if (query) {
+          next.set("q", query);
+        } else {
+          next.delete("q");
+        }
+        return next;
+      },
+      { replace: true }
+    );
+  };
 
   const handleFilterChange = (tabId) => {
     setActiveFilter(tabId);
     localStorage.setItem(FILTER_TAB_STORAGE_KEY, tabId);
+    updateSearchParams(tabId, debouncedQuery);
   };
 
   const handleSearchChange = (value) => {
@@ -90,6 +120,7 @@ export default function Dashboard({ events }) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setDebouncedQuery(value);
+      updateSearchParams(activeFilter, value);
     }, 300);
   };
 
@@ -97,6 +128,16 @@ export default function Dashboard({ events }) {
     setSearchQuery("");
     setDebouncedQuery("");
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    updateSearchParams(activeFilter, "");
+  };
+
+  const handleApplyView = (filter, search) => {
+    setActiveFilter(filter);
+    localStorage.setItem(FILTER_TAB_STORAGE_KEY, filter);
+    setSearchQuery(search);
+    setDebouncedQuery(search);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    updateSearchParams(filter, search);
   };
 
   // Clean up any pending debounce timer on unmount
@@ -240,6 +281,17 @@ export default function Dashboard({ events }) {
         value={searchQuery}
         onChange={handleSearchChange}
         onClear={handleSearchClear}
+      />
+
+      {/* Saved views: system presets + user-created views */}
+      <SavedViews
+        activeFilter={activeFilter}
+        searchQuery={debouncedQuery}
+        views={views}
+        onApply={handleApplyView}
+        onAdd={addView}
+        onRemove={removeView}
+        onRename={renameView}
       />
 
       <div className="section-header">
