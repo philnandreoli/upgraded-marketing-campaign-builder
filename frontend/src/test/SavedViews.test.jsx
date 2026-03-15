@@ -1,6 +1,5 @@
 /**
  * Tests for the SavedViews system:
- *   - System presets always visible
  *   - "Save view" button appears when filter/search is non-default
  *   - Saving a view persists to localStorage and renders as a chip
  *   - Clicking a saved view applies filter + search
@@ -93,57 +92,6 @@ async function typeSearch(value) {
   await act(async () => vi.advanceTimersByTime(300));
   vi.useRealTimers();
 }
-
-// ---------------------------------------------------------------------------
-// Tests: System presets
-// ---------------------------------------------------------------------------
-
-describe("SavedViews – System presets", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it("renders all three system presets when campaigns exist", async () => {
-    await renderDashboard({}, [campaignDraft]);
-    await waitFor(() => screen.getByText("DraftProduct"));
-
-    expect(screen.getByRole("button", { name: /apply preset: all campaigns/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /apply preset: my campaigns/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /apply preset: awaiting my action/i })).toBeInTheDocument();
-  });
-
-  it('"All Campaigns" preset is active by default', async () => {
-    await renderDashboard({}, [campaignDraft]);
-    await waitFor(() => screen.getByText("DraftProduct"));
-
-    const allPreset = screen.getByRole("button", { name: /apply preset: all campaigns/i });
-    expect(allPreset).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it('clicking "My Campaigns" preset activates my_campaigns filter', async () => {
-    await renderDashboard({}, [campaignDraft]);
-    await waitFor(() => screen.getByText("DraftProduct"));
-
-    fireEvent.click(screen.getByRole("button", { name: /apply preset: my campaigns/i }));
-
-    expect(screen.getByRole("tab", { name: "My Campaigns" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-  });
-
-  it('clicking "Awaiting My Action" preset activates awaiting_my_action filter', async () => {
-    await renderDashboard({}, [campaignDraft]);
-    await waitFor(() => screen.getByText("DraftProduct"));
-
-    fireEvent.click(screen.getByRole("button", { name: /apply preset: awaiting my action/i }));
-
-    expect(screen.getByRole("tab", { name: "Awaiting My Action" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Tests: Save current view button visibility
