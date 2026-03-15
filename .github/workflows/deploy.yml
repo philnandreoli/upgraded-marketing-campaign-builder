@@ -146,6 +146,7 @@ jobs:
   # ── 3. Run schema migrations — dev ────────────────────────────────────────
   migrate-dev:
     name: Run Migrations — dev
+    if: false
     needs: push-dev
     runs-on: ubuntu-latest
     steps:
@@ -168,6 +169,7 @@ jobs:
   # ── 4. Deploy app revisions — dev ─────────────────────────────────────────
   deploy-dev:
     name: Deploy — dev
+    if: false
     needs: [build, push-dev, migrate-dev]
     runs-on: ubuntu-latest
     env:
