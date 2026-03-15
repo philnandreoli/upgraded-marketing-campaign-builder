@@ -1,18 +1,9 @@
 import { useState } from "react";
 import { MAX_SAVED_VIEWS } from "../hooks/useSavedViews";
+import { FILTER_TABS } from "../constants/statusGroups";
 
 /**
- * System presets — always visible, not editable.
- * Correspond to existing filter tab IDs from statusGroups.js.
- */
-const SYSTEM_PRESETS = [
-  { id: "all", label: "All Campaigns" },
-  { id: "my_campaigns", label: "My Campaigns" },
-  { id: "awaiting_my_action", label: "Awaiting My Action" },
-];
-
-/**
- * SavedViews — chip/pill row showing system presets and user-created saved views.
+ * SavedViews — chip/pill row showing user-created saved views.
  *
  * Props:
  *   activeFilter   string   — currently active filter tab id
@@ -43,8 +34,8 @@ export default function SavedViews({
 
   const handleSaveClick = () => {
     // Pre-fill name from filter label + query
-    const preset = SYSTEM_PRESETS.find((p) => p.id === activeFilter);
-    const filterLabel = preset?.label ?? activeFilter;
+    const tab = FILTER_TABS.find((t) => t.id === activeFilter);
+    const filterLabel = tab?.label ?? activeFilter;
     const suggested = searchQuery.trim()
       ? `${filterLabel} — ${searchQuery.trim()}`
       : filterLabel;
@@ -103,27 +94,13 @@ export default function SavedViews({
     }
   };
 
+  if (views.length === 0 && !isNonDefault) {
+    return null;
+  }
+
   return (
     <div className="saved-views">
-      {/* System presets */}
-      <div className="saved-views__row" role="group" aria-label="Quick-access presets">
-        {SYSTEM_PRESETS.map((preset) => {
-          const isActive =
-            activeFilter === preset.id && searchQuery.trim() === "";
-          return (
-            <button
-              key={preset.id}
-              type="button"
-              className={`saved-view-chip saved-view-chip--preset${isActive ? " saved-view-chip--active" : ""}`}
-              onClick={() => onApply(preset.id, "")}
-              aria-pressed={isActive}
-              aria-label={`Apply preset: ${preset.label}`}
-            >
-              {preset.label}
-            </button>
-          );
-        })}
-
+      <div className="saved-views__row" role="group" aria-label="Saved views">
         {/* User-created views */}
         {views.map((view) => {
           const isActive =
