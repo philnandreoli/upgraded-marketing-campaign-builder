@@ -228,6 +228,9 @@ export default function Dashboard({ events }) {
     }
   }
 
+  // Determine whether any filter or search is active
+  const isFiltered = activeFilter !== "all" || debouncedQuery.length > 0;
+
   // Sort workspaces: personal workspace first, then alphabetically
   const sortedWorkspaces = [...workspaces].sort((a, b) => {
     if (a.is_personal && !b.is_personal) return -1;
@@ -332,7 +335,9 @@ export default function Dashboard({ events }) {
         </div>
       ) : (
         <div id="campaign-tabpanel" role="tabpanel" className="workspace-list">
-          {sortedWorkspaces.map((ws) => (
+          {sortedWorkspaces
+            .filter((ws) => !isFiltered || (campaignsByWorkspace[ws.id]?.length ?? 0) > 0)
+            .map((ws) => (
             <WorkspaceSection
               key={ws.id}
               workspace={ws}
