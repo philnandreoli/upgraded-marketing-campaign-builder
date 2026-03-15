@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
 import { SkeletonCard } from "../components/Skeleton";
 import WorkspaceSection from "../components/WorkspaceSection";
 import FilterTabs from "../components/FilterTabs";
+import SearchBar from "../components/SearchBar";
 import {
   IN_PROGRESS_STATUSES,
   AWAITING_APPROVAL_STATUSES,
@@ -52,12 +53,30 @@ function applyFilter(campaigns, tabId, user, workspaces) {
   }
 }
 
+/**
+ * Match a campaign against a search query across key text fields.
+ * Case-insensitive; returns true if any field contains the query.
+ */
+function matchesSearch(campaign, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return [
+    campaign.product_or_service,
+    campaign.goal,
+    campaign.workspace_name,
+    campaign.status?.replace(/_/g, " "),
+  ].some((field) => field?.toLowerCase().includes(q));
+}
+
 export default function Dashboard({ events }) {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState(
     () => localStorage.getItem(FILTER_TAB_STORAGE_KEY) ?? "all"
   );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const debounceRef = useRef(null);
   const { isViewer, isAdmin, user } = useUser();
   const { workspaces } = useWorkspace();
 
@@ -65,6 +84,27 @@ export default function Dashboard({ events }) {
     setActiveFilter(tabId);
     localStorage.setItem(FILTER_TAB_STORAGE_KEY, tabId);
   };
+
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedQuery(value);
+    }, 300);
+  };
+
+  const handleSearchClear = () => {
+    setSearchQuery("");
+    setDebouncedQuery("");
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  };
+
+  // Clean up any pending debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,10 +172,13 @@ export default function Dashboard({ events }) {
   // Apply the active filter tab to narrow the campaign list
   const filteredCampaigns = applyFilter(campaigns, activeFilter, user, workspaces);
 
-  // Group filtered campaigns by workspace_id; null workspace_id → orphaned
+  // Apply search query on top of the tab-filtered results
+  const searchedCampaigns = filteredCampaigns.filter((c) => matchesSearch(c, debouncedQuery));
+
+  // Group searched campaigns by workspace_id; null workspace_id → orphaned
   const campaignsByWorkspace = {};
   const orphanedCampaigns = [];
-  for (const c of filteredCampaigns) {
+  for (const c of searchedCampaigns) {
     if (c.workspace_id) {
       if (!campaignsByWorkspace[c.workspace_id]) campaignsByWorkspace[c.workspace_id] = [];
       campaignsByWorkspace[c.workspace_id].push(c);
@@ -192,21 +235,48 @@ export default function Dashboard({ events }) {
       {/* Filter tab bar */}
       <FilterTabs activeTab={activeFilter} onTabChange={handleFilterChange} />
 
+      {/* Search bar */}
+      <SearchBar
+        value={searchQuery}
+        onChange={handleSearchChange}
+        onClear={handleSearchClear}
+      />
+
       <div className="section-header">
         <h2>Campaigns</h2>
+        {debouncedQuery && (
+          <span className="search-result-count">
+            Showing {searchedCampaigns.length} of {filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
 
-      {filteredCampaigns.length === 0 ? (
+      {searchedCampaigns.length === 0 ? (
         <div id="campaign-tabpanel" role="tabpanel" className="empty-state">
           <div className="empty-state-icon">🔍</div>
-          <h2 className="empty-state-title">No campaigns match this filter</h2>
-          <p className="empty-state-body">
-            Try selecting a different filter or{" "}
-            <button className="empty-state-reset" onClick={() => handleFilterChange("all")}>
-              view all campaigns
-            </button>
-            .
-          </p>
+          {debouncedQuery ? (
+            <>
+              <h2 className="empty-state-title">No campaigns match your search</h2>
+              <p className="empty-state-body">
+                No results for &ldquo;{debouncedQuery}&rdquo;.{" "}
+                <button className="empty-state-reset" onClick={handleSearchClear}>
+                  Clear search
+                </button>{" "}
+                or try a different term.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="empty-state-title">No campaigns match this filter</h2>
+              <p className="empty-state-body">
+                Try selecting a different filter or{" "}
+                <button className="empty-state-reset" onClick={() => handleFilterChange("all")}>
+                  view all campaigns
+                </button>
+                .
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div id="campaign-tabpanel" role="tabpanel" className="workspace-list">

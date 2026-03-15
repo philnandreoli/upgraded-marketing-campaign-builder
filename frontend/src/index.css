@@ -1736,6 +1736,74 @@ a:hover { color: var(--color-primary-hover); }
 }
 
 /* ------------------------------------------------------------------ */
+/* Dashboard — Search bar                                              */
+/* ------------------------------------------------------------------ */
+
+.search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.search-bar__icon {
+  position: absolute;
+  left: 0.75rem;
+  font-size: 0.875rem;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.search-bar__input {
+  width: 100%;
+  padding: 0.55rem 2.5rem 0.55rem 2.25rem;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-bar__input::placeholder {
+  color: var(--color-text-dim);
+}
+
+.search-bar__input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+/* Hide the native clear button added by some browsers */
+.search-bar__input::-webkit-search-cancel-button { display: none; }
+
+.search-bar__clear {
+  position: absolute;
+  right: 0.6rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius);
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.search-bar__clear:hover {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.search-result-count {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
 /* Dashboard — Campaign Cards                                          */
 /* ------------------------------------------------------------------ */
 
