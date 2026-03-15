@@ -32,6 +32,7 @@ runs:
       run: |
         docker load < /tmp/marketing-api.tar.gz
         docker load < /tmp/marketing-worker.tar.gz
+        docker load < /tmp/marketing-migration.tar.gz
         docker load < /tmp/marketing-frontend.tar.gz
 
     - name: Log in to ACR
@@ -41,7 +42,7 @@ runs:
     - name: Tag and push images
       shell: bash
       run: |
-        for IMAGE in marketing-api marketing-worker marketing-frontend; do
+        for IMAGE in marketing-api marketing-worker marketing-migration marketing-frontend; do
           docker tag "${IMAGE}:${{ inputs.image-tag }}" \
             "${{ inputs.acr-server }}/${IMAGE}:${{ inputs.image-tag }}"
           docker push "${{ inputs.acr-server }}/${IMAGE}:${{ inputs.image-tag }}"

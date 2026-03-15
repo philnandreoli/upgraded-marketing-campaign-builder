@@ -87,6 +87,13 @@ jobs:
             -t marketing-worker:${{ steps.meta.outputs.image-tag }} \
             .
 
+      - name: Build Migration image
+        run: |
+          docker build \
+            -f deploy/migration.Dockerfile \
+            -t marketing-migration:${{ steps.meta.outputs.image-tag }} \
+            .
+
       - name: Build Frontend image
         run: |
           docker build \
@@ -100,6 +107,8 @@ jobs:
             | gzip > /tmp/marketing-api.tar.gz
           docker save marketing-worker:${{ steps.meta.outputs.image-tag }} \
             | gzip > /tmp/marketing-worker.tar.gz
+          docker save marketing-migration:${{ steps.meta.outputs.image-tag }} \
+            | gzip > /tmp/marketing-migration.tar.gz
           docker save marketing-frontend:${{ steps.meta.outputs.image-tag }} \
             | gzip > /tmp/marketing-frontend.tar.gz
 
@@ -148,6 +157,7 @@ jobs:
     name: Run Migrations — dev
     if: false
     needs: push-dev
+    environment: dev
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -156,14 +166,14 @@ jobs:
       - name: Azure login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID_DEV }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID_DEV }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Run migration
         uses: ./.github/actions/run-migration
         with:
-          resource-group: rg-dev-marketing
+          resource-group: ${{ vars.AZURE_RESOURCE_GROUP}}
           migration-job: caj-dev-migration
 
   # ── 4. Deploy app revisions — dev ─────────────────────────────────────────
