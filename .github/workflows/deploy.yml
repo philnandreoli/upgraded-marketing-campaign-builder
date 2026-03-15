@@ -117,10 +117,11 @@ jobs:
   # ── 2. Push images to dev ACR ─────────────────────────────────────────────
   push-dev:
     name: Push Images — dev
-    if: false
     needs: build
     runs-on: ubuntu-latest
     environment: dev
+    outputs:
+      acr-server: ${{ vars.AZURE_CONTAINER_REGISTRY }}
     env:
       IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
     steps:
@@ -138,8 +139,8 @@ jobs:
         uses: ./.github/actions/push-images
         with:
           image-tag: ${{ env.IMAGE_TAG }}
-          acr-name: acrdevmarketing
-          acr-server: acrdevmarketing.azurecr.io
+          acr-name: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
+          acr-server: ${{ vars.AZURE_CONTAINER_REGISTRY }}
           artifact-name: container-images-${{ env.IMAGE_TAG }}
 
   # ── 3. Run schema migrations — dev ────────────────────────────────────────
@@ -167,12 +168,12 @@ jobs:
   # ── 4. Deploy app revisions — dev ─────────────────────────────────────────
   deploy-dev:
     name: Deploy — dev
-    needs: [build, migrate-dev]
+    needs: [build, push-dev, migrate-dev]
     runs-on: ubuntu-latest
     env:
       IMAGE_TAG: ${{ needs.build.outputs.image-tag }}
       RESOURCE_GROUP: rg-dev-marketing
-      ACR_SERVER: acrdevmarketing.azurecr.io
+      ACR_SERVER: ${{ needs.push-dev.outputs.acr-server }}
     steps:
       - name: Azure login
         uses: azure/login@v2
