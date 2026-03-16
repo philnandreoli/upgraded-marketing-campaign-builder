@@ -28,7 +28,6 @@ export const FILTER_TABS = [
   { id: "awaiting_my_action", label: "Awaiting My Action" },
   { id: "in_progress", label: "In Progress" },
   { id: "needs_approval", label: "Needs Approval" },
-  { id: "manual_review", label: "Manual Review" },
   { id: "approved", label: "Approved" },
 ];
 
