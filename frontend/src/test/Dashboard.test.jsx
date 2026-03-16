@@ -300,17 +300,29 @@ const campaignOtherOwner = {
   workspace_id: 'ws-filter',
   workspace_name: 'Filter Workspace',
 };
+// A campaign in wizard-draft state (not yet launched)
+const campaignWizardDraft = {
+  id: 'cf-5',
+  product_or_service: 'WizardDraftCampaign',
+  goal: 'G',
+  status: 'draft',
+  wizard_step: 2,
+  owner_id: 'user-1',
+  workspace_id: 'ws-filter',
+  workspace_name: 'Filter Workspace',
+};
 
 describe('Dashboard – Filter tabs', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('renders all 6 filter tabs', async () => {
+  it('renders all 7 filter tabs including Drafts', async () => {
     await renderDashboard({ userId: 'user-1' }, [campaignDraft], [WS_FILTER]);
     await waitFor(() => screen.getByText('DraftCampaign'));
     expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'My Campaigns' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Drafts' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Awaiting My Action' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'In Progress' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Needs Approval' })).toBeInTheDocument();
@@ -326,12 +338,44 @@ describe('Dashboard – Filter tabs', () => {
     expect(screen.getByText('ApprovedCampaign')).toBeInTheDocument();
   });
 
+  it('"Drafts" tab shows only draft-status campaigns', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWizardDraft, campaignDraft, campaignApproved],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('WizardDraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Drafts' }));
+    expect(screen.getByText('WizardDraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
+    expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
+  });
+
+  it('"Drafts" tab shows empty state when no draft campaigns exist', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignApproved], [WS_FILTER]);
+    await waitFor(() => screen.getByText('ApprovedCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Drafts' }));
+    expect(screen.getByText(/no campaigns match this filter/i)).toBeInTheDocument();
+  });
+
   it('"In Progress" tab shows only in-progress campaigns', async () => {
     await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
     await waitFor(() => screen.getByText('DraftCampaign'));
     fireEvent.click(screen.getByRole('tab', { name: 'In Progress' }));
     expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
     expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
+  });
+
+  it('"In Progress" tab does NOT show wizard-draft campaigns', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWizardDraft, campaignDraft],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('WizardDraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'In Progress' }));
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('WizardDraftCampaign')).not.toBeInTheDocument();
   });
 
   it('"Approved" tab shows only approved campaigns', async () => {
@@ -387,6 +431,19 @@ describe('Dashboard – Filter tabs', () => {
     await waitFor(() => screen.getByText('DraftCampaign'));
     fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
     expect(localStorage.getItem('dashboard-active-filter')).toBe('approved');
+  });
+
+  it('clicking "Drafts" stat card activates Drafts tab', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWizardDraft, campaignApproved],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('WizardDraftCampaign'));
+    fireEvent.click(screen.getByRole('button', { name: /filter by drafts/i }));
+    expect(screen.getByRole('tab', { name: 'Drafts' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('WizardDraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
   });
 
   it('clicking "In Progress" stat card activates In Progress tab', async () => {

@@ -18,6 +18,7 @@ backend.apps.api.schemas.workflow.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
@@ -180,7 +181,6 @@ async def update_draft_campaign(
     if body.wizard_step is not None:
         campaign.wizard_step = body.wizard_step
 
-    from datetime import datetime
     campaign.updated_at = datetime.utcnow()
 
     try:

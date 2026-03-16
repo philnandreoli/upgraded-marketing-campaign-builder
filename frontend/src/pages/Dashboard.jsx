@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
@@ -10,6 +10,7 @@ import SearchBar from "../components/SearchBar";
 import SavedViews from "../components/SavedViews";
 import useSavedViews from "../hooks/useSavedViews";
 import {
+  DRAFT_STATUSES,
   IN_PROGRESS_STATUSES,
   AWAITING_APPROVAL_STATUSES,
   APPROVED_STATUSES,
@@ -25,6 +26,9 @@ function applyFilter(campaigns, tabId, user, workspaces) {
   switch (tabId) {
     case "my_campaigns":
       return campaigns.filter((c) => c.owner_id === user?.id);
+
+    case "drafts":
+      return campaigns.filter((c) => DRAFT_STATUSES.includes(c.status));
 
     case "awaiting_my_action": {
       // Non-viewer workspace members or campaign owners whose campaigns are paused
@@ -70,7 +74,6 @@ function matchesSearch(campaign, query) {
 export default function Dashboard({ events }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [campaigns, setCampaigns] = useState([]);
-  const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState(
     () =>
@@ -147,13 +150,11 @@ export default function Dashboard({ events }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all campaigns including drafts, then split on the frontend
+      // Fetch all campaigns including drafts in one pass
       const allArrays = await Promise.all(
         workspaces.map((ws) => listCampaigns(ws.id, { includeDrafts: true }).catch(() => []))
       );
-      const all = allArrays.flat();
-      setCampaigns(all.filter((c) => c.status !== "draft"));
-      setDrafts(all.filter((c) => c.status === "draft"));
+      setCampaigns(allArrays.flat());
     } catch {
       /* silent */
     } finally {
@@ -176,7 +177,7 @@ export default function Dashboard({ events }) {
     load();
   };
 
-  if (loading && campaigns.length === 0 && drafts.length === 0) {
+  if (loading && campaigns.length === 0) {
     return (
       <div>
         <SkeletonCard />
@@ -186,7 +187,7 @@ export default function Dashboard({ events }) {
     );
   }
 
-  if (campaigns.length === 0 && drafts.length === 0) {
+  if (campaigns.length === 0) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">🚀</div>
@@ -204,6 +205,7 @@ export default function Dashboard({ events }) {
     );
   }
 
+  const draftCount = campaigns.filter((c) => DRAFT_STATUSES.includes(c.status)).length;
   const inProgressCount = campaigns.filter((c) => IN_PROGRESS_STATUSES.includes(c.status)).length;
   const awaitingCount = campaigns.filter((c) => AWAITING_APPROVAL_STATUSES.includes(c.status)).length;
   const approvedCount = campaigns.filter((c) => APPROVED_STATUSES.includes(c.status)).length;
@@ -245,6 +247,14 @@ export default function Dashboard({ events }) {
           <span className="stat-number">{campaigns.length}</span>
           <span className="stat-label">Total</span>
         </div>
+        <button
+          className={`stat-card stat-card--clickable${activeFilter === "drafts" ? " stat-card--active" : ""}`}
+          onClick={() => handleFilterChange("drafts")}
+          aria-label="Filter by Drafts"
+        >
+          <span className="stat-number">{draftCount}</span>
+          <span className="stat-label">Drafts</span>
+        </button>
         <button
           className={`stat-card stat-card--clickable${activeFilter === "in_progress" ? " stat-card--active" : ""}`}
           onClick={() => handleFilterChange("in_progress")}
@@ -304,56 +314,6 @@ export default function Dashboard({ events }) {
           </span>
         )}
       </div>
-
-      {/* Drafts section — shown when user has drafts in progress */}
-      {!isViewer && drafts.length > 0 && (
-        <div style={{ marginBottom: "1.5rem" }}>
-          <div className="section-header" style={{ marginBottom: "0.5rem" }}>
-            <h3 style={{ fontSize: "var(--text-base)", color: "var(--color-text-muted)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <span>📝</span> Drafts
-              <span style={{ fontSize: "var(--text-xs)", background: "var(--color-surface-2)", border: "1px solid var(--color-border)", borderRadius: "999px", padding: "0.1rem 0.5rem", color: "var(--color-text-dim)" }}>
-                {drafts.length}
-              </span>
-            </h3>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {drafts.map((draft) => {
-              const ws = workspaces.find((w) => w.id === draft.workspace_id);
-              const editUrl = ws
-                ? `/workspaces/${encodeURIComponent(ws.id)}/campaigns/${encodeURIComponent(draft.id)}/edit`
-                : null;
-              const stepLabels = ["Workspace", "Campaign Basics", "Budget & Timeline", "Channels", "Additional Details", "Review & Launch"];
-              const stepLabel = stepLabels[draft.wizard_step ?? 0] ?? "Campaign Basics";
-              return (
-                <div key={draft.id} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", marginBottom: 0, padding: "0.85rem 1.25rem" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: "var(--text-sm)", color: "var(--color-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {draft.product_or_service}
-                    </div>
-                    <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-dim)", marginTop: "0.15rem" }}>
-                      {ws ? ws.name : "Unknown workspace"} · Step: {stepLabel}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
-                    {editUrl && (
-                      <Link to={editUrl} className="btn btn-outline" style={{ fontSize: "var(--text-xs)", padding: "0.3rem 0.75rem" }}>
-                        Resume →
-                      </Link>
-                    )}
-                    <button
-                      className="btn btn-outline"
-                      style={{ fontSize: "var(--text-xs)", padding: "0.3rem 0.75rem", color: "var(--color-danger)", borderColor: "var(--color-danger)" }}
-                      onClick={() => handleDelete(draft.id, draft.workspace_id)}
-                    >
-                      Discard
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {searchedCampaigns.length === 0 ? (
         <div id="campaign-tabpanel" role="tabpanel" className="empty-state">

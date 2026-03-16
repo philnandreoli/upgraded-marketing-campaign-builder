@@ -1,7 +1,9 @@
 // Shared status group constants used by Dashboard filter tabs and workspace sections.
 
+// Draft = wizard-incomplete campaigns that have not yet been launched.
+export const DRAFT_STATUSES = ["draft"];
+
 export const IN_PROGRESS_STATUSES = [
-  "draft",
   "strategy",
   "content",
   "channel_planning",
@@ -25,6 +27,7 @@ export const AWAITING_MY_ACTION_STATUSES = ["clarification", "content_approval"]
 export const FILTER_TABS = [
   { id: "all", label: "All" },
   { id: "my_campaigns", label: "My Campaigns" },
+  { id: "drafts", label: "Drafts" },
   { id: "awaiting_my_action", label: "Awaiting My Action" },
   { id: "in_progress", label: "In Progress" },
   { id: "needs_approval", label: "Needs Approval" },
