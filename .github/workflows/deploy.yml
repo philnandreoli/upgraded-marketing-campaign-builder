@@ -98,6 +98,10 @@ jobs:
         run: |
           docker build \
             -f frontend/Dockerfile \
+            --build-arg VITE_AZURE_CLIENT_ID=${{ secrets.VITE_AZURE_CLIENT_ID }} \
+            --build-arg VITE_AZURE_TENANT_ID=${{ secrets.VITE_AZURE_TENANT_ID }} \
+            --build-arg VITE_REDIRECT_URI=${{ secrets.VITE_REDIRECT_URI }} \
+            --build-arg VITE_API_SCOPE=${{ secrets.VITE_API_SCOPE }} \
             -t marketing-frontend:${{ steps.meta.outputs.image-tag }} \
             frontend/
 
