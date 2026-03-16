@@ -132,7 +132,7 @@ class TestAdminRoleCapabilities:
         _make_campaign(store, _BUILDER)
         _make_campaign(store, _BUILDER2)
         with _as_user(_ADMIN, store) as c:
-            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true")
         assert r.status_code == 200
         assert len(r.json()) == 2
 
@@ -335,7 +335,7 @@ class TestViewerRoleCapabilities:
         # Add _VIEWER as workspace VIEWER member so they can access the list endpoint
         store._workspace_members[(TEST_WS_ID, _VIEWER.id)] = "viewer"
         with _as_user(_VIEWER, store) as c:
-            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()
         # Workspace list shows all workspace campaigns to any workspace member
         assert len(items) == 2
 
@@ -515,6 +515,6 @@ class TestEdgeCases:
         campaign = _make_campaign(store, _BUILDER)
 
         with _as_user(_ADMIN, store) as c:
-            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()) == 1
+            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()) == 1
             c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
-            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()) == 0
+            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()) == 0

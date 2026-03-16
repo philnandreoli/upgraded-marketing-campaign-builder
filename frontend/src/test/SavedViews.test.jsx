@@ -48,7 +48,7 @@ const campaignDraft = {
   id: "c-draft",
   product_or_service: "DraftProduct",
   goal: "Draft goal",
-  status: "draft",
+  status: "strategy",
   owner_id: "user-sv",
   workspace_id: "ws-sv",
   workspace_name: "SV Workspace",

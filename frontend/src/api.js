@@ -86,8 +86,48 @@ export async function createCampaign(brief, workspaceId) {
   return res.json();
 }
 
-export async function listCampaigns(workspaceId) {
-  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns`, {
+export async function updateCampaignDraft(workspaceId, campaignId, fields) {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify(fields),
+    }
+  );
+  if (!res.ok) {
+    let detail = `Update draft failed: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = `Update draft failed: ${res.status} — ${body.detail}`;
+    } catch { /* response wasn't JSON */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function launchCampaign(workspaceId, campaignId) {
+  const res = await fetch(
+    `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/launch`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    }
+  );
+  if (!res.ok) {
+    let detail = `Launch failed: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = `Launch failed: ${res.status} — ${body.detail}`;
+    } catch { /* response wasn't JSON */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function listCampaigns(workspaceId, { includeDrafts = false } = {}) {
+  const params = includeDrafts ? "?include_drafts=true" : "";
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns${params}`, {
     headers: await authHeaders(),
   });
   if (!res.ok) throw new Error(`List failed: ${res.status}`);
@@ -351,8 +391,9 @@ export async function deleteWorkspace(id) {
     throw new Error(`Delete workspace failed: ${res.status}`);
 }
 
-export async function listWorkspaceCampaigns(id) {
-  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}/campaigns`, {
+export async function listWorkspaceCampaigns(id, { includeDrafts = false } = {}) {
+  const params = includeDrafts ? "?include_drafts=true" : "";
+  const res = await fetch(`${API_BASE}/api/workspaces/${encodeURIComponent(id)}/campaigns${params}`, {
     headers: await authHeaders(),
   });
   if (!res.ok) throw new Error(`List workspace campaigns failed: ${res.status}`);

@@ -2999,3 +2999,218 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+
+/* ------------------------------------------------------------------ */
+/* Campaign Creation Wizard                                            */
+/* ------------------------------------------------------------------ */
+
+.wizard-container {
+  max-width: 640px;
+}
+
+/* Progress bar */
+.wizard-progress {
+  margin-bottom: 2rem;
+}
+
+.wizard-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.wizard-progress-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.wizard-progress-step-count {
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+}
+
+.wizard-progress-bar-track {
+  height: 4px;
+  background: var(--color-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.wizard-progress-bar-fill {
+  height: 100%;
+  background: var(--color-accent-gradient);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.wizard-step-dots {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.wizard-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-border);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.wizard-step-dot--done {
+  background: var(--color-success);
+}
+
+.wizard-step-dot--active {
+  background: var(--color-primary);
+  transform: scale(1.4);
+}
+
+/* Step card */
+.wizard-step-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  margin-bottom: 1.5rem;
+  animation: wizard-step-enter 0.2s ease;
+}
+
+@keyframes wizard-step-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.wizard-step-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+  color: var(--color-text);
+}
+
+.wizard-step-subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: 1.5rem;
+}
+
+.wizard-optional-badge {
+  display: inline-block;
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+/* Navigation buttons */
+.wizard-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.wizard-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.wizard-autosave {
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.wizard-autosave--saving {
+  color: var(--color-warning);
+}
+
+.wizard-autosave--saved {
+  color: var(--color-success);
+}
+
+/* Review step */
+.wizard-review-section {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.wizard-review-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.wizard-review-section-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.wizard-review-edit-btn {
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius);
+  transition: background 0.15s;
+}
+
+.wizard-review-edit-btn:hover {
+  background: rgba(13, 148, 136, 0.1);
+}
+
+.wizard-review-field {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+  font-size: var(--text-sm);
+}
+
+.wizard-review-field-label {
+  color: var(--color-text-dim);
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.wizard-review-field-value {
+  color: var(--color-text);
+}
+
+.wizard-review-empty {
+  font-size: var(--text-sm);
+  color: var(--color-text-dim);
+  font-style: italic;
+}
+
+/* Draft banner at top */
+.wizard-draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(13, 148, 136, 0.08);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--color-primary-hover);
+  margin-bottom: 1rem;
+}

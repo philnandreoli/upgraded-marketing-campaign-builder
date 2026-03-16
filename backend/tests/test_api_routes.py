@@ -324,7 +324,8 @@ class TestListCampaigns:
         authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "C", "goal": "D",
         })
-        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
+        # Drafts are excluded from the default listing; use include_drafts=true to see them
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true")
         assert r.status_code == 200
         items = r.json()
         assert len(items) == 2
@@ -334,6 +335,16 @@ class TestListCampaigns:
         assert "product_or_service" in items[0]
         assert "goal" in items[0]
         assert "created_at" in items[0]
+        assert "wizard_step" in items[0]
+
+    def test_list_excludes_drafts_by_default(self, authed_client):
+        """POST /campaigns creates a draft; default GET /campaigns should hide it."""
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
+            "product_or_service": "Draft Camp", "goal": "To be launched",
+        })
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
+        assert r.status_code == 200
+        assert r.json() == []
 
     def test_list_scoped_to_owner(self, _isolated_store):
         """Each authenticated user only sees their own campaigns."""
@@ -354,11 +365,12 @@ class TestListCampaigns:
         _isolated_store._members[(their_campaign.id, _OTHER_USER.id)] = "owner"
 
         with _as_user(_TEST_USER) as c:
-            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()
+            # Campaigns are DRAFT by default; use include_drafts=true to see them
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()
             assert len(items) == 2  # Both campaigns are in the workspace
 
         with _as_user(_OTHER_USER) as c:
-            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns").json()
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()
             assert len(items) == 2  # Both campaigns are in the workspace
 
 
@@ -423,6 +435,116 @@ class TestDeleteCampaign:
         with _as_user(_OTHER_USER) as c:
             r = c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
             assert r.status_code == 204  # _OTHER_USER is CREATOR in the workspace
+
+
+# ---- PATCH /api/campaigns/{id} ----
+
+class TestUpdateDraftCampaign:
+    def test_patch_updates_brief_fields(self, authed_client):
+        """PATCH on a draft campaign updates the brief fields."""
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
+            "product_or_service": "Initial", "goal": "Original goal",
+        })
+        cid = r.json()["id"]
+
+        r = authed_client.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}", json={
+            "product_or_service": "Updated",
+            "budget": 50000,
+            "wizard_step": 2,
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert data["id"] == cid
+        assert data["status"] == "draft"
+
+        # Verify the campaign was actually updated
+        detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
+        assert detail["brief"]["product_or_service"] == "Updated"
+        assert detail["brief"]["budget"] == 50000
+        assert detail["wizard_step"] == 2
+
+    def test_patch_updates_wizard_step(self, authed_client):
+        """PATCH can update just the wizard_step."""
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
+            "product_or_service": "Wizard Test", "goal": "Test",
+        })
+        cid = r.json()["id"]
+        r = authed_client.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}", json={"wizard_step": 3})
+        assert r.status_code == 200
+        detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
+        assert detail["wizard_step"] == 3
+
+    def test_patch_non_draft_returns_409(self, authed_client, _isolated_store):
+        """PATCH on a non-draft campaign returns 409."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Active", goal="Running"),
+            owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
+            status=CampaignStatus.STRATEGY,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+
+        r = authed_client.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}", json={
+            "product_or_service": "Try to update",
+        })
+        assert r.status_code == 409
+
+    def test_patch_not_found(self, authed_client):
+        r = authed_client.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id", json={
+            "product_or_service": "Ghost",
+        })
+        assert r.status_code == 404
+
+    def test_patch_viewer_returns_403(self, _isolated_store):
+        """A viewer cannot update a campaign."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="View Only", goal="Read"),
+            owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        viewer = User(id="viewer-001", email="v@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
+        with _as_user(viewer) as c:
+            r = c.patch(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}", json={
+                "product_or_service": "Hacked",
+            })
+            assert r.status_code == 403
+
+
+# ---- POST /api/campaigns/{id}/launch ----
+
+class TestLaunchCampaign:
+    def test_launch_draft_dispatches_pipeline(self, authed_client, _isolated_store):
+        """Launching a draft campaign dispatches the pipeline."""
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
+            "product_or_service": "Ready", "goal": "Launch me",
+        })
+        cid = r.json()["id"]
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/launch")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["campaign_id"] == cid
+        assert "launched" in data["message"].lower() or "pipeline" in data["message"].lower()
+
+    def test_launch_non_draft_returns_409(self, authed_client, _isolated_store):
+        """Launching a non-draft campaign returns 409."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Already Running", goal="Active"),
+            owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
+            status=CampaignStatus.STRATEGY,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/launch")
+        assert r.status_code == 409
+
+    def test_launch_not_found(self, authed_client):
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/nonexistent-id/launch")
+        assert r.status_code == 404
+
+
 
 
 # ---- POST /api/campaigns/{id}/review (deprecated) ----

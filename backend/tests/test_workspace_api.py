@@ -301,7 +301,8 @@ class TestListWorkspaceCampaigns:
         _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
         _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
 
-        r = creator_client.get("/api/workspaces/ws-1/campaigns")
+        # Campaigns are DRAFT by default; use include_drafts=true to see them
+        r = creator_client.get("/api/workspaces/ws-1/campaigns?include_drafts=true")
         assert r.status_code == 200
         items = r.json()
         assert len(items) == 1
