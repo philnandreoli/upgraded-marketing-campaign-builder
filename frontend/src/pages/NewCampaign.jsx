@@ -98,7 +98,7 @@ function WorkspaceDropdown({ value, options, onChange, labelId }) {
   );
 }
 
-function WizardProgress({ currentStep, totalContentSteps, hasWorkspaceStep }) {
+function WizardProgress({ currentStep, hasWorkspaceStep }) {
   // Total visual steps = workspace step (if shown) + content steps (1-4) + review = 5 or 6
   const firstContentStep = hasWorkspaceStep ? 0 : 1;
   const lastStep = 5;
