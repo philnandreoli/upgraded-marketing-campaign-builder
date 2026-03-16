@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { createCampaign } from "../api";
 import DatePicker from "../components/DatePicker";
 import { useUser } from "../UserContext";
@@ -207,8 +207,21 @@ export default function NewCampaign() {
     }
   };
 
+  const selectedWorkspace = creatableWorkspaces.find((ws) => ws.id === selectedWorkspaceId);
+
   return (
     <div>
+      <nav className="breadcrumb">
+        <Link to="/">Dashboard</Link>
+        {selectedWorkspace && (
+          <>
+            <span className="breadcrumb-divider">/</span>
+            <Link to={`/workspaces/${selectedWorkspace.id}`}>{selectedWorkspace.name}</Link>
+          </>
+        )}
+        <span className="breadcrumb-divider">/</span>
+        <span>New Campaign</span>
+      </nav>
       <h2 className="page-title">Create New Campaign</h2>
 
       <form onSubmit={handleSubmit} style={{ maxWidth: 640 }}>

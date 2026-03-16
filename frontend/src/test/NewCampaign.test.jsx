@@ -207,3 +207,60 @@ describe('NewCampaign — workspace picker', () => {
     expect(screen.getByRole('option', { name: /My Space \(Personal\)/i })).toBeInTheDocument();
   });
 });
+
+describe('NewCampaign — breadcrumb', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.createCampaign.mockResolvedValue({ id: 'camp-1' });
+  });
+
+  it('renders Dashboard link and New Campaign text', async () => {
+    renderNewCampaign({ workspaces: [PERSONAL_WS] });
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute('href', '/');
+    expect(screen.getByText('New Campaign')).toBeInTheDocument();
+  });
+
+  it('renders workspace name as a link when a workspace is selected', async () => {
+    renderNewCampaign({ workspaces: [PERSONAL_WS] });
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /My Space/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('link', { name: /My Space/i })).toHaveAttribute('href', `/workspaces/${PERSONAL_WS.id}`);
+  });
+
+  it('breadcrumb workspace updates when user changes workspace dropdown', async () => {
+    renderNewCampaign({ workspaces: [PERSONAL_WS, TEAM_WS_CREATOR] });
+
+    // Initially shows personal workspace in breadcrumb
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /My Space/i })).toBeInTheDocument();
+    });
+
+    // Change workspace selection
+    fireEvent.click(screen.getByLabelText(/create in workspace/i));
+    fireEvent.click(screen.getByRole('option', { name: /Team WS/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /Team WS/i })).toHaveAttribute('href', `/workspaces/${TEAM_WS_CREATOR.id}`);
+    });
+  });
+
+  it('New Campaign is plain text, not a link', async () => {
+    renderNewCampaign({ workspaces: [PERSONAL_WS] });
+
+    await waitFor(() => {
+      expect(screen.getByText('New Campaign')).toBeInTheDocument();
+    });
+
+    // The "New Campaign" breadcrumb item should not be a link
+    const newCampaignEl = screen.getByText('New Campaign');
+    expect(newCampaignEl.tagName).not.toBe('A');
+  });
+});
