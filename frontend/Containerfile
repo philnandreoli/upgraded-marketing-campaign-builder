@@ -7,6 +7,14 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+
+# Vite embeds VITE_* variables at build time via import.meta.env.
+# Pass them as build args so the bundled JS contains the correct values.
+ARG VITE_AZURE_CLIENT_ID
+ARG VITE_AZURE_TENANT_ID
+ARG VITE_REDIRECT_URI
+ARG VITE_API_SCOPE
+
 RUN npm run build
 
 # ---------- Stage 2: Serve ----------
