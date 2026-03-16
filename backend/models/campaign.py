@@ -255,6 +255,10 @@ class Campaign(BaseModel):
         default=1,
         description="Optimistic locking counter incremented on every successful write.",
     )
+    wizard_step: int = Field(
+        default=0,
+        description="Current step in the creation wizard (0–5). Stored in the campaign JSON; no schema migration required.",
+    )
 
     def advance_status(self, new_status: CampaignStatus) -> None:
         self.status = new_status

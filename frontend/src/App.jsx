@@ -105,6 +105,7 @@ function AuthenticatedApp() {
           <Route path="/workspaces/:id/settings" element={<RequireBuilder><WorkspaceSettings /></RequireBuilder>} />
           <Route path="/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
           <Route path="/workspaces/:workspaceId/campaigns/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
+          <Route path="/workspaces/:workspaceId/campaigns/:campaignId/edit" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
           <Route path="/workspaces/:workspaceId/campaigns/:id" element={<CampaignDetail />} />
           <Route path="/campaign/:id" element={<CampaignDetail />} />
           <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />

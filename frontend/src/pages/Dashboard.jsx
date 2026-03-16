@@ -10,6 +10,7 @@ import SearchBar from "../components/SearchBar";
 import SavedViews from "../components/SavedViews";
 import useSavedViews from "../hooks/useSavedViews";
 import {
+  DRAFT_STATUSES,
   IN_PROGRESS_STATUSES,
   AWAITING_APPROVAL_STATUSES,
   APPROVED_STATUSES,
@@ -25,6 +26,9 @@ function applyFilter(campaigns, tabId, user, workspaces) {
   switch (tabId) {
     case "my_campaigns":
       return campaigns.filter((c) => c.owner_id === user?.id);
+
+    case "drafts":
+      return campaigns.filter((c) => DRAFT_STATUSES.includes(c.status));
 
     case "awaiting_my_action": {
       // Non-viewer workspace members or campaign owners whose campaigns are paused
@@ -146,11 +150,11 @@ export default function Dashboard({ events }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch campaigns for each workspace and flatten into a single list
-      const campaignArrays = await Promise.all(
-        workspaces.map((ws) => listCampaigns(ws.id).catch(() => []))
+      // Fetch all campaigns including drafts in one pass
+      const allArrays = await Promise.all(
+        workspaces.map((ws) => listCampaigns(ws.id, { includeDrafts: true }).catch(() => []))
       );
-      setCampaigns(campaignArrays.flat());
+      setCampaigns(allArrays.flat());
     } catch {
       /* silent */
     } finally {
@@ -201,6 +205,7 @@ export default function Dashboard({ events }) {
     );
   }
 
+  const draftCount = campaigns.filter((c) => DRAFT_STATUSES.includes(c.status)).length;
   const inProgressCount = campaigns.filter((c) => IN_PROGRESS_STATUSES.includes(c.status)).length;
   const awaitingCount = campaigns.filter((c) => AWAITING_APPROVAL_STATUSES.includes(c.status)).length;
   const approvedCount = campaigns.filter((c) => APPROVED_STATUSES.includes(c.status)).length;
@@ -242,6 +247,14 @@ export default function Dashboard({ events }) {
           <span className="stat-number">{campaigns.length}</span>
           <span className="stat-label">Total</span>
         </div>
+        <button
+          className={`stat-card stat-card--clickable${activeFilter === "drafts" ? " stat-card--active" : ""}`}
+          onClick={() => handleFilterChange("drafts")}
+          aria-label="Filter by Drafts"
+        >
+          <span className="stat-number">{draftCount}</span>
+          <span className="stat-label">Drafts</span>
+        </button>
         <button
           className={`stat-card stat-card--clickable${activeFilter === "in_progress" ? " stat-card--active" : ""}`}
           onClick={() => handleFilterChange("in_progress")}

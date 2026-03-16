@@ -80,7 +80,7 @@ const campaignForOwner = {
   id: 'camp-new',
   product_or_service: 'MyProduct',
   goal: 'Grow',
-  status: 'draft',
+  status: 'strategy',
   owner_id: 'user-1',
   workspace_id: 'ws-owner',
   workspace_name: "Owner Workspace",
@@ -130,7 +130,7 @@ const sampleCampaign = {
   id: 'camp-1',
   product_or_service: 'TestProduct',
   goal: 'Test goal',
-  status: 'draft',
+  status: 'strategy',
   owner_id: OWNER_ID,
   workspace_id: 'ws-sample',
   workspace_name: 'Sample Workspace',
@@ -172,7 +172,7 @@ const wsTeam = { id: 'ws-team', name: 'Team Workspace', is_personal: false, role
 describe('Dashboard – Workspace sections', () => {
   it('renders a section for each workspace', async () => {
     const campaigns = [
-      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
+      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
     ];
     await renderDashboard({ userId: 'user-1' }, campaigns, [wsPersonal, wsTeam]);
     await waitFor(() => screen.getByText('My Workspace'));
@@ -182,7 +182,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('places campaigns inside their workspace section', async () => {
     const campaigns = [
-      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
+      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
     ];
     await renderDashboard({ userId: 'user-1' }, campaigns, [wsPersonal]);
     await waitFor(() => screen.getByText('ProductA'));
@@ -191,7 +191,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('shows the workspace role badge', async () => {
     const campaigns = [
-      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
+      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
     ];
     await renderDashboard({ userId: 'user-1' }, campaigns, [wsPersonal]);
     await waitFor(() => screen.getByText('Creator'));
@@ -200,7 +200,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('shows "+" create button for creator workspaces', async () => {
     const campaigns = [
-      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
+      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
     ];
     await renderDashboard({ userId: 'user-1' }, campaigns, [wsPersonal]);
     await waitFor(() => screen.getByText('My Workspace'));
@@ -209,7 +209,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('hides "+" create button for contributor workspaces', async () => {
     const campaigns = [
-      { id: 'c1', product_or_service: 'TeamProduct', goal: 'GoalB', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-team', workspace_name: 'Team Workspace' },
+      { id: 'c1', product_or_service: 'TeamProduct', goal: 'GoalB', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-team', workspace_name: 'Team Workspace' },
     ];
     await renderDashboard({ userId: 'user-1' }, campaigns, [wsTeam]);
     await waitFor(() => screen.getByText('TeamProduct'));
@@ -218,7 +218,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('shows orphaned section only to admins', async () => {
     const campaigns = [
-      { id: 'c-orphan', product_or_service: 'OrphanProduct', goal: 'G', status: 'draft', owner_id: 'user-1', workspace_id: null, workspace_name: null },
+      { id: 'c-orphan', product_or_service: 'OrphanProduct', goal: 'G', status: 'strategy', owner_id: 'user-1', workspace_id: null, workspace_name: null },
     ];
     // Non-admin should NOT see orphaned campaigns or the orphaned section
     await renderDashboard({ isAdmin: false, userId: 'user-1' }, campaigns, []);
@@ -229,7 +229,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('shows orphaned section to admins with assign dropdown', async () => {
     const campaigns = [
-      { id: 'c-orphan', product_or_service: 'OrphanProduct', goal: 'G', status: 'draft', owner_id: 'user-1', workspace_id: null, workspace_name: null },
+      { id: 'c-orphan', product_or_service: 'OrphanProduct', goal: 'G', status: 'strategy', owner_id: 'user-1', workspace_id: null, workspace_name: null },
     ];
     await renderDashboard({ isAdmin: true, userId: 'user-1' }, campaigns, [wsPersonal]);
     await waitFor(() => screen.getByText('Orphaned Campaigns'));
@@ -239,7 +239,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('shows workspace count in stats bar', async () => {
     const campaigns = [
-      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
+      { id: 'c1', product_or_service: 'ProductA', goal: 'GoalA', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
     ];
     await renderDashboard({ userId: 'user-1' }, campaigns, [wsPersonal, wsTeam]);
     await waitFor(() => screen.getByText('Workspaces'));
@@ -248,7 +248,7 @@ describe('Dashboard – Workspace sections', () => {
 
   it('shows status sub-groups within a workspace', async () => {
     const campaigns = [
-      { id: 'c1', product_or_service: 'DraftProd', goal: 'G', status: 'draft', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
+      { id: 'c1', product_or_service: 'DraftProd', goal: 'G', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
       { id: 'c2', product_or_service: 'ApprovedProd', goal: 'G', status: 'approved', owner_id: 'user-1', workspace_id: 'ws-personal', workspace_name: 'My Workspace' },
     ];
     await renderDashboard({ userId: 'user-1' }, campaigns, [wsPersonal]);
@@ -268,7 +268,7 @@ const campaignDraft = {
   id: 'cf-1',
   product_or_service: 'DraftCampaign',
   goal: 'G',
-  status: 'draft',
+  status: 'strategy',
   owner_id: 'user-1',
   workspace_id: 'ws-filter',
   workspace_name: 'Filter Workspace',
@@ -295,8 +295,19 @@ const campaignOtherOwner = {
   id: 'cf-4',
   product_or_service: 'OtherOwnerCampaign',
   goal: 'G',
-  status: 'draft',
+  status: 'strategy',
   owner_id: 'user-other',
+  workspace_id: 'ws-filter',
+  workspace_name: 'Filter Workspace',
+};
+// A campaign in wizard-draft state (not yet launched)
+const campaignWizardDraft = {
+  id: 'cf-5',
+  product_or_service: 'WizardDraftCampaign',
+  goal: 'G',
+  status: 'draft',
+  wizard_step: 2,
+  owner_id: 'user-1',
   workspace_id: 'ws-filter',
   workspace_name: 'Filter Workspace',
 };
@@ -306,11 +317,12 @@ describe('Dashboard – Filter tabs', () => {
     localStorage.clear();
   });
 
-  it('renders all 6 filter tabs', async () => {
+  it('renders all 7 filter tabs including Drafts', async () => {
     await renderDashboard({ userId: 'user-1' }, [campaignDraft], [WS_FILTER]);
     await waitFor(() => screen.getByText('DraftCampaign'));
     expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'My Campaigns' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Drafts' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Awaiting My Action' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'In Progress' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Needs Approval' })).toBeInTheDocument();
@@ -326,12 +338,44 @@ describe('Dashboard – Filter tabs', () => {
     expect(screen.getByText('ApprovedCampaign')).toBeInTheDocument();
   });
 
+  it('"Drafts" tab shows only draft-status campaigns', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWizardDraft, campaignDraft, campaignApproved],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('WizardDraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Drafts' }));
+    expect(screen.getByText('WizardDraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
+    expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
+  });
+
+  it('"Drafts" tab shows empty state when no draft campaigns exist', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignApproved], [WS_FILTER]);
+    await waitFor(() => screen.getByText('ApprovedCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Drafts' }));
+    expect(screen.getByText(/no campaigns match this filter/i)).toBeInTheDocument();
+  });
+
   it('"In Progress" tab shows only in-progress campaigns', async () => {
     await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
     await waitFor(() => screen.getByText('DraftCampaign'));
     fireEvent.click(screen.getByRole('tab', { name: 'In Progress' }));
     expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
     expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
+  });
+
+  it('"In Progress" tab does NOT show wizard-draft campaigns', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWizardDraft, campaignDraft],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('WizardDraftCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'In Progress' }));
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('WizardDraftCampaign')).not.toBeInTheDocument();
   });
 
   it('"Approved" tab shows only approved campaigns', async () => {
@@ -389,6 +433,19 @@ describe('Dashboard – Filter tabs', () => {
     expect(localStorage.getItem('dashboard-active-filter')).toBe('approved');
   });
 
+  it('clicking "Drafts" stat card activates Drafts tab', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWizardDraft, campaignApproved],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('WizardDraftCampaign'));
+    fireEvent.click(screen.getByRole('button', { name: /filter by drafts/i }));
+    expect(screen.getByRole('tab', { name: 'Drafts' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('WizardDraftCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('ApprovedCampaign')).not.toBeInTheDocument();
+  });
+
   it('clicking "In Progress" stat card activates In Progress tab', async () => {
     await renderDashboard({ userId: 'user-1' }, [campaignDraft, campaignApproved], [WS_FILTER]);
     await waitFor(() => screen.getByText('DraftCampaign'));
@@ -421,7 +478,7 @@ const campaignAlpha = {
   id: 'cs-1',
   product_or_service: 'AlphaProduct',
   goal: 'Grow revenue',
-  status: 'draft',
+  status: 'strategy',
   owner_id: 'user-1',
   workspace_id: 'ws-search',
   workspace_name: 'Search Workspace',

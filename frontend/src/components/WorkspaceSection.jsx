@@ -4,13 +4,14 @@ import { Link } from "react-router-dom";
 const ROLE_LABELS = { creator: "Creator", contributor: "Contributor", viewer: "Viewer" };
 
 const IN_PROGRESS_STATUSES = [
-  "draft", "strategy", "content", "channel_planning", "analytics_setup",
+  "strategy", "content", "channel_planning", "analytics_setup",
   "review", "review_clarification", "content_revision", "clarification",
 ];
 const AWAITING_APPROVAL_STATUSES = ["content_approval", "awaiting_approval"];
 const APPROVED_STATUSES = ["approved"];
 
 const STATUS_GROUPS = [
+  { label: "Drafts", statuses: ["draft"] },
   { label: "In Progress", statuses: IN_PROGRESS_STATUSES },
   { label: "Awaiting Approval", statuses: AWAITING_APPROVAL_STATUSES },
   { label: "Approved", statuses: APPROVED_STATUSES },
@@ -220,6 +221,10 @@ function getInitials(name) {
 
 function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign, workspaces, onMove }) {
   const [assigning, setAssigning] = useState(false);
+  const isDraft = c.status === "draft";
+  const campaignUrl = isDraft
+    ? `/workspaces/${c.workspace_id}/campaigns/${c.id}/edit`
+    : `/workspaces/${c.workspace_id}/campaigns/${c.id}`;
 
   const handleAssign = async (workspaceId) => {
     if (!workspaceId) return;
@@ -235,13 +240,22 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
     <div className="campaign-card card" data-status={c.status}>
       <div className="campaign-card-avatar">{getInitials(c.product_or_service)}</div>
       <div className="campaign-card-body">
-        <Link to={`/workspaces/${c.workspace_id}/campaigns/${c.id}`} className="campaign-card-title">
+        <Link to={campaignUrl} className="campaign-card-title">
           {c.product_or_service}
         </Link>
         <p className="campaign-card-goal">{c.goal}</p>
       </div>
       <div className="campaign-card-meta">
         <span className={`badge badge-${c.status}`}>{c.status.replace(/_/g, " ")}</span>
+        {isDraft && (
+          <Link
+            to={campaignUrl}
+            className="btn btn-outline"
+            style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
+          >
+            Resume →
+          </Link>
+        )}
         {showAssign && (
           <select
             className="btn btn-outline"
@@ -263,7 +277,7 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
             style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
             onClick={() => onDelete(c.id)}
           >
-            Delete
+            {isDraft ? "Discard" : "Delete"}
           </button>
         )}
       </div>

@@ -3,13 +3,14 @@ Campaign REST API — CRUD and user-profile routes.
 
 Endpoints:
   GET    /api/me                                           — Return the current user's profile and role flags
-  POST   /api/workspaces/{workspace_id}/campaigns          — Create a campaign and start the pipeline
-  GET    /api/workspaces/{workspace_id}/campaigns          — List campaigns in a workspace
+  POST   /api/workspaces/{workspace_id}/campaigns          — Create a draft campaign (does NOT start the pipeline)
+  PATCH  /api/workspaces/{workspace_id}/campaigns/{id}     — Update a draft campaign's brief fields / wizard step
+  GET    /api/workspaces/{workspace_id}/campaigns          — List campaigns in a workspace (drafts excluded by default)
   GET    /api/workspaces/{workspace_id}/campaigns/{id}     — Get a single campaign
   DELETE /api/workspaces/{workspace_id}/campaigns/{id}     — Delete a campaign
   GET    /api/workspaces/{workspace_id}/campaigns/{id}/events — Get persisted event log
 
-Workflow command routes live in campaign_workflow.py.
+Workflow command routes live in campaign_workflow.py (including /launch).
 Member management routes live in campaign_members.py.
 Shared RBAC helpers live in backend.apps.api.dependencies.
 Shared DTOs live in backend.apps.api.schemas.campaigns and
@@ -17,11 +18,12 @@ backend.apps.api.schemas.workflow.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
-from backend.models.campaign import Campaign, CampaignBrief
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import User, UserRole
 from backend.models.workspace import WorkspaceRole
 from backend.models.events import CampaignEventLog
@@ -39,6 +41,7 @@ from backend.apps.api.schemas.campaigns import (  # noqa: F401
     CreateCampaignRequest,
     CreateCampaignResponse,
     MeResponse,
+    UpdateDraftRequest,
     UpdateMemberRoleRequest,
 )
 from backend.apps.api.schemas.workflow import (  # noqa: F401
@@ -95,7 +98,11 @@ async def create_campaign(
     body: CreateCampaignRequest = Body(),
     user: Optional[User] = Depends(get_current_user),
 ) -> CreateCampaignResponse:
-    """Create a new campaign and kick off the agent pipeline in the background.
+    """Create a new draft campaign without dispatching the agent pipeline.
+
+    The campaign is saved with ``status: draft``.  Call
+    ``POST /campaigns/{id}/launch`` to start the agent pipeline once all
+    wizard steps are complete.
 
     The campaign is associated with the workspace specified in the URL path.
     Only workspace CREATORs (or ADMINs) may create campaigns within a workspace.
@@ -120,21 +127,72 @@ async def create_campaign(
     brief = CampaignBrief(**body.model_dump())
 
     try:
-        logger.info("Creating campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())
+        logger.info("Creating draft campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())
         service = get_workflow_service()
         campaign = await service.create_campaign(brief, user, workspace_id=workspace_id)
-        logger.info("Campaign %s created successfully", campaign.id)
+        logger.info("Draft campaign %s created successfully", campaign.id)
     except Exception as exc:
         logger.exception("Failed to create campaign: %s", exc)
         raise HTTPException(status_code=500, detail=f"Campaign creation failed: {exc}")
 
-    # Dispatch the pipeline to the configured executor (runs in background)
-    await get_executor().dispatch(WorkflowJob(campaign_id=campaign.id, action="start_pipeline"))
+    return CreateCampaignResponse(
+        id=campaign.id,
+        status=campaign.status.value,
+        message="Draft campaign created. Complete the wizard and call /launch to start the pipeline.",
+    )
+
+
+@router.patch("/campaigns/{campaign_id}", response_model=CreateCampaignResponse)
+async def update_draft_campaign(
+    workspace_id: str,
+    campaign_id: str,
+    body: UpdateDraftRequest = Body(),
+    user: Optional[User] = Depends(get_current_user),
+) -> CreateCampaignResponse:
+    """Update brief fields and/or wizard step on a DRAFT campaign.
+
+    Only campaigns with ``status: draft`` may be updated via this endpoint.
+    Use ``POST /campaigns/{id}/launch`` to transition to the active pipeline.
+    """
+    if user is not None and user.is_viewer:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    store = get_campaign_store()
+    campaign = await store.get(campaign_id)
+    if campaign is None or campaign.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    if campaign.status != CampaignStatus.DRAFT:
+        raise HTTPException(status_code=409, detail="Only draft campaigns can be updated via this endpoint")
+
+    # RBAC: only owner, workspace CREATOR or admin may update
+    await _authorize(campaign_id, user, Action.WRITE, store)
+
+    # Apply partial updates to the brief
+    brief_data = campaign.brief.model_dump()
+    update_fields = body.model_dump(exclude_none=True, exclude={"wizard_step"})
+    brief_data.update(update_fields)
+    try:
+        campaign.brief = CampaignBrief(**brief_data)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    # Update wizard step if provided
+    if body.wizard_step is not None:
+        campaign.wizard_step = body.wizard_step
+
+    campaign.updated_at = datetime.utcnow()
+
+    try:
+        campaign = await store.update(campaign)
+    except Exception as exc:
+        logger.exception("Failed to update draft campaign %s: %s", campaign_id, exc)
+        raise HTTPException(status_code=500, detail=f"Campaign update failed: {exc}")
 
     return CreateCampaignResponse(
         id=campaign.id,
         status=campaign.status.value,
-        message="Campaign created. Pipeline is running — connect to WebSocket for live updates.",
+        message="Draft updated.",
     )
 
 
@@ -142,8 +200,13 @@ async def create_campaign(
 async def list_campaigns(
     workspace_id: str,
     user: Optional[User] = Depends(get_current_user),
+    include_drafts: bool = Query(default=False, description="When true, include DRAFT campaigns in the response."),
 ) -> list[CampaignSummary]:
-    """Return campaigns in the specified workspace visible to the current user."""
+    """Return campaigns in the specified workspace visible to the current user.
+
+    Draft campaigns are excluded by default.  Pass ``?include_drafts=true`` to
+    include them (e.g. for the Drafts section of the dashboard).
+    """
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
     if workspace is None:
@@ -151,6 +214,9 @@ async def list_campaigns(
     from backend.api.workspaces import _authorize_workspace, WorkspaceAction
     await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
     campaigns = await store.list_workspace_campaigns(workspace_id)
+
+    if not include_drafts:
+        campaigns = [c for c in campaigns if c.status != CampaignStatus.DRAFT]
 
     return [
         CampaignSummary(
@@ -163,6 +229,7 @@ async def list_campaigns(
             workspace_name=workspace.name,
             created_at=c.created_at.isoformat(),
             updated_at=c.updated_at.isoformat(),
+            wizard_step=c.wizard_step,
         )
         for c in campaigns
     ]

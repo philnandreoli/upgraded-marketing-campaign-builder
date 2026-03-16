@@ -167,16 +167,22 @@ describe('NewCampaign — workspace picker', () => {
   });
 
   it('passes workspace_id to createCampaign on submit', async () => {
+    api.updateCampaignDraft.mockResolvedValue({ id: 'camp-1', status: 'draft', message: 'Draft updated.' });
+
     renderNewCampaign({
       workspaces: [PERSONAL_WS],
     });
 
-    // Wait for workspace to be selected
+    // Step 0: workspace is pre-selected; click Next to go to step 1
     await waitFor(() => {
       expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/My Space \(Personal\)/i);
     });
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
 
-    // Fill required fields
+    // Step 1: fill required fields
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/CloudSync/i)).toBeInTheDocument();
+    });
     fireEvent.change(screen.getByPlaceholderText(/CloudSync/i), {
       target: { value: 'Test Product' },
     });
@@ -184,7 +190,8 @@ describe('NewCampaign — workspace picker', () => {
       target: { value: 'Grow signups' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Launch Campaign/i }));
+    // Click Next on step 1 — this calls createCampaign with the workspace_id
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
 
     await waitFor(() => {
       expect(api.createCampaign).toHaveBeenCalledWith(

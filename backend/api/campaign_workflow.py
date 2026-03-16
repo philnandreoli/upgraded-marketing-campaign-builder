@@ -2,6 +2,7 @@
 Campaign workflow command routes.
 
 Endpoints:
+  POST   /api/campaigns/{id}/launch           — Launch a draft campaign (triggers agent pipeline)
   POST   /api/campaigns/{id}/clarify          — Submit answers to strategy clarification questions
   POST   /api/campaigns/{id}/review-clarify   — Legacy endpoint (410 Gone)
   POST   /api/campaigns/{id}/review           — Legacy endpoint (410 Gone)
@@ -22,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 logger = logging.getLogger(__name__)
 from fastapi.responses import Response
 
-from backend.models.campaign import Campaign
+from backend.models.campaign import Campaign, CampaignStatus
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
 from backend.models.user import User
 from backend.infrastructure.auth import get_current_user
@@ -40,6 +41,33 @@ from backend.apps.api.schemas.workflow import (
 )
 
 router = APIRouter(tags=["campaigns"])
+
+
+@router.post("/campaigns/{campaign_id}/launch", response_model=WorkflowActionResponse)
+async def launch_campaign(
+    campaign_id: str,
+    campaign: Campaign = Depends(get_campaign_for_write),
+) -> WorkflowActionResponse:
+    """Launch a draft campaign by dispatching the agent pipeline.
+
+    Transitions the campaign from ``draft`` to the active pipeline.
+    Returns 409 if the campaign is not in ``draft`` status (i.e. it has already
+    been launched or is in a different state).
+    """
+    if campaign.status != CampaignStatus.DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Campaign is in '{campaign.status.value}' state and cannot be launched. Only draft campaigns can be launched.",
+        )
+
+    # Dispatch the pipeline to the configured executor (runs in background)
+    await get_executor().dispatch(WorkflowJob(campaign_id=campaign.id, action="start_pipeline"))
+    logger.info("Campaign %s launched — pipeline dispatched", campaign.id)
+
+    return WorkflowActionResponse(
+        message="Campaign launched. Pipeline is running — connect to WebSocket for live updates.",
+        campaign_id=campaign.id,
+    )
 
 
 @router.post("/campaigns/{campaign_id}/clarify", response_model=WorkflowActionResponse)
@@ -171,3 +199,4 @@ async def retry_campaign(
     """Retry the current failed stage of a campaign."""
     await get_executor().dispatch(WorkflowJob(campaign_id=campaign.id, action="retry_stage"))
     return WorkflowActionResponse(message="Stage retry initiated", campaign_id=campaign.id)
+

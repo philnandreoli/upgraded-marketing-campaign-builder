@@ -8,12 +8,12 @@ These schemas are shared across campaign route modules:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from backend.models.campaign import CampaignBrief
+from backend.models.campaign import CampaignBrief, ChannelType, SocialMediaPlatform
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +56,7 @@ class CampaignSummary(BaseModel):
     workspace_name: Optional[str]
     created_at: str
     updated_at: str
+    wizard_step: int = 0
 
 
 class CreateCampaignRequest(CampaignBrief):
@@ -64,6 +65,24 @@ class CreateCampaignRequest(CampaignBrief):
     workspace_id is now a required URL path parameter; it is no longer
     accepted in the request body.
     """
+
+
+class UpdateDraftRequest(BaseModel):
+    """Partial-update request body for PATCH /campaigns/{id}.
+
+    All fields are optional; only provided fields are applied to the draft.
+    """
+
+    product_or_service: Optional[str] = None
+    goal: Optional[str] = None
+    budget: Optional[float] = None
+    currency: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    additional_context: Optional[str] = None
+    selected_channels: Optional[list[ChannelType]] = None
+    social_media_platforms: Optional[list[SocialMediaPlatform]] = None
+    wizard_step: Optional[int] = None
 
 
 class AssignWorkspaceRequest(BaseModel):
