@@ -30,6 +30,10 @@ COPY nginx.conf /etc/nginx/templates/default.conf.template
 ENV BACKEND_URL=http://backend:8000
 ENV NGINX_PORT=80
 
+# Only substitute BACKEND_URL and NGINX_PORT — leave nginx's own
+# $host, $uri, $remote_addr, $http_upgrade etc. intact.
+ENV NGINX_ENVSUBST_FILTER=^(BACKEND_URL|NGINX_PORT)$
+
 EXPOSE 80
 
 # The nginx:stable-alpine entrypoint automatically runs envsubst on
