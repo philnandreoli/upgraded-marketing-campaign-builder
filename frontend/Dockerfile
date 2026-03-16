@@ -32,6 +32,6 @@ ENV NGINX_PORT=80
 
 EXPOSE 80
 
-# envsubst replaces ${BACKEND_URL} and ${NGINX_PORT} at container start,
-# while leaving nginx's own $host / $uri variables intact.
-CMD ["sh", "-c", "envsubst '${BACKEND_URL} ${NGINX_PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# The nginx:stable-alpine entrypoint automatically runs envsubst on
+# templates in /etc/nginx/templates/, substituting only defined env vars
+# (BACKEND_URL, NGINX_PORT) while leaving nginx's own $host/$uri intact.
