@@ -306,7 +306,7 @@ describe('Dashboard – Filter tabs', () => {
     localStorage.clear();
   });
 
-  it('renders all 7 filter tabs', async () => {
+  it('renders all 6 filter tabs', async () => {
     await renderDashboard({ userId: 'user-1' }, [campaignDraft], [WS_FILTER]);
     await waitFor(() => screen.getByText('DraftCampaign'));
     expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
@@ -314,7 +314,7 @@ describe('Dashboard – Filter tabs', () => {
     expect(screen.getByRole('tab', { name: 'Awaiting My Action' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'In Progress' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Needs Approval' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Manual Review' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Manual Review' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Approved' })).toBeInTheDocument();
   });
 

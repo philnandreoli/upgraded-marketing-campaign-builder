@@ -13,7 +13,6 @@ import {
   IN_PROGRESS_STATUSES,
   AWAITING_APPROVAL_STATUSES,
   APPROVED_STATUSES,
-  MANUAL_REVIEW_STATUSES,
   AWAITING_MY_ACTION_STATUSES,
   FILTER_TAB_STORAGE_KEY,
 } from "../constants/statusGroups";
@@ -44,9 +43,6 @@ function applyFilter(campaigns, tabId, user, workspaces) {
 
     case "needs_approval":
       return campaigns.filter((c) => AWAITING_APPROVAL_STATUSES.includes(c.status));
-
-    case "manual_review":
-      return campaigns.filter((c) => MANUAL_REVIEW_STATUSES.includes(c.status));
 
     case "approved":
       return campaigns.filter((c) => APPROVED_STATUSES.includes(c.status));
