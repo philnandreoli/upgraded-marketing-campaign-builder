@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Split vs Focus Mode Preview</title>
+<style>
+  :root {
+    --color-bg: #0F172A;
+    --color-surface: #1E293B;
+    --color-border: rgba(99,102,241,0.12);
+    --color-primary: #0D9488;
+    --color-text: #E8ECF4;
+    --color-text-muted: #8B95AD;
+    --color-text-dim: #5A6580;
+    --color-success: #10B981;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--color-bg); color: var(--color-text); font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.6; padding: 24px; display: flex; flex-direction: column; gap: 32px; }
+
+  .section-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-dim); margin-bottom: 10px; }
+
+  /* Banner */
+  .campaign-banner {
+    background: linear-gradient(135deg, rgba(13,148,136,0.15), rgba(6,182,212,0.08));
+    border: 1px solid rgba(13,148,136,0.25);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+  }
+  .campaign-banner-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 0.35rem; }
+  .campaign-banner-goal { font-size: 0.875rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
+  .campaign-banner-meta { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .campaign-banner-meta-item { font-size: 0.8rem; color: var(--color-text-muted); }
+  .badge { display: inline-flex; align-items: center; padding: 0.2rem 0.7rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; background: rgba(16,185,129,0.15); color: #10B981; border: 1px solid rgba(16,185,129,0.25); }
+
+  /* Layout wrappers */
+  .split-layout { display: flex; gap: 16px; }
+  .split-main { flex: 1; }
+  .split-sidebar { width: 240px; flex-shrink: 0; }
+
+  /* Cards */
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 1.1rem; margin-bottom: 12px; box-shadow: var(--shadow); }
+  .card h3 { font-size: 0.85rem; margin-bottom: 0.6rem; color: var(--color-text-muted); }
+  .placeholder-content { height: 140px; background: rgba(255,255,255,0.03); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--color-text-dim); font-size: 0.8rem; }
+
+  /* Sidebar meta */
+  .sidebar-meta-details { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.5rem; }
+  .sidebar-meta-item { display: flex; flex-direction: column; gap: 0.05rem; }
+  .sidebar-meta-item--context .sidebar-meta-value { font-style: italic; }
+  .sidebar-meta-label { font-size: 0.68rem; font-weight: 700; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .sidebar-meta-value { font-size: 0.8rem; color: var(--color-text-muted); }
+  .sidebar-meta-channels { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .ch-badge { display: inline-flex; align-items: center; padding: 0.15rem 0.55rem; border-radius: 9999px; font-size: 0.68rem; font-weight: 600; background: rgba(20,184,166,0.12); color: #14B8A6; }
+
+  /* Pipeline */
+  .sidebar-stages { display: flex; flex-direction: column; gap: 0.35rem; }
+  .sidebar-stage { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; padding: 0.25rem 0.4rem; border-radius: 5px; color: var(--color-text-dim); }
+  .sidebar-stage--done { color: var(--color-success); }
+  .sidebar-stage--active { color: #14B8A6; font-weight: 700; background: rgba(20,184,166,0.08); }
+  .stage-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- ── SPLIT MODE ── -->
+<div>
+  <div class="section-label">Split Mode</div>
+  <div class="split-layout">
+    <div class="split-main">
+      <!-- Banner: NO meta row in split mode -->
+      <div class="campaign-banner" style="margin-bottom:12px">
+        <div>
+          <h1 class="campaign-banner-title">New Mortgage Offer 2024</h1>
+          <p class="campaign-banner-goal">We are a financial services company offering new mortgage customers an introductory rate of 3.5% for the first 12 months — targeting first-time buyers aged 28–45 in urban markets.</p>
+          <!-- campaign-banner-meta intentionally absent in split mode -->
+        </div>
+        <span class="badge">strategy</span>
+      </div>
+      <div class="card">
+        <h3>Strategy</h3>
+        <div class="placeholder-content">Tab content renders here…</div>
+      </div>
+    </div>
+
+    <div class="split-sidebar">
+      <div class="card">
+        <h3>Campaign</h3>
+        <div class="sidebar-meta-details">
+          <p class="sidebar-meta-item">
+            <span class="sidebar-meta-label">💰 Budget</span>
+            <span class="sidebar-meta-value">$50,000</span>
+          </p>
+          <p class="sidebar-meta-item">
+            <span class="sidebar-meta-label">📅 Dates</span>
+            <span class="sidebar-meta-value">2024-03-01 → 2024-06-30</span>
+          </p>
+          <p class="sidebar-meta-item sidebar-meta-item--context">
+            <span class="sidebar-meta-label">📝 Context</span>
+            <span class="sidebar-meta-value">Focus on first-time buyers in EMEA. Emphasise rate lock guarantee.</span>
+          </p>
+        </div>
+        <div class="sidebar-meta-channels">
+          <span class="ch-badge">email</span>
+          <span class="ch-badge">social media</span>
+          <span class="ch-badge">paid search</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Pipeline Progress</h3>
+        <div class="sidebar-stages">
+          <div class="sidebar-stage sidebar-stage--done"><span class="stage-dot"></span>Clarify</div>
+          <div class="sidebar-stage sidebar-stage--active"><span class="stage-dot"></span>Strategy</div>
+          <div class="sidebar-stage"><span class="stage-dot"></span>Content</div>
+          <div class="sidebar-stage"><span class="stage-dot"></span>Channel Plan</div>
+          <div class="sidebar-stage"><span class="stage-dot"></span>Analytics</div>
+          <div class="sidebar-stage"><span class="stage-dot"></span>Review</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FOCUS MODE ── -->
+<div>
+  <div class="section-label">Focus Mode (unchanged — meta row still visible)</div>
+  <!-- Banner: meta row shown in focus mode -->
+  <div class="campaign-banner">
+    <div>
+      <h1 class="campaign-banner-title">New Mortgage Offer 2024</h1>
+      <p class="campaign-banner-goal">We are a financial services company offering new mortgage customers an introductory rate of 3.5% for the first 12 months — targeting first-time buyers aged 28–45 in urban markets.</p>
+      <div class="campaign-banner-meta">
+        <span class="campaign-banner-meta-item">💰 $50,000</span>
+        <span class="campaign-banner-meta-item">📅 2024-03-01 → 2024-06-30</span>
+        <span class="campaign-banner-meta-item">📡 3 channels</span>
+      </div>
+    </div>
+    <span class="badge">strategy</span>
+  </div>
+</div>
+
+</body>
+</html>
