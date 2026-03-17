@@ -455,7 +455,7 @@ export default function CampaignDetail() {
             </div>
 
             {/* Team members (compact) */}
-            <TeamMembersCompact campaignId={id} canManage={canManage} />
+            <TeamMembersCompact workspaceId={effectiveWorkspaceId} campaignId={id} canManage={canManage} />
           </aside>
         </div>
       ) : (
