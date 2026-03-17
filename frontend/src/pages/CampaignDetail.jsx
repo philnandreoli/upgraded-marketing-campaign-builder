@@ -328,23 +328,25 @@ export default function CampaignDetail() {
         <div className="campaign-banner-main">
           <h1 className="campaign-banner-title">{campaign.brief.product_or_service}</h1>
           <p className="campaign-banner-goal">{campaign.brief.goal}</p>
-          <div className="campaign-banner-meta">
-            {campaign.brief.budget != null && (
-              <span className="campaign-banner-meta-item">
-                💰 {formatBudget(campaign.brief.budget, campaign.brief.currency)}
-              </span>
-            )}
-            {campaign.brief.start_date && campaign.brief.end_date && (
-              <span className="campaign-banner-meta-item">
-                📅 {campaign.brief.start_date} → {campaign.brief.end_date}
-              </span>
-            )}
-            {campaign.brief.selected_channels?.length > 0 && (
-              <span className="campaign-banner-meta-item">
-                📡 {campaign.brief.selected_channels.length} channel{campaign.brief.selected_channels.length !== 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
+          {viewMode !== "split" && (
+            <div className="campaign-banner-meta">
+              {campaign.brief.budget != null && (
+                <span className="campaign-banner-meta-item">
+                  💰 {formatBudget(campaign.brief.budget, campaign.brief.currency)}
+                </span>
+              )}
+              {campaign.brief.start_date && campaign.brief.end_date && (
+                <span className="campaign-banner-meta-item">
+                  📅 {campaign.brief.start_date} → {campaign.brief.end_date}
+                </span>
+              )}
+              {campaign.brief.selected_channels?.length > 0 && (
+                <span className="campaign-banner-meta-item">
+                  📡 {campaign.brief.selected_channels.length} channel{campaign.brief.selected_channels.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="campaign-banner-side">
           <span className={`badge badge-${campaign.status}${badgePulse ? " badge-updated" : ""}`}>
