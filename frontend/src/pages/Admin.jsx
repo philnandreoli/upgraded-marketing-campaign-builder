@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns, listWorkspaces, moveCampaign, searchEntraUsers, provisionUser } from "../api";
+import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 
 const ROLES = ["admin", "campaign_builder", "viewer"];
@@ -110,7 +110,6 @@ export default function Admin() {
   const [campaignsError, setCampaignsError] = useState(null);
   const [workspacesError, setWorkspacesError] = useState(null);
   const [deactivateError, setDeactivateError] = useState(null);
-  const [moveError, setMoveError] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
   const navigate = useNavigate();
 
@@ -188,17 +187,6 @@ export default function Admin() {
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: false } : u)));
     } catch (err) {
       setDeactivateError(err.message);
-    }
-  };
-
-  const handleMoveCampaign = async (campaignId, workspaceId) => {
-    if (!workspaceId) return;
-    setMoveError(null);
-    try {
-      await moveCampaign(campaignId, workspaceId);
-      await fetchCampaigns();
-    } catch (err) {
-      setMoveError(err.message);
     }
   };
 
@@ -550,14 +538,6 @@ export default function Admin() {
             <h2>All Campaigns</h2>
           </div>
 
-          {moveError && (
-            <div className="card" style={{ marginBottom: "0.75rem", padding: "0.6rem 1rem" }}>
-              <p style={{ color: "var(--color-danger)", fontSize: "0.875rem", margin: 0 }}>
-                ⚠ Move failed: {moveError}
-              </p>
-            </div>
-          )}
-
           {loadingCampaigns ? (
             <div className="loading">
               <span className="spinner" /> Loading campaigns…
@@ -612,26 +592,7 @@ export default function Admin() {
                           {c.workspace_id ? (
                             <WorkspaceBadge workspace={c.workspace} linkTo={true} />
                           ) : (
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
-                              <WorkspaceBadge orphaned={true} />
-                              <select
-                                style={{
-                                  padding: "0.2rem 0.4rem",
-                                  fontSize: "0.75rem",
-                                  background: "var(--color-surface-2)",
-                                  border: "1px solid var(--color-border)",
-                                  borderRadius: "var(--radius)",
-                                  color: "var(--color-text)",
-                                }}
-                                defaultValue=""
-                                onChange={(e) => handleMoveCampaign(c.id, e.target.value)}
-                              >
-                                <option value="" disabled>Assign…</option>
-                                {workspaces.map((ws) => (
-                                  <option key={ws.id} value={ws.id}>{ws.name}</option>
-                                ))}
-                              </select>
-                            </div>
+                            <WorkspaceBadge orphaned={true} />
                           )}
                         </td>
                         <td style={{ padding: "0.6rem 1rem" }}>
