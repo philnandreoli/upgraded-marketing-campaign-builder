@@ -40,6 +40,10 @@
   --sidebar-width: 280px;
   color-scheme: dark;
 
+  /* Stat card number colors */
+  --stat-total-color: #94A3B8;
+  --stat-drafts-color: #7C3AED;
+
   /* Typography */
   --font-display: "Clash Display", sans-serif;
   --font-body: "Switzer", sans-serif;
@@ -85,6 +89,10 @@
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   color-scheme: light;
+
+  /* Stat card number colors */
+  --stat-total-color: #334155;
+  --stat-drafts-color: #6D28D9;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1651,9 +1659,12 @@ a:hover { color: var(--color-primary-hover); }
   line-height: 1;
   color: var(--color-text);
 }
-.stat-number--progress { color: var(--color-primary-hover); }
-.stat-number--warning  { color: var(--color-warning); }
-.stat-number--success  { color: var(--color-success); }
+.stat-number--total      { color: var(--stat-total-color); }
+.stat-number--drafts     { color: var(--stat-drafts-color); }
+.stat-number--workspaces { color: var(--color-primary); }
+.stat-number--progress   { color: var(--color-primary-hover); }
+.stat-number--warning    { color: var(--color-warning); }
+.stat-number--success    { color: var(--color-success); }
 .stat-label {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
