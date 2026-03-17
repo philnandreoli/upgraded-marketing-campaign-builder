@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Split Mode Sidebar Preview</title>
+<style>
+  :root {
+    --color-bg: #0F172A;
+    --color-surface: #1E293B;
+    --color-border: rgba(99,102,241,0.12);
+    --color-primary: #0D9488;
+    --color-primary-hover: #14B8A6;
+    --color-text: #E8ECF4;
+    --color-text-muted: #8B95AD;
+    --color-text-dim: #5A6580;
+    --color-success: #10B981;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--color-bg); color: var(--color-text); font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.6; display: flex; gap: 24px; padding: 24px; }
+
+  /* --- Banner --- */
+  .left { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .campaign-banner {
+    background: linear-gradient(135deg, rgba(13,148,136,0.15), rgba(6,182,212,0.08));
+    border: 1px solid rgba(13,148,136,0.25);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+  }
+  .campaign-banner-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 0.35rem; }
+  .campaign-banner-goal { font-size: 0.875rem; color: var(--color-text-muted); margin-bottom: 0.6rem; }
+  .campaign-banner-meta { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .campaign-banner-meta-item { font-size: 0.78rem; color: var(--color-text-muted); }
+  .badge { display: inline-flex; align-items: center; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; background: rgba(16,185,129,0.15); color: #10B981; border: 1px solid rgba(16,185,129,0.25); }
+
+  /* Placeholder tab content */
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; box-shadow: var(--shadow); }
+  .card h3 { font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--color-text-muted); }
+  .placeholder-content { height: 180px; background: rgba(255,255,255,0.03); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--color-text-dim); font-size: 0.8rem; }
+
+  /* --- Sidebar --- */
+  .sidebar { width: 260px; flex-shrink: 0; }
+
+  /* New sidebar meta styles */
+  .sidebar-meta-details { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.5rem; }
+  .sidebar-meta-item { display: flex; flex-direction: column; gap: 0.1rem; margin: 0; }
+  .sidebar-meta-item--context .sidebar-meta-value { font-style: italic; }
+  .sidebar-meta-label { font-size: 0.72rem; font-weight: 600; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+  .sidebar-meta-value { font-size: 0.82rem; color: var(--color-text-muted); }
+  .sidebar-meta-channels { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
+
+  /* Pipeline stages mini */
+  .sidebar-stages { display: flex; flex-direction: column; gap: 0.4rem; }
+  .sidebar-stage { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; padding: 0.3rem 0.5rem; border-radius: 6px; background: transparent; border: none; color: var(--color-text-dim); cursor: default; text-align: left; }
+  .sidebar-stage-completed { color: var(--color-success); }
+  .sidebar-stage-active { color: var(--color-primary-hover); font-weight: 700; background: rgba(20,184,166,0.08); }
+  .sidebar-stage-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  /* Label comparisons */
+  .label-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 4px; }
+  .label-before { background: rgba(244,63,94,0.15); color: #F43F5E; border: 1px solid rgba(244,63,94,0.3); }
+  .label-after { background: rgba(16,185,129,0.15); color: #10B981; border: 1px solid rgba(16,185,129,0.3); }
+  .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-dim); font-weight: 700; margin-bottom: 8px; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <!-- LEFT: Banner + main content -->
+  <div class="left">
+    <div class="section-title">Split Mode — Campaign Detail</div>
+
+    <!-- Campaign Banner (unchanged) -->
+    <div class="campaign-banner">
+      <div class="campaign-banner-main">
+        <h1 class="campaign-banner-title">New Mortgage Offer 2024</h1>
+        <p class="campaign-banner-goal">We are a financial services company that is now offering new mortgage customers an introductory rate of 3.5% for the first 12 months — targeting first-time buyers aged 28–45 in urban markets.</p>
+        <div class="campaign-banner-meta">
+          <span class="campaign-banner-meta-item">💰 $50,000</span>
+          <span class="campaign-banner-meta-item">📅 2024-03-01 → 2024-06-30</span>
+          <span class="campaign-banner-meta-item">📡 3 channels</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <span class="badge">strategy</span>
+      </div>
+    </div>
+
+    <!-- Tab content placeholder -->
+    <div class="card">
+      <h3>Strategy</h3>
+      <div class="placeholder-content">Tab content renders here…</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Sidebar -->
+  <div class="sidebar">
+    <!-- Campaign metadata card — AFTER fix -->
+    <div class="card">
+      <div class="label-row"><span class="label label-after">After fix</span></div>
+      <h3 style="margin-bottom:0.5rem">Campaign</h3>
+
+      <div class="sidebar-meta-details">
+        <p class="sidebar-meta-item">
+          <span class="sidebar-meta-label">💰 Budget</span>
+          <span class="sidebar-meta-value">$50,000</span>
+        </p>
+        <p class="sidebar-meta-item">
+          <span class="sidebar-meta-label">📅 Dates</span>
+          <span class="sidebar-meta-value">2024-03-01 → 2024-06-30</span>
+        </p>
+        <p class="sidebar-meta-item sidebar-meta-item--context">
+          <span class="sidebar-meta-label">📝 Context</span>
+          <span class="sidebar-meta-value">Focus on first-time buyers in EMEA markets. Emphasise rate lock guarantee.</span>
+        </p>
+      </div>
+
+      <div class="sidebar-meta-channels">
+        <span class="badge" style="background:rgba(99,102,241,0.15);color:#14B8A6;font-size:0.68rem;border:none">email</span>
+        <span class="badge" style="background:rgba(99,102,241,0.15);color:#14B8A6;font-size:0.68rem;border:none">social media</span>
+        <span class="badge" style="background:rgba(99,102,241,0.15);color:#14B8A6;font-size:0.68rem;border:none">paid search</span>
+      </div>
+    </div>
+
+    <!-- Pipeline progress card -->
+    <div class="card">
+      <h3 style="margin-bottom:0.6rem">Pipeline Progress</h3>
+      <div class="sidebar-stages">
+        <div class="sidebar-stage sidebar-stage-completed"><span class="sidebar-stage-dot"></span>Clarify</div>
+        <div class="sidebar-stage sidebar-stage-active"><span class="sidebar-stage-dot"></span>Strategy</div>
+        <div class="sidebar-stage"><span class="sidebar-stage-dot"></span>Content</div>
+        <div class="sidebar-stage"><span class="sidebar-stage-dot"></span>Channel Plan</div>
+        <div class="sidebar-stage"><span class="sidebar-stage-dot"></span>Analytics</div>
+        <div class="sidebar-stage"><span class="sidebar-stage-dot"></span>Review</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
