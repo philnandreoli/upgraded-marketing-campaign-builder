@@ -244,7 +244,7 @@ export default function Dashboard({ events }) {
       {/* Stats hero strip — counts are clickable to activate the matching filter */}
       <div className="dashboard-stats">
         <div className="stat-card">
-          <span className="stat-number">{campaigns.length}</span>
+          <span className="stat-number stat-number--total">{campaigns.length}</span>
           <span className="stat-label">Total</span>
         </div>
         <button
@@ -252,7 +252,7 @@ export default function Dashboard({ events }) {
           onClick={() => handleFilterChange("drafts")}
           aria-label="Filter by Drafts"
         >
-          <span className="stat-number">{draftCount}</span>
+          <span className="stat-number stat-number--drafts">{draftCount}</span>
           <span className="stat-label">Drafts</span>
         </button>
         <button
@@ -280,7 +280,7 @@ export default function Dashboard({ events }) {
           <span className="stat-label">Approved</span>
         </button>
         <div className="stat-card">
-          <span className="stat-number">{workspaceCount}</span>
+          <span className="stat-number stat-number--workspaces">{workspaceCount}</span>
           <span className="stat-label">Workspaces</span>
         </div>
       </div>
