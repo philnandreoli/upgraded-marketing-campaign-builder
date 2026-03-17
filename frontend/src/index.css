@@ -1016,7 +1016,11 @@ a:hover { color: var(--color-primary-hover); }
 .sidebar-stage-completed .sidebar-stage-label { color: var(--color-success); }
 .sidebar-stage-active .sidebar-stage-label { color: var(--color-primary-hover); font-weight: 700; }
 .sidebar-stage-error .sidebar-stage-label { color: var(--color-danger); }
-.sidebar-meta-goal { font-size: 0.82rem; color: var(--color-text-muted); margin-bottom: 0.5rem; }
+.sidebar-meta-details { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.5rem; }
+.sidebar-meta-item { display: flex; flex-direction: column; gap: 0.1rem; margin: 0; }
+.sidebar-meta-item--context .sidebar-meta-value { font-style: italic; }
+.sidebar-meta-label { font-size: 0.72rem; font-weight: 600; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+.sidebar-meta-value { font-size: 0.82rem; color: var(--color-text-muted); }
 .sidebar-meta-channels { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
 
 /* Collapse split layout to single column on narrow screens */

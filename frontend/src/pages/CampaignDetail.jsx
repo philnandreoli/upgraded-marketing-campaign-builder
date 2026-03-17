@@ -395,9 +395,26 @@ export default function CampaignDetail() {
             {/* Campaign metadata */}
             <div className="card sidebar-meta">
               <h3 style={{ marginBottom: "0.5rem" }}>Campaign</h3>
-              <p className="sidebar-meta-goal">
-                {campaign.brief.goal}
-              </p>
+              <div className="sidebar-meta-details">
+                {campaign.brief.budget != null && (
+                  <p className="sidebar-meta-item">
+                    <span className="sidebar-meta-label">💰 Budget</span>
+                    <span className="sidebar-meta-value">{formatBudget(campaign.brief.budget, campaign.brief.currency)}</span>
+                  </p>
+                )}
+                {campaign.brief.start_date && campaign.brief.end_date && (
+                  <p className="sidebar-meta-item">
+                    <span className="sidebar-meta-label">📅 Dates</span>
+                    <span className="sidebar-meta-value">{campaign.brief.start_date} → {campaign.brief.end_date}</span>
+                  </p>
+                )}
+                {campaign.brief.additional_context && (
+                  <p className="sidebar-meta-item sidebar-meta-item--context">
+                    <span className="sidebar-meta-label">📝 Context</span>
+                    <span className="sidebar-meta-value">{campaign.brief.additional_context}</span>
+                  </p>
+                )}
+              </div>
               {campaign.brief.selected_channels?.length > 0 && (
                 <div className="sidebar-meta-channels">
                   {campaign.brief.selected_channels.map((ch) => (
