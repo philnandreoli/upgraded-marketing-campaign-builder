@@ -849,6 +849,60 @@ a:hover { color: var(--color-primary-hover); }
 .skeleton-line--title { width: 40%; height: 1rem; }
 .skeleton-line--text  { width: 80%; }
 .skeleton-line--short { width: 55%; margin-bottom: 0; }
+.skeleton-tab-pill { width: 4.5rem; height: 2rem; border-radius: 999px; flex-shrink: 0; margin-bottom: 0; }
+.skeleton-stat { min-height: 4.5rem; }
+
+/* ------------------------------------------------------------------ */
+/* Dashboard — Campaign list loading indicator                         */
+/* ------------------------------------------------------------------ */
+
+.campaign-list-loading {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  gap: 0.25rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* CampaignDetail — WebSocket connection badge                         */
+/* ------------------------------------------------------------------ */
+
+.ws-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--color-text-muted);
+}
+.ws-badge--live {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--color-success);
+}
+.ws-badge--failed {
+  background: rgba(244, 63, 94, 0.12);
+  color: var(--color-danger);
+}
+.ws-badge--reconnecting {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-warning);
+}
+.ws-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+.ws-badge--live .ws-badge-dot {
+  animation: status-pulse 2s ease-in-out infinite;
+}
 
 /* ------------------------------------------------------------------ */
 /* Motion & Micro-interactions                                         */

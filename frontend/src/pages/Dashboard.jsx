@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
-import { SkeletonCard } from "../components/Skeleton";
+import { SkeletonCard, SkeletonStat, SkeletonFilterTabs } from "../components/Skeleton";
 import WorkspaceSection from "../components/WorkspaceSection";
 import FilterTabs from "../components/FilterTabs";
 import SearchBar from "../components/SearchBar";
@@ -75,6 +75,7 @@ export default function Dashboard({ events }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(null);
   const [activeFilter, setActiveFilter] = useState(
     () =>
       searchParams.get("status") ??
@@ -173,13 +174,24 @@ export default function Dashboard({ events }) {
 
   const handleDelete = async (id, workspaceId) => {
     if (!confirm("Delete this campaign?")) return;
-    await deleteCampaign(workspaceId, id);
-    load();
+    setDeleting(id);
+    try {
+      await deleteCampaign(workspaceId, id);
+      load();
+    } finally {
+      setDeleting(null);
+    }
   };
 
   if (loading && campaigns.length === 0) {
     return (
       <div>
+        <div className="dashboard-stats">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <SkeletonStat key={i} />
+          ))}
+        </div>
+        <SkeletonFilterTabs />
         <SkeletonCard />
         <SkeletonCard />
         <SkeletonCard />
@@ -308,6 +320,12 @@ export default function Dashboard({ events }) {
 
       <div className="section-header">
         <h2>Campaigns</h2>
+        {loading && campaigns.length > 0 && (
+          <span className="campaign-list-loading" aria-live="polite">
+            <span className="spinner" />
+            Refreshing…
+          </span>
+        )}
         {debouncedQuery && (
           <span className="search-result-count">
             Showing {searchedCampaigns.length} of {filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? "s" : ""}
@@ -356,6 +374,7 @@ export default function Dashboard({ events }) {
               user={user}
               onDelete={handleDelete}
               allWorkspaces={workspaces}
+              deletingId={deleting}
             />
           ))}
           {/* Orphaned campaigns: admin only */}
@@ -368,6 +387,7 @@ export default function Dashboard({ events }) {
               user={user}
               onDelete={handleDelete}
               allWorkspaces={workspaces}
+              deletingId={deleting}
             />
           )}
         </div>

@@ -32,7 +32,7 @@ function getInitials(name) {
     .join("");
 }
 
-function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId }) {
+function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId, deletingId }) {
   return (
     <div className="campaign-card card" data-status={c.status}>
       <div className="campaign-card-avatar">
@@ -50,9 +50,10 @@ function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId }) {
           <button
             className="btn btn-outline"
             style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
+            disabled={deletingId === c.id}
             onClick={() => onDelete(c.id)}
           >
-            Delete
+            {deletingId === c.id ? "Deleting…" : "Delete"}
           </button>
         )}
       </div>
@@ -69,6 +70,7 @@ export default function WorkspaceDetail({ events = [] }) {
   const [loadingWs, setLoadingWs] = useState(true);
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [error, setError] = useState(null);
+  const [deleting, setDeleting] = useState(null);
 
   // Fetch workspace detail
   useEffect(() => {
@@ -109,8 +111,13 @@ export default function WorkspaceDetail({ events = [] }) {
 
   const handleDelete = async (campaignId) => {
     if (!confirm("Delete this campaign?")) return;
-    await deleteCampaign(id, campaignId);
-    loadCampaigns();
+    setDeleting(campaignId);
+    try {
+      await deleteCampaign(id, campaignId);
+      loadCampaigns();
+    } finally {
+      setDeleting(null);
+    }
   };
 
   if (loadingWs) {
@@ -212,6 +219,7 @@ export default function WorkspaceDetail({ events = [] }) {
                       user={user}
                       onDelete={handleDelete}
                       workspaceId={id}
+                      deletingId={deleting}
                     />
                   ))}
                 </div>

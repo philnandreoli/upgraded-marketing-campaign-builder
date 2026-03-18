@@ -47,6 +47,7 @@ export default function WorkspaceSection({
   allWorkspaces = [],
   onMove,
   children,
+  deletingId,
 }) {
   const storageKey = `ws-collapsed-${workspace.id}`;
   const [internalOpen, setInternalOpen] = useState(
@@ -169,6 +170,7 @@ export default function WorkspaceSection({
                   showAssign={isAdmin}
                   workspaces={allWorkspaces}
                   onMove={handleMove}
+                  deletingId={deletingId}
                 />
               ))}
             </div>
@@ -192,6 +194,7 @@ export default function WorkspaceSection({
                           showAssign={false}
                           workspaces={allWorkspaces}
                           onMove={handleMove}
+                          deletingId={deletingId}
                         />
                       ))}
                     </div>
@@ -219,7 +222,7 @@ function getInitials(name) {
     .join("");
 }
 
-function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign, workspaces, onMove }) {
+function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign, workspaces, onMove, deletingId }) {
   const [assigning, setAssigning] = useState(false);
   const isDraft = c.status === "draft";
   const campaignUrl = isDraft
@@ -275,9 +278,10 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
           <button
             className="btn btn-outline"
             style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
+            disabled={deletingId === c.id}
             onClick={() => onDelete(c.id)}
           >
-            {isDraft ? "Discard" : "Delete"}
+            {deletingId === c.id ? "Deleting…" : isDraft ? "Discard" : "Delete"}
           </button>
         )}
       </div>
