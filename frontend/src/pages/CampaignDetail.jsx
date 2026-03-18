@@ -58,7 +58,7 @@ export default function CampaignDetail() {
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
   const [badgePulse, setBadgePulse] = useState(false);
-  const { events } = useWebSocket(id);
+  const { events, connected, connectionFailed } = useWebSocket(id);
   const { isViewer, isAdmin, user } = useUser();
   const prevStatusRef = useRef(null);
 
@@ -350,6 +350,10 @@ export default function CampaignDetail() {
           )}
         </div>
         <div className="campaign-banner-side">
+          <span className={`ws-badge${connected ? " ws-badge--live" : connectionFailed ? " ws-badge--failed" : " ws-badge--reconnecting"}`}>
+            <span className="ws-badge-dot" aria-hidden="true" />
+            {connected ? "Live" : connectionFailed ? "Disconnected" : "Reconnecting…"}
+          </span>
           <span className={`badge badge-${campaign.status}${badgePulse ? " badge-updated" : ""}`}>
             {campaign.status.replace(/_/g, " ")}
           </span>
