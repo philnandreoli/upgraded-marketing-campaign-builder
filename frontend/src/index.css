@@ -674,7 +674,7 @@ a:hover { color: var(--color-primary-hover); }
 .datepicker-footer-btn--primary:hover { background: rgba(13,148,136,0.15); color: var(--color-primary-hover); }
 /* Badges */
 .badge { display: inline-block; padding: 0.2rem 0.6rem; font-size: var(--text-xs); font-weight: 600; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; }
-.badge-draft { background: var(--color-surface-2); color: var(--color-text-dim); }
+.badge-draft { background: rgba(124,58,237,0.15); color: var(--stat-drafts-color); }
 .badge-strategy, .badge-content, .badge-channel_planning, .badge-analytics_setup, .badge-review, .badge-review_clarification {
   background: rgba(13,148,136,0.15); color: var(--color-primary-hover);
 }
@@ -2025,6 +2025,7 @@ a:hover { color: var(--color-primary-hover); }
 .campaign-card[data-status="awaiting_approval"] { border-left-color: var(--color-warning); }
 .campaign-card[data-status="rejected"]         { border-left-color: var(--color-danger); }
 .campaign-card[data-status="manual_review_required"] { border-left-color: var(--color-warning); }
+.campaign-card[data-status="draft"]            { border-left-color: var(--stat-drafts-color); }
 
 .campaign-card-avatar {
   flex-shrink: 0;
