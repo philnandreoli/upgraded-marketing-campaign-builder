@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
+import StatusBadge from "../components/StatusBadge.jsx";
 
 const ROLES = ["admin", "campaign_builder", "viewer"];
 const INCOMPATIBLE = { campaign_builder: "viewer", viewer: "campaign_builder" };
@@ -596,9 +597,7 @@ export default function Admin() {
                           )}
                         </td>
                         <td style={{ padding: "0.6rem 1rem" }}>
-                          <span className={`badge badge-${c.status}`}>
-                            {(c.status ?? "unknown").replace(/_/g, " ")}
-                          </span>
+                          <StatusBadge status={c.status ?? "unknown"} />
                         </td>
                         <td style={{ padding: "0.6rem 1rem", color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
                           {formatDate(c.created_at)}

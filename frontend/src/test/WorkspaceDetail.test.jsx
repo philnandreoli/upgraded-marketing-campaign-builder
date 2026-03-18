@@ -112,7 +112,8 @@ describe('WorkspaceDetail – campaigns', () => {
     expect(screen.getByText('ProductA')).toBeInTheDocument();
     expect(screen.getByText('ProductB')).toBeInTheDocument();
     expect(screen.getByText('In Progress')).toBeInTheDocument();
-    expect(screen.getByText('Approved')).toBeInTheDocument();
+    // "Approved" appears as both the status group label and the campaign badge
+    expect(screen.getAllByText('Approved')).toHaveLength(2);
   });
 
   it('shows empty state when no campaigns', async () => {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import StatusBadge from "./StatusBadge.jsx";
 
 const ROLE_LABELS = { creator: "Creator", contributor: "Contributor", viewer: "Viewer" };
 
@@ -249,7 +250,7 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
         <p className="campaign-card-goal">{c.goal}</p>
       </div>
       <div className="campaign-card-meta">
-        <span className={`badge badge-${c.status}`}>{c.status.replace(/_/g, " ")}</span>
+        <StatusBadge status={c.status} />
         {isDraft && (
           <Link
             to={campaignUrl}

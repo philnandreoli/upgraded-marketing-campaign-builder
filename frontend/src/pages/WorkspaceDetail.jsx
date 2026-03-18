@@ -7,6 +7,7 @@ import {
 } from "../api";
 import { useUser } from "../UserContext";
 import { SkeletonCard } from "../components/Skeleton";
+import StatusBadge from "../components/StatusBadge.jsx";
 
 const IN_PROGRESS_STATUSES = ["draft", "strategy", "content", "channel_planning", "analytics_setup", "review", "review_clarification", "content_revision", "clarification"];
 const AWAITING_APPROVAL_STATUSES = ["content_approval", "awaiting_approval"];
@@ -45,7 +46,7 @@ function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId, delet
         <p className="campaign-card-goal">{c.goal}</p>
       </div>
       <div className="campaign-card-meta">
-        <span className={`badge badge-${c.status}`}>{c.status.replace(/_/g, " ")}</span>
+        <StatusBadge status={c.status} />
         {(isAdmin || (!isViewer && c.owner_id === user?.id)) && (
           <button
             className="btn btn-outline"
