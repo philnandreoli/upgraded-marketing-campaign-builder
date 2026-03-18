@@ -7,6 +7,7 @@ Uses an in-memory SQLite database so no PostgreSQL instance is required.
 from __future__ import annotations
 
 import pytest
+import jwt
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -231,6 +232,7 @@ class TestValidateTokenDeactivatedUser:
             "oid": "deactivated-user",
             "preferred_username": "deactivated@example.com",
             "name": "Deactivated",
+            "scp": "access_as_user",
         }
 
         with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
@@ -269,6 +271,7 @@ class TestValidateTokenDeactivatedUser:
             "oid": "active-user",
             "preferred_username": "active@example.com",
             "name": "Active",
+            "scp": "access_as_user",
         }
 
         with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
@@ -330,6 +333,7 @@ class TestJWKSCacheFallback:
             "oid": "active-user",
             "preferred_username": "active@example.com",
             "name": "Active",
+            "scp": "access_as_user",
         }
 
         with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "old-kid"}]), \
@@ -382,6 +386,145 @@ class TestJWKSCacheFallback:
              patch("backend.infrastructure.auth._refresh_jwks_cache", new_callable=AsyncMock, return_value=[{"kid": "old-kid"}]), \
              patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", side_effect=[mock_jwks_old, mock_jwks_after_refresh]), \
              patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "new-kid"}):
+
+            with pytest.raises(HTTPException) as exc_info:
+                await validate_token("fake.jwt.token", db_session)
+
+        assert exc_info.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Issuer enforcement and access-token claims validation
+# ---------------------------------------------------------------------------
+
+class TestIssuerAndClaimsValidation:
+    """validate_token must enforce issuer and require scp or roles claims."""
+
+    def _make_user_row(self) -> UserRow:
+        return UserRow(
+            id="active-user",
+            email="active@example.com",
+            display_name="Active",
+            role="viewer",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            is_active=True,
+        )
+
+    def _mock_jwks(self, kid: str):
+        mock_jwk = MagicMock()
+        mock_jwk.key_id = kid
+        mock_jwk.key = MagicMock()
+        mock_jwks = MagicMock()
+        mock_jwks.keys = [mock_jwk]
+        return mock_jwk, mock_jwks
+
+    async def test_wrong_issuer_raises_401(self, db_session):
+        """jwt.decode raises InvalidTokenError when the issuer doesn't match;
+        validate_token must surface this as a 401."""
+        from fastapi import HTTPException
+
+        _, mock_jwks = self._mock_jwks("test-kid")
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "test-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", side_effect=jwt.InvalidTokenError("issuer mismatch")):
+
+            with pytest.raises(HTTPException) as exc_info:
+                await validate_token("fake.jwt.token", db_session)
+
+        assert exc_info.value.status_code == 401
+
+    async def test_missing_scp_and_roles_raises_401(self, db_session):
+        """A token with neither 'scp' nor 'roles' claims must be rejected with 401."""
+        from fastapi import HTTPException
+
+        _, mock_jwks = self._mock_jwks("test-kid")
+
+        # Payload has no scp or roles — represents an ID token or unsupported token type.
+        fake_payload = {
+            "oid": "active-user",
+            "preferred_username": "active@example.com",
+            "name": "Active",
+        }
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "test-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", return_value=fake_payload):
+
+            with pytest.raises(HTTPException) as exc_info:
+                await validate_token("fake.jwt.token", db_session)
+
+        assert exc_info.value.status_code == 401
+
+    async def test_scp_claim_accepted(self, db_session):
+        """A token with a non-empty 'scp' claim is accepted."""
+        from backend.models.user import User
+
+        _, mock_jwks = self._mock_jwks("test-kid")
+
+        fake_payload = {
+            "oid": "active-user",
+            "preferred_username": "active@example.com",
+            "name": "Active",
+            "scp": "access_as_user",
+        }
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "test-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", return_value=fake_payload), \
+             patch("backend.infrastructure.auth._provision_user", new_callable=AsyncMock, return_value=self._make_user_row()):
+
+            user = await validate_token("fake.jwt.token", db_session)
+
+        assert isinstance(user, User)
+        assert user.id == "active-user"
+
+    async def test_roles_claim_accepted(self, db_session):
+        """A token with a non-empty 'roles' list is accepted (application permissions)."""
+        from backend.models.user import User
+
+        _, mock_jwks = self._mock_jwks("test-kid")
+
+        fake_payload = {
+            "oid": "active-user",
+            "preferred_username": "active@example.com",
+            "name": "Active",
+            "roles": ["Campaign.Read"],
+        }
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "test-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", return_value=fake_payload), \
+             patch("backend.infrastructure.auth._provision_user", new_callable=AsyncMock, return_value=self._make_user_row()):
+
+            user = await validate_token("fake.jwt.token", db_session)
+
+        assert isinstance(user, User)
+        assert user.id == "active-user"
+
+    async def test_empty_scp_and_missing_roles_raises_401(self, db_session):
+        """An empty string 'scp' with no 'roles' is still rejected."""
+        from fastapi import HTTPException
+
+        _, mock_jwks = self._mock_jwks("test-kid")
+
+        fake_payload = {
+            "oid": "active-user",
+            "preferred_username": "active@example.com",
+            "name": "Active",
+            "scp": "",
+            "roles": [],
+        }
+
+        with patch("backend.infrastructure.auth._get_public_keys", new_callable=AsyncMock, return_value=[{"kid": "test-kid"}]), \
+             patch("backend.infrastructure.auth.jwt.PyJWKSet.from_dict", return_value=mock_jwks), \
+             patch("backend.infrastructure.auth.jwt.get_unverified_header", return_value={"kid": "test-kid"}), \
+             patch("backend.infrastructure.auth.jwt.decode", return_value=fake_payload):
 
             with pytest.raises(HTTPException) as exc_info:
                 await validate_token("fake.jwt.token", db_session)
