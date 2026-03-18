@@ -291,12 +291,26 @@ async def validate_token(token: str, db: AsyncSession) -> User:
             f"api://{settings.oidc.client_id}",
         ]
 
+        # Enforce the expected token issuer to prevent tokens from other tenants
+        # or identity providers from being accepted.
+        expected_issuer = settings.oidc.authority.rstrip("/")
+
         payload = jwt.decode(
             token,
             signing_key,
             algorithms=["RS256"],
             audience=valid_audiences,
+            issuer=expected_issuer,
         )
+
+        # Enforce access-token semantics: require at least one authorization
+        # claim (delegated scopes via "scp" or application roles via "roles").
+        # This rejects ID tokens and other token types not intended for API use.
+        scopes = set((payload.get("scp") or "").split())
+        roles = set(payload.get("roles") or [])
+        if not scopes and not roles:
+            logger.debug("JWT missing both 'scp' and 'roles' claims — rejecting token")
+            raise credentials_exception
 
         # Prefer the Azure AD object ID; fall back to the standard subject.
         user_id: Optional[str] = payload.get("oid") or payload.get("sub")
