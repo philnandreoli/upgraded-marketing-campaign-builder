@@ -58,3 +58,5 @@ class WorkspaceMember(BaseModel):
     user_id: str = Field(description="ID of the user.")
     role: WorkspaceRole = Field(description="Per-workspace role for this user.")
     added_at: datetime = Field(default_factory=datetime.utcnow, description="When the membership was created.")
+    display_name: Optional[str] = Field(default=None, description="Display name of the user.")
+    email: Optional[str] = Field(default=None, description="Email address of the user.")

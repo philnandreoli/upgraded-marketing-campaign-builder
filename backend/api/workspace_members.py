@@ -51,6 +51,8 @@ class WorkspaceMemberResponse(BaseModel):
     user_id: str
     role: str
     added_at: datetime
+    display_name: Optional[str] = None
+    email: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +77,8 @@ async def list_workspace_members(
             user_id=m.user_id,
             role=m.role.value,
             added_at=m.added_at,
+            display_name=m.display_name,
+            email=m.email,
         )
         for m in members
     ]

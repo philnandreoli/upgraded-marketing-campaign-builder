@@ -588,22 +588,24 @@ class CampaignStore:
             await session.commit()
 
     async def list_workspace_members(self, workspace_id: str) -> list[WorkspaceMember]:
-        """Return all members of *workspace_id*."""
+        """Return all members of *workspace_id*, including user display_name and email."""
         async with async_session() as session:
             result = await session.execute(
-                select(WorkspaceMemberRow).where(
-                    WorkspaceMemberRow.workspace_id == workspace_id
-                )
+                select(WorkspaceMemberRow, UserRow)
+                .outerjoin(UserRow, WorkspaceMemberRow.user_id == UserRow.id)
+                .where(WorkspaceMemberRow.workspace_id == workspace_id)
             )
-            rows = result.scalars().all()
+            rows = result.all()
             return [
                 WorkspaceMember(
-                    workspace_id=row.workspace_id,
-                    user_id=row.user_id,
-                    role=WorkspaceRole(row.role),
-                    added_at=row.added_at,
+                    workspace_id=member_row.workspace_id,
+                    user_id=member_row.user_id,
+                    role=WorkspaceRole(member_row.role),
+                    added_at=member_row.added_at,
+                    display_name=user_row.display_name if user_row is not None else None,
+                    email=user_row.email if user_row is not None else None,
                 )
-                for row in rows
+                for member_row, user_row in rows
             ]
 
     # ------------------------------------------------------------------

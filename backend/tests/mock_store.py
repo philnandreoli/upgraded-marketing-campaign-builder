@@ -337,6 +337,8 @@ class InMemoryCampaignStore:
                 user_id=uid,
                 role=WorkspaceRole(role_str),
                 added_at=datetime.utcnow(),
+                display_name=self._users[uid].display_name if uid in self._users else None,
+                email=self._users[uid].email if uid in self._users else None,
             )
             for (ws_id, uid), role_str in self._workspace_members.items()
             if ws_id == workspace_id

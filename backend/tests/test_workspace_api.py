@@ -328,11 +328,34 @@ class TestListWorkspaceMembers:
     def test_member_can_list_members(self, _isolated_store, creator_client):
         _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
         _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+        _isolated_store._users[_CREATOR_USER.id] = _CREATOR_USER
 
         r = creator_client.get("/api/workspaces/ws-1/members")
         assert r.status_code == 200
         members = r.json()
         assert any(m["user_id"] == _CREATOR_USER.id for m in members)
+
+    def test_member_response_includes_display_name_and_email(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+        _isolated_store._users[_CREATOR_USER.id] = _CREATOR_USER
+
+        r = creator_client.get("/api/workspaces/ws-1/members")
+        assert r.status_code == 200
+        member = next(m for m in r.json() if m["user_id"] == _CREATOR_USER.id)
+        assert member["display_name"] == _CREATOR_USER.display_name
+        assert member["email"] == _CREATOR_USER.email
+
+    def test_member_response_null_when_user_not_in_store(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+        # _CREATOR_USER is NOT added to _isolated_store._users
+
+        r = creator_client.get("/api/workspaces/ws-1/members")
+        assert r.status_code == 200
+        member = next(m for m in r.json() if m["user_id"] == _CREATOR_USER.id)
+        assert member["display_name"] is None
+        assert member["email"] is None
 
     def test_non_member_gets_404(self, _isolated_store):
         _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", "owner")
