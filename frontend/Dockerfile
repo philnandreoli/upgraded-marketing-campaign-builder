@@ -18,7 +18,7 @@ ARG VITE_API_SCOPE
 RUN npm run build
 
 # ---------- Stage 2: Serve ----------
-FROM nginx:stable-alpine
+FROM nginxinc/nginx-unprivileged:stable-alpine
 
 # Copy built assets
 COPY --from=build /app/dist /usr/share/nginx/html
@@ -28,13 +28,13 @@ COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 # Defaults — override at runtime via environment variables
 ENV BACKEND_URL=http://backend:8000
-ENV NGINX_PORT=80
+ENV NGINX_PORT=8080
 
 # Only substitute BACKEND_URL and NGINX_PORT — leave nginx's own
 # $host, $uri, $remote_addr, $http_upgrade etc. intact.
 ENV NGINX_ENVSUBST_FILTER=^(BACKEND_URL|NGINX_PORT)$
 
-EXPOSE 80
+EXPOSE 8080
 
 # The nginx:stable-alpine entrypoint automatically runs envsubst on
 # templates in /etc/nginx/templates/, substituting only defined env vars
