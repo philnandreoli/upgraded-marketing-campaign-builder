@@ -10,6 +10,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY backend/ ./backend/
 
+# Run as non-root user
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup --no-create-home appuser
+USER appuser
+
 EXPOSE 8000
 
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
