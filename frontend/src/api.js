@@ -161,11 +161,6 @@ export async function deleteCampaign(workspaceId, id) {
     throw new Error(`Delete failed: ${res.status}`);
 }
 
-export async function submitReview() {
-  // Legacy — no longer used. Use submitContentApproval instead.
-  throw new Error("submitReview is deprecated. Use submitContentApproval.");
-}
-
 export async function submitContentApproval(workspaceId, campaignId, pieces, rejectCampaign = false) {
   const url = `${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content-approve`;
   const payload = {
@@ -228,11 +223,6 @@ export async function submitClarification(workspaceId, campaignId, answers) {
   return res.json();
 }
 
-export async function submitReviewClarification() {
-  // Legacy — no longer used.
-  throw new Error("submitReviewClarification is deprecated.");
-}
-
 // ---------------------------------------------------------------------------
 // Admin API
 // ---------------------------------------------------------------------------
@@ -271,12 +261,6 @@ export async function listAllCampaigns() {
   });
   if (!res.ok) throw new Error(`List all campaigns failed: ${res.status}`);
   return res.json();
-}
-
-export async function moveCampaign() {
-  // This endpoint has been removed. Campaign workspace is now set at creation time
-  // via the URL path and cannot be changed after creation.
-  throw new Error("moveCampaign is no longer supported. Campaign workspace is set at creation time.");
 }
 
 export async function searchEntraUsers(search) {
