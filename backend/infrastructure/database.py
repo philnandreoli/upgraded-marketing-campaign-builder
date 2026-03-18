@@ -44,6 +44,18 @@ _DB_AUTH_MODE_AZURE = "azure"
 _ENTRA_TOKEN_SCOPE = "https://ossrdbms-aad.database.windows.net/.default"
 
 # ---------------------------------------------------------------------------
+# Connection pool defaults
+# ---------------------------------------------------------------------------
+
+# Applied to both the azure and local create_async_engine() call sites.
+_POOL_CONFIG: dict[str, Any] = {
+    "pool_size": 10,       # Base number of persistent connections
+    "max_overflow": 20,    # Additional connections under burst load (30 total max)
+    "pool_pre_ping": True, # Detect stale/broken connections before checkout
+    "pool_recycle": 3600,  # Recycle connections older than 1 hour
+}
+
+# ---------------------------------------------------------------------------
 # Backward-compatible DATABASE_URL
 # ---------------------------------------------------------------------------
 
@@ -149,6 +161,7 @@ def _create_engine():
             url,
             echo=False,
             future=True,
+            **_POOL_CONFIG,
             connect_args={
                 "password": _fetch_entra_db_token,
                 "ssl": "require",
@@ -162,7 +175,7 @@ def _create_engine():
     # unit tests that mock the database layer to collect and run normally.
     logger.debug("Database engine: local mode")
     url = DATABASE_URL or "postgresql+asyncpg://localhost/placeholder_unconfigured"
-    return create_async_engine(url, echo=False, future=True)
+    return create_async_engine(url, echo=False, future=True, **_POOL_CONFIG)
 
 
 def get_connection_dsn() -> str:

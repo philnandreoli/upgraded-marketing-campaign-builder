@@ -178,6 +178,11 @@ class TestCreateEngine:
         assert "postgresql" in args[0]
         # No Entra connect_args in local mode
         assert "connect_args" not in kwargs
+        # Pool configuration must be present
+        assert kwargs.get("pool_size") == 10
+        assert kwargs.get("max_overflow") == 20
+        assert kwargs.get("pool_pre_ping") is True
+        assert kwargs.get("pool_recycle") == 3600
 
     def test_azure_mode_uses_token_callable(self, monkeypatch):
         monkeypatch.setenv("DB_AUTH_MODE", "azure")
@@ -196,6 +201,11 @@ class TestCreateEngine:
         connect_args = kwargs.get("connect_args", {})
         assert callable(connect_args.get("password"))
         assert connect_args.get("ssl") == "require"
+        # Pool configuration must be present
+        assert kwargs.get("pool_size") == 10
+        assert kwargs.get("max_overflow") == 20
+        assert kwargs.get("pool_pre_ping") is True
+        assert kwargs.get("pool_recycle") == 3600
 
     def test_azure_mode_url_has_no_password_embedded(self, monkeypatch):
         monkeypatch.setenv("DB_AUTH_MODE", "azure")
