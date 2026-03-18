@@ -185,13 +185,13 @@ class ReviewFeedback(BaseModel):
 class CampaignBrief(BaseModel):
     """Initial user input that kicks off the campaign pipeline."""
 
-    product_or_service: str = Field(description="What is being marketed")
-    goal: str = Field(description="High-level campaign goal")
+    product_or_service: str = Field(max_length=500, description="What is being marketed")
+    goal: str = Field(max_length=500, description="High-level campaign goal")
     budget: Optional[float] = None
     currency: str = Field(default="USD")
     start_date: Optional[date] = Field(default=None, description="Campaign start date (ISO 8601)")
     end_date: Optional[date] = Field(default=None, description="Campaign end date (ISO 8601)")
-    additional_context: str = Field(default="", description="Any extra information")
+    additional_context: str = Field(default="", max_length=2000, description="Any extra information")
     selected_channels: list[ChannelType] = Field(
         default_factory=list,
         description="Channels the user wants to deploy to. Empty = let agents decide.",
