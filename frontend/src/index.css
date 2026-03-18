@@ -683,6 +683,11 @@ a:hover { color: var(--color-primary-hover); }
 .badge-rejected { background: rgba(239,68,68,0.15); color: var(--color-danger); }
 .badge-manual_review_required { background: rgba(245,158,11,0.15); color: var(--color-warning); }
 .badge-pending  { background: rgba(245,158,11,0.15); color: var(--color-warning); }
+/* Paused stages — user action required (amber) */
+.badge-clarification { background: rgba(245,158,11,0.15); color: var(--color-warning); }
+.badge-content_approval { background: rgba(245,158,11,0.15); color: var(--color-warning); }
+/* In-progress pipeline stage (teal) */
+.badge-content_revision { background: rgba(13,148,136,0.15); color: var(--color-primary-hover); }
 
 /* Pipeline progress tabs (unified progress + navigation) */
 .pipeline-tabs {

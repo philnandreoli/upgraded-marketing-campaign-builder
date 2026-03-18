@@ -11,6 +11,7 @@ import ClarificationSection from "../components/ClarificationSection.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import Toast from "../components/Toast.jsx";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
+import StatusBadge from "../components/StatusBadge.jsx";
 import { useUser } from "../UserContext";
 import { SkeletonCard } from "../components/Skeleton.jsx";
 
@@ -354,9 +355,7 @@ export default function CampaignDetail() {
             <span className="ws-badge-dot" aria-hidden="true" />
             {connected ? "Live" : connectionFailed ? "Disconnected" : "Reconnecting…"}
           </span>
-          <span className={`badge badge-${campaign.status}${badgePulse ? " badge-updated" : ""}`}>
-            {campaign.status.replace(/_/g, " ")}
-          </span>
+          <StatusBadge status={campaign.status} pulse={badgePulse} />
           {isViewer && (
             <span className="badge" style={{ background: "rgba(148,163,184,0.2)", color: "var(--color-text-muted)", fontSize: "0.75rem" }}>
               👁 Read-only
