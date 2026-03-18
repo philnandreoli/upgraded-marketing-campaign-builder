@@ -133,7 +133,7 @@ async def create_campaign(
         logger.info("Draft campaign %s created successfully", campaign.id)
     except Exception as exc:
         logger.exception("Failed to create campaign: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Campaign creation failed: {exc}")
+        raise HTTPException(status_code=500, detail="Campaign creation failed. Please try again or contact support.")
 
     return CreateCampaignResponse(
         id=campaign.id,
@@ -187,7 +187,7 @@ async def update_draft_campaign(
         campaign = await store.update(campaign)
     except Exception as exc:
         logger.exception("Failed to update draft campaign %s: %s", campaign_id, exc)
-        raise HTTPException(status_code=500, detail=f"Campaign update failed: {exc}")
+        raise HTTPException(status_code=500, detail="Campaign update failed. Please try again or contact support.")
 
     return CreateCampaignResponse(
         id=campaign.id,
