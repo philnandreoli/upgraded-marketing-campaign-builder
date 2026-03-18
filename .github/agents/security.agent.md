@@ -1,4 +1,5 @@
 ---
+name: Security Agent
 description: "Security auditor agent. Use when: scanning for vulnerabilities, reviewing code for security issues, checking for OWASP Top 10, finding secrets or credentials in code, auditing authentication/authorization, analyzing dependencies for CVEs, creating GitHub issues for security findings."
 tools: [read, search, agent, "github-mcp/*"]
 user-invocable: true
