@@ -116,7 +116,7 @@ async def submit_content_approval(
         raise HTTPException(status_code=404, detail="Campaign not found")
     except Exception as exc:
         logger.exception("content-approve FAILED for campaign=%s: %s", campaign.id, exc)
-        raise HTTPException(status_code=500, detail=f"Content approval failed: {exc}")
+        raise HTTPException(status_code=500, detail="Content approval failed. Please try again or contact support.")
 
     return WorkflowActionResponse(message="Content approval submitted", campaign_id=campaign.id)
 
