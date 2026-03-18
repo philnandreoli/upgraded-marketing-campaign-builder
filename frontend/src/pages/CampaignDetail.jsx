@@ -73,40 +73,41 @@ export default function CampaignDetail() {
     localStorage.setItem(VIEW_MODE_KEY, mode);
   };
   const pollRef = useRef(null);
+  const isFetchingRef = useRef(false);
 
   const load = useCallback(async () => {
-    if (!workspaceId) return;
+    if (!workspaceId || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       setCampaign(await getCampaign(workspaceId, id));
     } catch (err) {
       setError(err.message);
+    } finally {
+      isFetchingRef.current = false;
     }
   }, [id, workspaceId]);
 
-  // Set up polling; defer initial fetch so setState isn't synchronous in the effect
+  // Set up polling; defer initial fetch so setState isn't synchronous in the effect.
+  // Uses a 5s interval and stops entirely for terminal states.
+  const status = campaign?.status;
   useEffect(() => {
+    if (status && TERMINAL_STATES.includes(status)) return;
     const immediate = setTimeout(load, 0);
-    pollRef.current = setInterval(load, 3000);
+    pollRef.current = setInterval(load, 5000);
     return () => {
       clearTimeout(immediate);
       clearInterval(pollRef.current);
     };
-  }, [load]);
+  }, [load, status]);
 
-  // Refresh on WebSocket events (deferred to avoid synchronous setState)
+  // Refresh on WebSocket events (deferred to avoid synchronous setState).
+  // Skip if campaign is already in a terminal state.
   useEffect(() => {
     if (events.length === 0) return;
+    if (status && TERMINAL_STATES.includes(status)) return;
     const t = setTimeout(load, 0);
     return () => clearTimeout(t);
-  }, [events.length, load]);
-
-  // Stop polling once campaign reaches a terminal state
-  const status = campaign?.status;
-  useEffect(() => {
-    if (status && TERMINAL_STATES.includes(status)) {
-      clearInterval(pollRef.current);
-    }
-  }, [status]);
+  }, [events.length, load, status]);
 
   // Pulse the status badge whenever the campaign status changes
   useEffect(() => {
