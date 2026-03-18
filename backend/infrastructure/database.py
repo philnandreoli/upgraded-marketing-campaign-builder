@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -247,6 +247,10 @@ class WorkspaceMemberRow(Base):
     role = Column(String, nullable=False)
     added_at = Column(DateTime, nullable=False)
 
+    __table_args__ = (
+        Index("ix_workspace_members_user_role", "user_id", "role"),
+    )
+
 
 class CampaignRow(Base):
     """Single-table design: indexed id/status + full document in JSONB."""
@@ -261,6 +265,11 @@ class CampaignRow(Base):
     updated_at = Column(DateTime, nullable=False)
     workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True, index=True)
     version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_campaigns_workspace_created", "workspace_id", text("created_at DESC")),
+        Index("ix_campaigns_workspace_status", "workspace_id", "status"),
+    )
 
 
 class UserRow(Base):
@@ -286,6 +295,10 @@ class CampaignMemberRow(Base):
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     role = Column(String, nullable=False)   # "owner", "editor", "viewer"
     added_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_campaign_members_user_id", "user_id"),
+    )
 
 
 class WorkflowSignalRow(Base):
