@@ -10,6 +10,7 @@ from typing import Any
 
 from azure.ai.projects.aio import AIProjectClient
 from azure.identity.aio import DefaultAzureCredential
+from opentelemetry import trace
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -149,6 +150,10 @@ class LLMService:
         ``instructions`` (system prompt) are stored server-side in the
         Foundry agent definition, so only the user message is sent here.
         """
+        # Enrich the active span with the Foundry agent name so traces can be
+        # filtered by agent at the LLM call boundary.
+        trace.get_current_span().set_attribute("agent.name", agent_name)
+
         input_items: list[dict[str, str]] = [
             {"type": "message", "role": "user", "content": user_content},
         ]

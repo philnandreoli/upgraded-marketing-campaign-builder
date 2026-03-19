@@ -33,7 +33,8 @@ def _no_foundry_agents():
     """Ensure all tests use the direct-LLM path (chat_json), not the
     Foundry agent path (chat_json_with_agent), regardless of whether
     register_agents() has populated the global registry."""
-    with patch("backend.orchestration.base_agent.get_agent_ref", return_value=None):
+    with patch("backend.orchestration.base_agent.get_agent_ref", return_value=None), \
+         patch("backend.orchestration.base_agent.get_agent_version", return_value=None):
         yield
 
 
