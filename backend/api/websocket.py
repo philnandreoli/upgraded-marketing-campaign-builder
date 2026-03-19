@@ -198,7 +198,7 @@ async def ws_global(websocket: WebSocket, ticket: Optional[str] = None) -> None:
     try:
         user = await _authenticate_ws_ticket(ticket)
     except Exception as exc:
-        logger.warning("WS global auth failed: %s (ticket=%s)", exc, ticket[:8] + '…' if ticket else 'None')
+        logger.warning("WS auth failed for endpoint \"%s\": %s", "global", exc)
         await websocket.accept()
         await websocket.close(code=_WS_UNAUTHORIZED)
         return
@@ -229,7 +229,7 @@ async def ws_campaign(
     try:
         user = await _authenticate_ws_ticket(ticket)
     except Exception as exc:
-        logger.warning("WS campaign auth failed: %s (ticket=%s)", exc, ticket[:8] + '…' if ticket else 'None')
+        logger.warning("WS auth failed for endpoint \"%s\": %s", "campaign", exc)
         await websocket.accept()
         await websocket.close(code=_WS_UNAUTHORIZED)
         return
