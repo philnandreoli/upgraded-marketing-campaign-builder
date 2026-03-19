@@ -139,6 +139,35 @@ TRACING_EXPORTER=otlp          # console | otlp | azure_monitor
 OTLP_ENDPOINT=http://localhost:4317
 ```
 
+### Span attributes
+
+Every agent execution enriches the active OpenTelemetry span with the following attributes, making traces filterable in Foundry / App Insights:
+
+| Attribute | Value |
+|-----------|-------|
+| `agent.type` | Agent enum value, e.g. `strategy`, `content_creator` |
+| `agent.name` | Python class name, e.g. `StrategyAgent` |
+| `campaign.id` | The campaign UUID |
+| `task.id` | The task UUID |
+| `workflow.stage` | Same as `agent.type` — the pipeline stage being executed |
+| `foundry.agent.version` | Foundry agent version string (only when Foundry Agent Operations are enabled) |
+
+These attributes are set at two points:
+
+1. **Agent run boundary** (`backend/orchestration/base_agent.py`) — on every `run()` call, before the LLM is invoked.
+2. **Foundry call boundary** (`backend/infrastructure/llm_service.py`) — inside `chat_with_agent()` to tag the Foundry-routed LLM span with the agent name.
+
+### Foundry Agent Registration Refresh Model
+
+Agent registration runs **once at worker startup**.  After startup:
+
+* Prompt / behaviour changes are **not** reflected in running workers.
+* To pick up changes, you must either:
+  1. **Restart the worker** — `register_agents()` runs on startup, detects instruction changes, and creates a new Foundry agent version automatically.
+  2. **Call `refresh_agents()`** — clears the in-process registry cache and re-runs registration without a restart.  Useful from an admin endpoint or management script.
+
+A new Foundry agent version is created **only when the system prompt has actually changed**; if the prompt is unchanged the existing version is reused.
+
 ---
 
 ## Related Documentation

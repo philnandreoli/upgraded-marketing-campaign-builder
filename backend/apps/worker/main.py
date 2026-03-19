@@ -163,6 +163,10 @@ async def _async_main() -> None:
 
     from backend.infrastructure.agent_registry import register_agents  # noqa: PLC0415
 
+    # Agent registration runs once at startup.  Any prompt or behaviour changes
+    # made after this point will NOT be picked up until the worker is restarted
+    # (or refresh_agents() is called explicitly).  A new Foundry agent version
+    # is created automatically when the system prompt has changed.
     register_agents()
 
     worker = Worker()

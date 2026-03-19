@@ -15,11 +15,15 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+from opentelemetry import trace
+
 from backend.models.messages import AgentMessage, AgentResult, AgentTask, AgentType, MessageRole
 from backend.infrastructure.llm_service import LLMService, get_llm_service
-from backend.infrastructure.agent_registry import get_agent_ref
+from backend.infrastructure.agent_registry import get_agent_ref, get_agent_version
 
 logger = logging.getLogger(__name__)
+
+_tracer = trace.get_tracer(__name__)
 
 
 class BaseAgent(ABC):
@@ -53,6 +57,19 @@ class BaseAgent(ABC):
     async def run(self, task: AgentTask, campaign_data: dict[str, Any]) -> AgentResult:
         """Execute the agent: call the LLM and return a structured result."""
         logger.info("Agent %s starting task %s", self.agent_type.value, task.task_id)
+
+        # Enrich the active span with agent/workflow correlation attributes.
+        # get_current_span() returns a no-op NonRecordingSpan when tracing is
+        # disabled, so set_attribute calls are always safe.
+        span = trace.get_current_span()
+        span.set_attribute("agent.type", self.agent_type.value)
+        span.set_attribute("agent.name", self.__class__.__name__)
+        span.set_attribute("campaign.id", task.campaign_id)
+        span.set_attribute("task.id", task.task_id)
+        span.set_attribute("workflow.stage", self.agent_type.value)
+        agent_version = get_agent_version(self.agent_type)
+        if agent_version is not None:
+            span.set_attribute("foundry.agent.version", agent_version)
 
         user_prompt = self.build_user_prompt(task, campaign_data)
 
