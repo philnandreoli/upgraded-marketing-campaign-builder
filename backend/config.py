@@ -227,6 +227,31 @@ class EventSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class WebSocketSettings(BaseSettings):
+    """Settings for websocket broadcast behavior."""
+
+    authz_cache_ttl_seconds: int = Field(
+        default=5,
+        alias="WS_AUTHZ_CACHE_TTL_SECONDS",
+        ge=0,
+        description=(
+            "Seconds to cache global-subscriber campaign membership checks during "
+            "broadcast fanout. 0 disables cache reuse."
+        ),
+    )
+    fanout_max_concurrency: int = Field(
+        default=25,
+        alias="WS_FANOUT_MAX_CONCURRENCY",
+        ge=1,
+        description=(
+            "Maximum number of concurrent websocket sends during a single "
+            "broadcast fanout."
+        ),
+    )
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class DatabaseSettings(BaseSettings):
     """Database connection settings.
 
@@ -361,6 +386,7 @@ class Settings(BaseSettings):
     service_bus: ServiceBusSettings = ServiceBusSettings()
     worker: WorkerSettings = WorkerSettings()
     events: EventSettings = EventSettings()
+    websocket: WebSocketSettings = WebSocketSettings()
     database: DatabaseSettings = DatabaseSettings()
     redis: RedisSettings = RedisSettings()
 
