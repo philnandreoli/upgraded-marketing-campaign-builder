@@ -155,25 +155,40 @@ async def list_workspaces(
     else:
         workspaces = await store.list_workspaces("local", is_admin=True)
 
-    # Fetch owner display names — one query per unique owner_id (deduplicated)
-    owner_ids = {ws.owner_id for ws in workspaces if ws.owner_id}
-    owner_map: dict[str, Optional[str]] = {}
-    for oid in owner_ids:
-        owner_user = await store.get_user(oid)
-        owner_map[oid] = (
-            owner_user.display_name if owner_user is not None else None
+    summary_map: dict[str, dict[str, Any]] = {}
+    workspace_ids = [ws.id for ws in workspaces]
+    if hasattr(store, "get_workspace_summaries"):
+        summary_map = await store.get_workspace_summaries(
+            workspace_ids,
+            user_id=user.id if user is not None else None,
+            is_admin=user.is_admin if user is not None else True,
         )
 
     result: list[WorkspaceSummary] = []
     for ws in workspaces:
-        if user is not None:
-            role = await store.get_workspace_member_role(ws.id, user.id)
-            role_str = role.value if role is not None else WorkspaceRole.VIEWER.value
+        summary = summary_map.get(ws.id)
+        if summary is not None:
+            role_str = str(summary.get("role", WorkspaceRole.VIEWER.value))
+            member_count = int(summary.get("member_count", 0))
+            campaign_count = int(summary.get("campaign_count", 0))
+            owner_display_name = summary.get("owner_display_name")
         else:
-            role_str = WorkspaceRole.CREATOR.value
-
-        members = await store.list_workspace_members(ws.id)
-        campaigns = await store.list_workspace_campaigns(ws.id)
+            if user is not None:
+                role = await store.get_workspace_member_role(ws.id, user.id)
+                role_str = role.value if role is not None else WorkspaceRole.VIEWER.value
+            else:
+                role_str = WorkspaceRole.CREATOR.value
+            members = await store.list_workspace_members(ws.id)
+            campaigns = await store.list_workspace_campaigns(ws.id)
+            member_count = len(members)
+            campaign_count = len(campaigns)
+            if ws.owner_id:
+                owner_user = await store.get_user(ws.owner_id)
+                owner_display_name = (
+                    owner_user.display_name if owner_user is not None else None
+                )
+            else:
+                owner_display_name = None
 
         result.append(
             WorkspaceSummary(
@@ -181,10 +196,10 @@ async def list_workspaces(
                 name=ws.name,
                 is_personal=ws.is_personal,
                 role=role_str,
-                member_count=len(members),
-                campaign_count=len(campaigns),
+                member_count=member_count,
+                campaign_count=campaign_count,
                 owner_id=ws.owner_id,
-                owner_display_name=owner_map.get(ws.owner_id) if ws.owner_id else None,
+                owner_display_name=owner_display_name,
                 created_at=ws.created_at,
             )
         )

@@ -290,6 +290,36 @@ class InMemoryCampaignStore:
     async def list_workspace_campaigns(self, workspace_id: str) -> list[Campaign]:
         return [c for c in self._campaigns.values() if c.workspace_id == workspace_id]
 
+    async def get_workspace_summaries(
+        self,
+        workspace_ids: list[str],
+        *,
+        user_id: Optional[str],
+        is_admin: bool,
+    ) -> dict[str, dict[str, Optional[str] | int]]:
+        """Return aggregated workspace summary metadata for test parity."""
+        summaries: dict[str, dict[str, Optional[str] | int]] = {}
+        default_role = WorkspaceRole.CREATOR.value if user_id is None else WorkspaceRole.VIEWER.value
+
+        for ws_id in set(workspace_ids):
+            owner_display_name: Optional[str] = None
+            ws = self._workspaces.get(ws_id)
+            if ws is not None and ws.owner_id:
+                owner = self._users.get(ws.owner_id)
+                owner_display_name = owner.display_name if owner is not None else None
+
+            role = default_role
+            if user_id is not None:
+                role = self._workspace_members.get((ws_id, user_id), WorkspaceRole.VIEWER.value)
+
+            summaries[ws_id] = {
+                "role": role,
+                "member_count": sum(1 for (wid, _) in self._workspace_members if wid == ws_id),
+                "campaign_count": sum(1 for c in self._campaigns.values() if c.workspace_id == ws_id),
+                "owner_display_name": owner_display_name,
+            }
+        return summaries
+
     async def get_personal_workspace(self, user_id: str) -> Optional[Workspace]:
         for workspace in self._workspaces.values():
             if workspace.owner_id == user_id and workspace.is_personal:

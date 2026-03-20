@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import delete as sa_delete, or_, select, update as sa_update
+from sqlalchemy import delete as sa_delete, func, or_, select, update as sa_update
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
@@ -495,6 +495,84 @@ class CampaignStore:
                 )
             rows = result.scalars().all()
             return [self._workspace_from_row(r) for r in rows]
+
+    async def get_workspace_summaries(
+        self,
+        workspace_ids: list[str],
+        *,
+        user_id: Optional[str],
+        is_admin: bool,
+    ) -> dict[str, dict[str, Optional[str] | int]]:
+        """Return aggregated summary metadata for the given workspaces.
+
+        Returned mapping keys are workspace IDs. Each value includes:
+        ``role`` (for *user_id*), ``member_count``, ``campaign_count``,
+        and ``owner_display_name``.
+        """
+        if not workspace_ids:
+            return {}
+
+        unique_ids = list(set(workspace_ids))
+        default_role = (
+            WorkspaceRole.CREATOR.value
+            if user_id is None
+            else WorkspaceRole.VIEWER.value
+        )
+        result: dict[str, dict[str, Optional[str] | int]] = {
+            ws_id: {
+                "role": default_role,
+                "member_count": 0,
+                "campaign_count": 0,
+                "owner_display_name": None,
+            }
+            for ws_id in unique_ids
+        }
+
+        async with async_session() as session:
+            owner_rows = await session.execute(
+                select(WorkspaceRow.id, UserRow.display_name)
+                .outerjoin(UserRow, WorkspaceRow.owner_id == UserRow.id)
+                .where(WorkspaceRow.id.in_(unique_ids))
+            )
+            for ws_id, owner_display_name in owner_rows.all():
+                if ws_id in result:
+                    result[ws_id]["owner_display_name"] = owner_display_name
+
+            member_count_rows = await session.execute(
+                select(
+                    WorkspaceMemberRow.workspace_id,
+                    func.count(WorkspaceMemberRow.user_id),
+                )
+                .where(WorkspaceMemberRow.workspace_id.in_(unique_ids))
+                .group_by(WorkspaceMemberRow.workspace_id)
+            )
+            for ws_id, count in member_count_rows.all():
+                if ws_id in result:
+                    result[ws_id]["member_count"] = int(count or 0)
+
+            campaign_count_rows = await session.execute(
+                select(
+                    CampaignRow.workspace_id,
+                    func.count(CampaignRow.id),
+                )
+                .where(CampaignRow.workspace_id.in_(unique_ids))
+                .group_by(CampaignRow.workspace_id)
+            )
+            for ws_id, count in campaign_count_rows.all():
+                if ws_id is not None and ws_id in result:
+                    result[ws_id]["campaign_count"] = int(count or 0)
+
+            if user_id is not None:
+                role_rows = await session.execute(
+                    select(WorkspaceMemberRow.workspace_id, WorkspaceMemberRow.role)
+                    .where(WorkspaceMemberRow.workspace_id.in_(unique_ids))
+                    .where(WorkspaceMemberRow.user_id == user_id)
+                )
+                for ws_id, role in role_rows.all():
+                    if ws_id in result and role is not None:
+                        result[ws_id]["role"] = role
+
+        return result
 
     async def list_workspace_campaigns(self, workspace_id: str) -> list[Campaign]:
         """Return all campaigns that belong to *workspace_id*."""

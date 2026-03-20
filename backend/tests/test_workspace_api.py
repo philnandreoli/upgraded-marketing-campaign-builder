@@ -171,6 +171,47 @@ class TestListWorkspaces:
         ws = next(w for w in r.json() if w["id"] == "ws-a")
         assert ws["role"] == "creator"
 
+    def test_list_uses_bounded_workspace_summary_aggregation(self, _isolated_store, creator_client):
+        from backend.models.campaign import Campaign, CampaignBrief
+
+        _isolated_store._users[_CREATOR_USER.id] = _CREATOR_USER
+        _isolated_store._workspaces["ws-a"] = _make_workspace("ws-a", "WS A", _CREATOR_USER.id)
+        _isolated_store._workspaces["ws-b"] = _make_workspace("ws-b", "WS B", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-a", _CREATOR_USER.id)] = "creator"
+        _isolated_store._workspace_members[("ws-b", _CREATOR_USER.id)] = "creator"
+        _isolated_store._workspace_members[("ws-a", _OTHER_USER.id)] = "viewer"
+
+        brief = CampaignBrief(
+            product_or_service="Prod",
+            goal="Goal",
+            budget=100,
+            currency="USD",
+            start_date="2026-01-01",
+            end_date="2026-12-31",
+        )
+        _isolated_store._campaigns["camp-a"] = Campaign(id="camp-a", brief=brief, workspace_id="ws-a")
+        _isolated_store._campaigns["camp-b"] = Campaign(id="camp-b", brief=brief, workspace_id="ws-a")
+        _isolated_store._campaigns["camp-c"] = Campaign(id="camp-c", brief=brief, workspace_id="ws-b")
+
+        with (
+            patch.object(_isolated_store, "get_workspace_summaries", wraps=_isolated_store.get_workspace_summaries) as summary_spy,
+            patch.object(_isolated_store, "get_workspace_member_role", new=AsyncMock(side_effect=AssertionError("should not call per-workspace role lookup"))),
+            patch.object(_isolated_store, "list_workspace_members", new=AsyncMock(side_effect=AssertionError("should not call per-workspace member lookup"))),
+            patch.object(_isolated_store, "list_workspace_campaigns", new=AsyncMock(side_effect=AssertionError("should not call per-workspace campaign lookup"))),
+            patch.object(_isolated_store, "get_user", new=AsyncMock(side_effect=AssertionError("should not call per-owner user lookup"))),
+        ):
+            r = creator_client.get("/api/workspaces")
+
+        assert r.status_code == 200
+        assert summary_spy.await_count == 1
+        items = {w["id"]: w for w in r.json()}
+        assert items["ws-a"]["role"] == "creator"
+        assert items["ws-a"]["member_count"] == 2
+        assert items["ws-a"]["campaign_count"] == 2
+        assert items["ws-a"]["owner_id"] == _CREATOR_USER.id
+        assert items["ws-a"]["owner_display_name"] == _CREATOR_USER.display_name
+        assert "created_at" in items["ws-a"]
+
 
 # ---------------------------------------------------------------------------
 # GET /api/workspaces/{id}
