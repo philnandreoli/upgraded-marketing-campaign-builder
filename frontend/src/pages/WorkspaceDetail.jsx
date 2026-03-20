@@ -9,7 +9,10 @@ import { useUser } from "../UserContext";
 import { useConfirm } from "../ConfirmDialogContext";
 import { SkeletonCard } from "../components/Skeleton";
 import StatusBadge from "../components/StatusBadge.jsx";
+import FilterTabs from "../components/FilterTabs.jsx";
+import SearchBar from "../components/SearchBar.jsx";
 import Toast from "../components/Toast.jsx";
+import { applyFilter, matchesSearch } from "../lib/campaignFilters";
 
 const IN_PROGRESS_STATUSES = ["draft", "strategy", "content", "channel_planning", "analytics_setup", "review", "review_clarification", "content_revision", "clarification"];
 const AWAITING_APPROVAL_STATUSES = ["content_approval", "awaiting_approval"];
@@ -79,6 +82,29 @@ export default function WorkspaceDetail({ events = [] }) {
   const pendingDeletesRef = useRef(new Set());
   const undoTimersRef = useRef({});
 
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const debounceRef = useRef(null);
+
+  const handleFilterChange = (tabId) => {
+    setActiveFilter(tabId);
+  };
+
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedQuery(value);
+    }, 300);
+  };
+
+  const handleSearchClear = () => {
+    setSearchQuery("");
+    setDebouncedQuery("");
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  };
+
   // Fetch workspace detail
   useEffect(() => {
     setLoadingWs(true);
@@ -123,6 +149,13 @@ export default function WorkspaceDetail({ events = [] }) {
     const timers = undoTimersRef.current;
     return () => {
       Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
 
@@ -187,6 +220,10 @@ export default function WorkspaceDetail({ events = [] }) {
       },
     ]);
   };
+
+  // Apply filter tab and search to the campaign list
+  const filteredCampaigns = applyFilter(campaigns, activeFilter, user);
+  const searchedCampaigns = filteredCampaigns.filter((c) => matchesSearch(c, debouncedQuery));
 
   if (loadingWs) {
     return (
@@ -271,29 +308,71 @@ export default function WorkspaceDetail({ events = [] }) {
         </div>
       ) : (
         <>
-          {STATUS_GROUPS.map(({ label, statuses }) => {
-            const group = campaigns.filter((c) => statuses.includes(c.status));
-            if (group.length === 0) return null;
-            return (
-              <div key={label} className="status-group">
-                <h4 className="status-group-label">{label}</h4>
-                <div className="campaign-list">
-                  {group.map((c) => (
-                    <CampaignCard
-                      key={c.id}
-                      c={c}
-                      isAdmin={isAdmin}
-                      isViewer={isViewer}
-                      user={user}
-                      onDelete={handleDelete}
-                      workspaceId={id}
-                      deletingId={deleting}
-                    />
-                  ))}
+          <FilterTabs activeTab={activeFilter} onTabChange={handleFilterChange} />
+          <SearchBar
+            value={searchQuery}
+            onChange={handleSearchChange}
+            onClear={handleSearchClear}
+          />
+
+          {debouncedQuery && (
+            <span className="search-result-count">
+              Showing {searchedCampaigns.length} of {filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? "s" : ""}
+            </span>
+          )}
+
+          {searchedCampaigns.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🔍</div>
+              {debouncedQuery ? (
+                <>
+                  <h2 className="empty-state-title">No campaigns match your search</h2>
+                  <p className="empty-state-body">
+                    No results for &ldquo;{debouncedQuery}&rdquo;.{" "}
+                    <button className="empty-state-reset" onClick={handleSearchClear}>
+                      Clear search
+                    </button>{" "}
+                    or try a different term.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="empty-state-title">No campaigns match this filter</h2>
+                  <p className="empty-state-body">
+                    Try selecting a different filter or{" "}
+                    <button className="empty-state-reset" onClick={() => handleFilterChange("all")}>
+                      view all campaigns
+                    </button>
+                    .
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            STATUS_GROUPS.map(({ label, statuses }) => {
+              const group = searchedCampaigns.filter((c) => statuses.includes(c.status));
+              if (group.length === 0) return null;
+              return (
+                <div key={label} className="status-group">
+                  <h4 className="status-group-label">{label}</h4>
+                  <div className="campaign-list">
+                    {group.map((c) => (
+                      <CampaignCard
+                        key={c.id}
+                        c={c}
+                        isAdmin={isAdmin}
+                        isViewer={isViewer}
+                        user={user}
+                        onDelete={handleDelete}
+                        workspaceId={id}
+                        deletingId={deleting}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </>
       )}
 
