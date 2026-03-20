@@ -547,10 +547,10 @@ class TestCoordinatorClarificationResume:
         campaign.advance_status(CampaignStatus.CLARIFICATION)
         await store.update(campaign)
 
-        # Responses for the re-launched pipeline (clarification skipped because
-        # answers are now present, then normal stages)
+        # Responses for the re-launched pipeline.  Because
+        # clarification_questions are already populated, Branch A of
+        # _run_clarification fires — no gather_clarifications LLM call.
         responses = [
-            CLARIFICATION_WITH_QUESTIONS_RESPONSE,
             STRATEGY_RESPONSE,
             CONTENT_RESPONSE,
             CHANNEL_RESPONSE,
@@ -620,6 +620,193 @@ class TestCoordinatorClarificationResume:
                 answers={"q1": "Answer"},
             )
         )
+
+
+class TestClarificationResumeSkipLLM:
+    """Tests for the three-branch guard in _run_clarification that skips
+    the LLM call when clarification_questions already exist on the campaign."""
+
+    @pytest.mark.asyncio
+    async def test_branch_a_questions_and_answers_present_skips_llm(
+        self, store, brief, events_log, mock_on_event
+    ):
+        """Branch A — clarification_questions AND clarification_answers already
+        populated.  The LLM must NOT be called; clarification_completed is
+        emitted and the pipeline continues."""
+        campaign = await store.create(brief)
+        campaign.clarification_questions = [{"id": "q1", "question": "Target?"}]
+        campaign.clarification_answers = {"q1": "Enterprise"}
+        await store.update(campaign)
+
+        # Only pipeline-stage responses — no clarification LLM call expected
+        responses = [
+            STRATEGY_RESPONSE,
+            CONTENT_RESPONSE,
+            CHANNEL_RESPONSE,
+            ANALYTICS_RESPONSE,
+            REVIEW_RESPONSE,
+            CONTENT_REVISION_RESPONSE,
+        ]
+
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=responses)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event)
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+
+        event_names = [e["event"] for e in events_log]
+        assert "clarification_started" in event_names
+        assert "clarification_completed" in event_names
+        # No clarification_requested (answers already present)
+        assert "clarification_requested" not in event_names
+
+        # Original questions must be preserved (not overwritten by LLM)
+        updated = await store.get(campaign.id)
+        assert updated.clarification_questions == [{"id": "q1", "question": "Target?"}]
+
+        # Only 6 LLM calls (no gather_clarifications)
+        assert mock_llm.chat_json.call_count == 6
+
+    @pytest.mark.asyncio
+    async def test_branch_b_questions_present_no_answers_re_emits_requested(
+        self, store, brief, events_log, mock_on_event
+    ):
+        """Branch B — clarification_questions exist but clarification_answers
+        are empty.  The LLM must NOT be called; clarification_requested is
+        re-emitted and the pipeline waits for user input."""
+        campaign = await store.create(brief)
+        campaign.clarification_questions = [{"id": "q1", "question": "Target?"}]
+        await store.update(campaign)
+
+        # Strategy + remaining stages (no clarification LLM call)
+        responses = [
+            STRATEGY_RESPONSE,
+            CONTENT_RESPONSE,
+            CHANNEL_RESPONSE,
+            ANALYTICS_RESPONSE,
+            REVIEW_RESPONSE,
+            CONTENT_REVISION_RESPONSE,
+        ]
+
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=responses)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event)
+
+            # Submit answers after a short delay so the wait loop resolves
+            async def _submit_answers():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_clarification(
+                    ClarificationResponse(
+                        campaign_id=campaign.id,
+                        answers={"q1": "Enterprise"},
+                    )
+                )
+
+            # Auto-approve content after clarification completes
+            async def _auto_approve():
+                await asyncio.sleep(0.8)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                    )
+                )
+
+            answer_task = asyncio.create_task(_submit_answers())
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await answer_task
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+
+        event_names = [e["event"] for e in events_log]
+        assert "clarification_started" in event_names
+        assert "clarification_requested" in event_names
+        assert "clarification_completed" in event_names
+
+        # Original questions preserved
+        updated = await store.get(campaign.id)
+        assert updated.clarification_questions == [{"id": "q1", "question": "Target?"}]
+
+        # 6 LLM calls (no gather_clarifications)
+        assert mock_llm.chat_json.call_count == 6
+
+    @pytest.mark.asyncio
+    async def test_branch_c_no_questions_calls_llm_fresh(
+        self, store, brief, events_log, mock_on_event
+    ):
+        """Branch C — no prior clarification_questions.  gather_clarifications
+        must be called (fresh run — existing behaviour, no regression)."""
+        campaign = await store.create(brief)
+        # No pre-set clarification_questions — fresh campaign
+
+        responses = [
+            CLARIFICATION_RESPONSE,   # gather_clarifications (needs_clarification=False)
+            STRATEGY_RESPONSE,
+            CONTENT_RESPONSE,
+            CHANNEL_RESPONSE,
+            ANALYTICS_RESPONSE,
+            REVIEW_RESPONSE,
+            CONTENT_REVISION_RESPONSE,
+        ]
+
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=responses)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event)
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+
+        event_names = [e["event"] for e in events_log]
+        assert "clarification_started" in event_names
+        assert "clarification_skipped" in event_names
+
+        # 7 LLM calls: 1 gather_clarifications + 6 pipeline stages
+        assert mock_llm.chat_json.call_count == 7
 
 
 class TestTransitionValidation:
@@ -1459,9 +1646,10 @@ class TestCoordinatorResume:
 
         with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
             mock_llm = MagicMock()
-            # gather_clarifications + all 6 pipeline stages
+            # No gather_clarifications call — Branch A skips the LLM because
+            # both clarification_questions and clarification_answers exist.
+            # Only the 6 pipeline stages hit the LLM.
             mock_llm.chat_json = AsyncMock(side_effect=[
-                CLARIFICATION_RESPONSE,   # gather_clarifications (clarification already answered)
                 STRATEGY_RESPONSE,
                 CONTENT_RESPONSE,
                 CHANNEL_RESPONSE,
@@ -1501,6 +1689,9 @@ class TestCoordinatorResume:
         assert result.channel_plan is not None
         assert result.analytics_plan is not None
         assert result.review is not None
+
+        # gather_clarifications must NOT have been called (6 calls, not 7)
+        assert mock_llm.chat_json.call_count == 6
 
     @pytest.mark.asyncio
     async def test_resume_with_no_checkpoint_starts_fresh(self, store, brief, mock_on_event):

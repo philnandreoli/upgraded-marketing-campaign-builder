@@ -1232,38 +1232,66 @@ class CoordinatorAgent:
         """
         await self._emit("clarification_started", {"campaign_id": campaign.id})
 
-        clarification = await self._strategy.gather_clarifications(campaign_data)
+        if campaign.clarification_questions:
+            # Questions already exist from a prior run — skip the LLM call.
+            questions = campaign.clarification_questions
 
-        if not clarification.get("needs_clarification", False):
-            await self._emit("clarification_skipped", {"campaign_id": campaign.id})
-            return campaign
+            if campaign.clarification_answers:
+                # Branch A — answers already present (e.g. user answered before restart)
+                logger.info(
+                    "Clarification already complete for %s — skipping",
+                    campaign.id,
+                )
+                await self._emit("clarification_completed", {
+                    "campaign_id": campaign.id,
+                    "answers": campaign.clarification_answers,
+                })
+                return campaign
 
-        # Store questions on the campaign so the frontend can display them
-        questions = clarification.get("questions", [])
-        campaign.clarification_questions = questions
-        self._transition(campaign, CampaignStatus.CLARIFICATION)
-        await self._store.update(campaign)
+            # Branch B — questions exist, answers still pending; re-surface to frontend.
+            logger.info("Re-awaiting clarification answers for %s", campaign.id)
+            self._transition(campaign, CampaignStatus.CLARIFICATION)
+            await self._store.update(campaign)
+            await self._emit("clarification_requested", ClarificationRequestedEvent(
+                campaign_id=campaign.id,
+                questions=questions,
+                context_summary="",
+            ).model_dump(mode="json"))
 
-        # If answers were already submitted (e.g. user returned after navigating
-        # away, or the pipeline was re-launched after a server restart), skip
-        # the future-based wait and continue immediately.
-        if campaign.clarification_answers:
-            logger.info(
-                "Clarification answers already present for campaign %s — skipping wait",
-                campaign.id,
-            )
-            await self._emit("clarification_completed", {
-                "campaign_id": campaign.id,
-                "answers": campaign.clarification_answers,
-            })
-            return campaign
+        else:
+            # Branch C — first run; ask the LLM.
+            clarification = await self._strategy.gather_clarifications(campaign_data)
 
-        # Populate typed question objects for the event payload
-        await self._emit("clarification_requested", ClarificationRequestedEvent(
-            campaign_id=campaign.id,
-            questions=questions,
-            context_summary=clarification.get("context_summary", ""),
-        ).model_dump(mode="json"))
+            if not clarification.get("needs_clarification", False):
+                await self._emit("clarification_skipped", {"campaign_id": campaign.id})
+                return campaign
+
+            # Store questions on the campaign so the frontend can display them
+            questions = clarification.get("questions", [])
+            campaign.clarification_questions = questions
+            self._transition(campaign, CampaignStatus.CLARIFICATION)
+            await self._store.update(campaign)
+
+            # If answers were already submitted (e.g. user returned after navigating
+            # away, or the pipeline was re-launched after a server restart), skip
+            # the future-based wait and continue immediately.
+            if campaign.clarification_answers:
+                logger.info(
+                    "Clarification answers already present for campaign %s — skipping wait",
+                    campaign.id,
+                )
+                await self._emit("clarification_completed", {
+                    "campaign_id": campaign.id,
+                    "answers": campaign.clarification_answers,
+                })
+                return campaign
+
+            # Populate typed question objects for the event payload
+            await self._emit("clarification_requested", ClarificationRequestedEvent(
+                campaign_id=campaign.id,
+                questions=questions,
+                context_summary=clarification.get("context_summary", ""),
+            ).model_dump(mode="json"))
 
         # Wait for user answers.  Polls the DB signal store every
         # _poll_interval_seconds; resolves immediately via in-process future
