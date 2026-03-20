@@ -2,12 +2,14 @@
  * Tests for WorkspaceDetail page.
  */
 
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import WorkspaceDetail from '../pages/WorkspaceDetail';
 import { UserProvider } from '../UserContext';
 import { WorkspaceProvider } from '../WorkspaceContext';
+import { ConfirmDialogProvider } from '../ConfirmDialogContext';
+import { ToastProvider } from '../ToastContext';
 
 vi.mock('../api');
 
@@ -42,9 +44,13 @@ async function renderDetail(
     <MemoryRouter initialEntries={[`/workspaces/${wsId}`]}>
       <UserProvider>
         <WorkspaceProvider>
-          <Routes>
-            <Route path="/workspaces/:id" element={<WorkspaceDetail events={[]} />} />
-          </Routes>
+          <ConfirmDialogProvider>
+            <ToastProvider>
+              <Routes>
+                <Route path="/workspaces/:id" element={<WorkspaceDetail events={[]} />} />
+              </Routes>
+            </ToastProvider>
+          </ConfirmDialogProvider>
         </WorkspaceProvider>
       </UserProvider>
     </MemoryRouter>,
@@ -134,17 +140,22 @@ describe('WorkspaceDetail – undo delete', () => {
   });
 
   it('optimistically removes campaign and shows undo toast on delete confirmation', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     await renderDetail('ws-1', ws, [campaign]);
     await waitFor(() => screen.getByText('ProductA'));
-
-    // Enable fake timers only after the initial render is settled
-    vi.useFakeTimers();
 
     const deleteBtn = screen.getByRole('button', { name: /delete/i });
     await act(async () => {
       fireEvent.click(deleteBtn);
     });
+
+    // Confirm via the modal (must happen before fake timers)
+    const dialog1 = await waitFor(() => screen.getByRole('dialog'));
+    await act(async () => {
+      fireEvent.click(within(dialog1).getByRole('button', { name: /^delete$/i }));
+    });
+
+    // Enable fake timers only after the confirm dialog is resolved
+    vi.useFakeTimers();
 
     // Campaign should be removed immediately (optimistic)
     expect(screen.queryByText('ProductA')).not.toBeInTheDocument();
@@ -152,22 +163,26 @@ describe('WorkspaceDetail – undo delete', () => {
     expect(screen.getByText('Campaign deleted')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
 
-    window.confirm.mockRestore();
     vi.clearAllTimers();
   });
 
   it('restores campaign when Undo is clicked', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     api.listWorkspaceCampaigns.mockResolvedValue([campaign]);
     await renderDetail('ws-1', ws, [campaign]);
     await waitFor(() => screen.getByText('ProductA'));
-
-    vi.useFakeTimers();
 
     const deleteBtn = screen.getByRole('button', { name: /delete/i });
     await act(async () => {
       fireEvent.click(deleteBtn);
     });
+
+    // Confirm via the modal
+    const dialog2 = await waitFor(() => screen.getByRole('dialog'));
+    await act(async () => {
+      fireEvent.click(within(dialog2).getByRole('button', { name: /^delete$/i }));
+    });
+
+    vi.useFakeTimers();
 
     // Click Undo
     await act(async () => {
@@ -179,21 +194,25 @@ describe('WorkspaceDetail – undo delete', () => {
     // deleteCampaign API should NOT have been called
     expect(api.deleteCampaign).not.toHaveBeenCalled();
 
-    window.confirm.mockRestore();
     vi.clearAllTimers();
   });
 
   it('calls deleteCampaign API after 5 seconds if Undo is not clicked', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     api.deleteCampaign.mockResolvedValue(undefined);
     await renderDetail('ws-1', ws, [campaign]);
     await waitFor(() => screen.getByText('ProductA'));
 
-    vi.useFakeTimers();
-
     const deleteBtn = screen.getByRole('button', { name: /delete/i });
     await act(async () => {
       fireEvent.click(deleteBtn);
+    });
+
+    // Confirm via the modal — enable fake timers BEFORE clicking confirm
+    // so that the setTimeout in handleDelete is captured by fake timers
+    const dialog3 = await waitFor(() => screen.getByRole('dialog'));
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(within(dialog3).getByRole('button', { name: /^delete$/i }));
     });
 
     // deleteCampaign should not be called yet
@@ -208,25 +227,29 @@ describe('WorkspaceDetail – undo delete', () => {
 
     expect(api.deleteCampaign).toHaveBeenCalledWith('ws-1', 'c1');
 
-    window.confirm.mockRestore();
     // Ensure no timers or mock state leaks into the next test
     vi.clearAllTimers();
     api.deleteCampaign.mockClear();
   });
 
   it('does not delete when confirm is cancelled', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     await renderDetail('ws-1', ws, [campaign]);
     await waitFor(() => screen.getByText('ProductA'));
 
     const deleteBtn = screen.getByRole('button', { name: /delete/i });
-    fireEvent.click(deleteBtn);
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    // Cancel via the modal
+    await waitFor(() => screen.getByRole('dialog'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    });
 
     // Campaign should still be visible
     expect(screen.getByText('ProductA')).toBeInTheDocument();
     expect(api.deleteCampaign).not.toHaveBeenCalled();
-
-    window.confirm.mockRestore();
   });
 });
 

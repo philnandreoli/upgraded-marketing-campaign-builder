@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { submitContentApproval, updatePieceNotes, updatePieceDecision } from "../api";
+import { useConfirm } from "../ConfirmDialogContext";
+import { useToast } from "../ToastContext";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -51,6 +53,8 @@ export default function ContentSection({
   onApprovalSubmitted,
   status,
 }) {
+  const confirm = useConfirm();
+  const addToast = useToast();
   const [editing, setEditing] = useState({});      // { [index]: editedText }
   const [notes, setNotes] = useState({});           // { [index]: noteText }
   const [decisions, setDecisions] = useState({});   // { [index]: "approved" | "rejected" }
@@ -92,20 +96,26 @@ export default function ContentSection({
       await submitContentApproval(workspaceId, campaignId, pieces);
       onApprovalSubmitted?.();
     } catch (err) {
-      alert("Failed to submit content approval: " + err.message);
+      addToast({ stage: "Error", message: "Failed to submit content approval: " + err.message });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleRejectCampaign = async () => {
-    if (!confirm("Are you sure you want to reject the entire campaign?")) return;
+    const confirmed = await confirm({
+      title: "Reject entire campaign?",
+      message: "Are you sure you want to reject the entire campaign?",
+      confirmLabel: "Reject Campaign",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setSubmitting(true);
     try {
       await submitContentApproval(workspaceId, campaignId, [], true);
       onApprovalSubmitted?.();
     } catch (err) {
-      alert("Failed to reject campaign: " + err.message);
+      addToast({ stage: "Error", message: "Failed to reject campaign: " + err.message });
     } finally {
       setSubmitting(false);
     }
@@ -116,7 +126,7 @@ export default function ContentSection({
     try {
       await updatePieceNotes(workspaceId, campaignId, pieceIndex, notes[pieceIndex] || "");
     } catch (err) {
-      alert("Failed to save notes: " + err.message);
+      addToast({ stage: "Error", message: "Failed to save notes: " + err.message });
     } finally {
       setSavingNotes((prev) => ({ ...prev, [pieceIndex]: false }));
     }
@@ -134,7 +144,7 @@ export default function ContentSection({
       // Mirror the persisted decision in local state so the UI updates immediately
       setDecisions((prev) => ({ ...prev, [pieceIndex]: approved ? "approved" : "rejected" }));
     } catch (err) {
-      alert("Failed to save decision: " + err.message);
+      addToast({ stage: "Error", message: "Failed to save decision: " + err.message });
     } finally {
       setSavingDecision((prev) => ({ ...prev, [pieceIndex]: false }));
     }

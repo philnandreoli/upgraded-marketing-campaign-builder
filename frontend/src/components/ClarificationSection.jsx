@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { submitClarification } from "../api";
+import { useToast } from "../ToastContext";
 
 export default function ClarificationSection({
   questions,
@@ -11,6 +12,7 @@ export default function ClarificationSection({
   readOnly = false,
 }) {
   const [answers, setAnswers] = useState({});
+  const addToast = useToast();
 
   // Merge local draft answers with persisted answers from the backend
   const resolvedAnswer = (id) =>
@@ -37,7 +39,7 @@ export default function ClarificationSection({
       await submitClarification(workspaceId, campaignId, answers);
       onSubmitted?.();
     } catch (err) {
-      alert("Failed to submit answers: " + err.message);
+      addToast({ stage: "Error", message: "Failed to submit answers: " + err.message });
     } finally {
       setSubmitting(false);
     }

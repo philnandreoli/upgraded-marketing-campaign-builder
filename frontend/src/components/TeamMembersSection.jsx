@@ -6,6 +6,7 @@ import {
   removeCampaignMember,
   updateCampaignMemberRole,
 } from "../api";
+import { useConfirm } from "../ConfirmDialogContext";
 
 const CAMPAIGN_ROLES = ["editor", "viewer"];
 const SPINNER_SIZE = 14;
@@ -463,6 +464,7 @@ export default function TeamMembersSection({ workspaceId, campaignId, canManage 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [removeError, setRemoveError] = useState(null);
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     setError(null);
@@ -501,7 +503,13 @@ export default function TeamMembersSection({ workspaceId, campaignId, canManage 
   };
 
   const handleRemove = async (userId) => {
-    if (!confirm("Remove this member from the campaign?")) return;
+    const confirmed = await confirm({
+      title: "Remove member?",
+      message: "Remove this member from the campaign?",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setRemoveError(null);
     try {
       await removeCampaignMember(workspaceId, campaignId, userId);

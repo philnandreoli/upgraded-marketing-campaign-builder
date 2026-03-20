@@ -6,6 +6,7 @@ import {
   deleteCampaign,
 } from "../api";
 import { useUser } from "../UserContext";
+import { useConfirm } from "../ConfirmDialogContext";
 import { SkeletonCard } from "../components/Skeleton";
 import StatusBadge from "../components/StatusBadge.jsx";
 import Toast from "../components/Toast.jsx";
@@ -66,6 +67,7 @@ function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId, delet
 export default function WorkspaceDetail({ events = [] }) {
   const { id } = useParams();
   const { isAdmin, isViewer, user } = useUser();
+  const confirm = useConfirm();
 
   const [workspace, setWorkspace] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
@@ -124,8 +126,14 @@ export default function WorkspaceDetail({ events = [] }) {
     };
   }, []);
 
-  const handleDelete = (campaignId) => {
-    if (!confirm("Delete this campaign?")) return;
+  const handleDelete = async (campaignId) => {
+    const confirmed = await confirm({
+      title: "Delete this campaign?",
+      message: "This action cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     const campaign = campaigns.find((c) => c.id === campaignId);
     if (!campaign) return;

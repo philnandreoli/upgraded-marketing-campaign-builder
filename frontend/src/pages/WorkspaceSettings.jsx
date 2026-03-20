@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
+import { useConfirm } from "../ConfirmDialogContext";
 
 const WORKSPACE_ROLES = ["creator", "contributor", "viewer"];
 const ROLE_LABELS = { creator: "Creator", contributor: "Contributor", viewer: "Viewer" };
@@ -173,6 +174,7 @@ function MemberTableRow({ workspaceId, member, isPersonal, onUpdated, onRemoved 
   const [role, setRole] = useState(member.role);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const confirm = useConfirm();
 
   const handleRoleChange = async (newRole) => {
     setSaving(true);
@@ -189,7 +191,13 @@ function MemberTableRow({ workspaceId, member, isPersonal, onUpdated, onRemoved 
   };
 
   const handleRemove = async () => {
-    if (!confirm(`Remove ${member.display_name ?? member.email} from this workspace?`)) return;
+    const confirmed = await confirm({
+      title: "Remove member?",
+      message: `Remove ${member.display_name ?? member.email} from this workspace?`,
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setSaving(true);
     setError(null);
     try {
@@ -252,6 +260,7 @@ export default function WorkspaceSettings() {
   const navigate = useNavigate();
   const { isAdmin } = useUser();
   const { refreshWorkspaces } = useWorkspace();
+  const confirm = useConfirm();
 
   const [workspace, setWorkspace] = useState(null);
   const [members, setMembers] = useState([]);
@@ -317,12 +326,13 @@ export default function WorkspaceSettings() {
   };
 
   const handleDelete = async () => {
-    if (
-      !confirm(
-        "Delete this workspace?\n\nWarning: All campaigns in this workspace will become orphaned (unassigned). They will not be deleted."
-      )
-    )
-      return;
+    const confirmed = await confirm({
+      title: "Delete this workspace?",
+      message: "Warning: All campaigns in this workspace will become orphaned (unassigned). They will not be deleted.",
+      confirmLabel: "Delete Workspace",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setDeleting(true);
     setDeleteError(null);
     try {
