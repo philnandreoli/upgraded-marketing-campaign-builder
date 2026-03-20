@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import {
   AuthenticatedTemplate,
@@ -18,6 +19,7 @@ import { UserProvider, useUser } from "./UserContext.jsx";
 import { WorkspaceProvider } from "./WorkspaceContext.jsx";
 import { ConfirmDialogProvider } from "./ConfirmDialogContext.jsx";
 import { ToastProvider } from "./ToastContext.jsx";
+import { NotificationProvider, useNotifications } from "./NotificationContext.jsx";
 
 /**
  * When VITE_AZURE_CLIENT_ID is set we enforce authentication;
@@ -88,6 +90,17 @@ function AuthenticatedApp() {
   const { instance, accounts } = useMsal();
   const activeAccount = accounts[0];
   const { isAdmin } = useUser();
+  const { addEvent } = useNotifications();
+  const lastIndexRef = useRef(0);
+
+  // Feed new WebSocket events into the notification store
+  useEffect(() => {
+    if (events.length > lastIndexRef.current) {
+      const newEvents = events.slice(lastIndexRef.current);
+      newEvents.forEach(addEvent);
+      lastIndexRef.current = events.length;
+    }
+  }, [events, addEvent]);
 
   return (
     <div className="app-shell">
@@ -125,7 +138,9 @@ export default function App() {
         <WorkspaceProvider>
           <ConfirmDialogProvider>
             <ToastProvider>
-              <AuthenticatedApp />
+              <NotificationProvider>
+                <AuthenticatedApp />
+              </NotificationProvider>
             </ToastProvider>
           </ConfirmDialogProvider>
         </WorkspaceProvider>
@@ -140,7 +155,9 @@ export default function App() {
           <WorkspaceProvider>
             <ConfirmDialogProvider>
               <ToastProvider>
-                <AuthenticatedApp />
+                <NotificationProvider>
+                  <AuthenticatedApp />
+                </NotificationProvider>
               </ToastProvider>
             </ConfirmDialogProvider>
           </WorkspaceProvider>

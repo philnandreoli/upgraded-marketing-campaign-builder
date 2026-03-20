@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle.jsx";
+import NotificationCenter from "./NotificationCenter.jsx";
 
 /** Derive up-to-two initials from a display name or email. */
 function getInitials(account) {
@@ -94,6 +95,7 @@ export default function AppNavbar({
       {/* ── Zone 3: Actions ───────────────────────────────────── */}
       <div className="navbar-actions">
         <ThemeToggle />
+        <NotificationCenter />
 
         {/* Vertical divider */}
         <span className="navbar-divider" aria-hidden="true" />
