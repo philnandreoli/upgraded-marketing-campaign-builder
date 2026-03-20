@@ -107,20 +107,36 @@ describe('Dashboard – New Campaign button', () => {
   });
 
   it('is hidden for viewer role', async () => {
-    // With empty campaigns: the empty-state "Create your first campaign" link should also be absent
+    // With empty campaigns: the empty-state CTA buttons should also be absent
     await renderDashboard({ isViewer: true, isAdmin: false });
     expect(screen.queryByText(/create campaign/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/create your first campaign/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/browse workspaces/i)).not.toBeInTheDocument();
   });
 
-  it('shows "Create your first campaign" link for builder when no campaigns exist', async () => {
+  it('shows "Browse Workspaces" link for builder when no campaigns exist', async () => {
     await renderDashboard({ isViewer: false, isAdmin: false });
-    expect(screen.getByText(/create your first campaign/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /browse workspaces/i })).toBeInTheDocument();
   });
 
-  it('hides "Create your first campaign" link for viewer when no campaigns exist', async () => {
+  it('shows "Create Campaign" link when builder has a personal workspace', async () => {
+    const personalWs = { id: 'ws-personal', name: 'My Workspace', is_personal: true, role: 'creator' };
+    await renderDashboard({ isViewer: false, isAdmin: false }, [], [personalWs]);
+    const link = screen.getByRole('link', { name: /create campaign/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/workspaces/ws-personal/campaigns/new');
+  });
+
+  it('hides "Create Campaign" link when builder has no personal workspace', async () => {
+    const teamWs = { id: 'ws-team', name: 'Team Workspace', is_personal: false, role: 'creator' };
+    await renderDashboard({ isViewer: false, isAdmin: false }, [], [teamWs]);
+    expect(screen.getByRole('link', { name: /browse workspaces/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /create campaign/i })).not.toBeInTheDocument();
+  });
+
+  it('hides empty state CTA buttons for viewer when no campaigns exist', async () => {
     await renderDashboard({ isViewer: true, isAdmin: false });
-    expect(screen.queryByText(/create your first campaign/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /browse workspaces/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /create campaign/i })).not.toBeInTheDocument();
   });
 });
 
