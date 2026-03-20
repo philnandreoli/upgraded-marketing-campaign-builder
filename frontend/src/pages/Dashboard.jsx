@@ -332,10 +332,14 @@ export default function Dashboard({ events }) {
       <div>
         {/* Stats hero strip — counts are clickable to activate the matching filter */}
         <div className="dashboard-stats">
-          <div className="stat-card">
+          <button
+            className={`stat-card stat-card--clickable${activeFilter === "all" ? " stat-card--active" : ""}`}
+            onClick={() => handleFilterChange("all")}
+            aria-label="Filter by Total"
+          >
             <span className="stat-number stat-number--total">{campaigns.length}</span>
             <span className="stat-label">Total</span>
-          </div>
+          </button>
           <button
             className={`stat-card stat-card--clickable${activeFilter === "drafts" ? " stat-card--active" : ""}`}
             onClick={() => handleFilterChange("drafts")}
