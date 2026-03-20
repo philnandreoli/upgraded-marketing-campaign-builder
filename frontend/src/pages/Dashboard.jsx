@@ -241,42 +241,6 @@ export default function Dashboard({ events }) {
     ]);
   };
 
-  if (loading && campaigns.length === 0) {
-    return (
-      <div>
-        <div className="dashboard-stats">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <SkeletonStat key={i} />
-          ))}
-        </div>
-        <SkeletonFilterTabs />
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
-        <Toast events={events} notifications={notifications} />
-      </div>
-    );
-  }
-
-  if (campaigns.length === 0) {
-    return (
-      <div className="empty-state">
-        <div className="empty-state-icon">🚀</div>
-        <h2 className="empty-state-title">No campaigns yet</h2>
-        <p className="empty-state-body">
-          Launch your first marketing campaign and let AI handle strategy,
-          content, and channel planning for you.
-        </p>
-        {!isViewer && (
-          <p className="empty-state-body">
-            Select a workspace to create your first campaign.
-          </p>
-        )}
-        <Toast events={events} notifications={notifications} />
-      </div>
-    );
-  }
-
   const draftCount = campaigns.filter((c) => DRAFT_STATUSES.includes(c.status)).length;
   const inProgressCount = campaigns.filter((c) => IN_PROGRESS_STATUSES.includes(c.status)).length;
   const awaitingCount = campaigns.filter((c) => AWAITING_APPROVAL_STATUSES.includes(c.status)).length;
@@ -311,149 +275,188 @@ export default function Dashboard({ events }) {
     return a.name.localeCompare(b.name);
   });
 
-  return (
-    <div>
-      {/* Stats hero strip — counts are clickable to activate the matching filter */}
-      <div className="dashboard-stats">
-        <div className="stat-card">
-          <span className="stat-number stat-number--total">{campaigns.length}</span>
-          <span className="stat-label">Total</span>
-        </div>
-        <button
-          className={`stat-card stat-card--clickable${activeFilter === "drafts" ? " stat-card--active" : ""}`}
-          onClick={() => handleFilterChange("drafts")}
-          aria-label="Filter by Drafts"
-        >
-          <span className="stat-number stat-number--drafts">{draftCount}</span>
-          <span className="stat-label">Drafts</span>
-        </button>
-        <button
-          className={`stat-card stat-card--clickable${activeFilter === "in_progress" ? " stat-card--active" : ""}`}
-          onClick={() => handleFilterChange("in_progress")}
-          aria-label="Filter by In Progress"
-        >
-          <span className="stat-number stat-number--progress">{inProgressCount}</span>
-          <span className="stat-label">In Progress</span>
-        </button>
-        <button
-          className={`stat-card stat-card--clickable${activeFilter === "needs_approval" ? " stat-card--active" : ""}`}
-          onClick={() => handleFilterChange("needs_approval")}
-          aria-label="Filter by Awaiting Approval"
-        >
-          <span className="stat-number stat-number--warning">{awaitingCount}</span>
-          <span className="stat-label">Awaiting Approval</span>
-        </button>
-        <button
-          className={`stat-card stat-card--clickable${activeFilter === "approved" ? " stat-card--active" : ""}`}
-          onClick={() => handleFilterChange("approved")}
-          aria-label="Filter by Approved"
-        >
-          <span className="stat-number stat-number--success">{approvedCount}</span>
-          <span className="stat-label">Approved</span>
-        </button>
-        <div className="stat-card">
-          <span className="stat-number stat-number--workspaces">{workspaceCount}</span>
-          <span className="stat-label">Workspaces</span>
-        </div>
-      </div>
-
-      {/* Filter tab bar */}
-      <FilterTabs activeTab={activeFilter} onTabChange={handleFilterChange} />
-
-      {/* Search bar */}
-      <SearchBar
-        value={searchQuery}
-        onChange={handleSearchChange}
-        onClear={handleSearchClear}
-      />
-
-      {/* Saved views: system presets + user-created views */}
-      <SavedViews
-        activeFilter={activeFilter}
-        searchQuery={debouncedQuery}
-        views={views}
-        onApply={handleApplyView}
-        onAdd={addView}
-        onRemove={removeView}
-        onRename={renameView}
-      />
-
-      <div className="section-header">
-        <h2>Campaigns</h2>
-        {loading && campaigns.length > 0 && (
-          <span className="campaign-list-loading" aria-live="polite">
-            <span className="spinner" />
-            Refreshing…
-          </span>
-        )}
-        {debouncedQuery && (
-          <span className="search-result-count">
-            Showing {searchedCampaigns.length} of {filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
-
-      {searchedCampaigns.length === 0 ? (
-        <div id="campaign-tabpanel" role="tabpanel" className="empty-state">
-          <div className="empty-state-icon">🔍</div>
-          {debouncedQuery ? (
-            <>
-              <h2 className="empty-state-title">No campaigns match your search</h2>
-              <p className="empty-state-body">
-                No results for &ldquo;{debouncedQuery}&rdquo;.{" "}
-                <button className="empty-state-reset" onClick={handleSearchClear}>
-                  Clear search
-                </button>{" "}
-                or try a different term.
-              </p>
-            </>
-          ) : (
-            <>
-              <h2 className="empty-state-title">No campaigns match this filter</h2>
-              <p className="empty-state-body">
-                Try selecting a different filter or{" "}
-                <button className="empty-state-reset" onClick={() => handleFilterChange("all")}>
-                  view all campaigns
-                </button>
-                .
-              </p>
-            </>
-          )}
-        </div>
-      ) : (
-        <div id="campaign-tabpanel" role="tabpanel" className="workspace-list">
-          {sortedWorkspaces
-            .filter((ws) => !isFiltered || (campaignsByWorkspace[ws.id]?.length ?? 0) > 0)
-            .map((ws) => (
-            <WorkspaceSection
-              key={ws.id}
-              workspace={ws}
-              campaigns={campaignsByWorkspace[ws.id] ?? []}
-              isAdmin={isAdmin}
-              isViewer={isViewer}
-              user={user}
-              onDelete={handleDelete}
-              allWorkspaces={workspaces}
-              deletingId={deleting}
-            />
+  let content;
+  if (loading && campaigns.length === 0) {
+    content = (
+      <div>
+        <div className="dashboard-stats">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <SkeletonStat key={i} />
           ))}
-          {/* Orphaned campaigns: admin only */}
-          {isAdmin && orphanedCampaigns.length > 0 && (
-            <WorkspaceSection
-              workspace={{ id: "__orphaned__", name: "Orphaned Campaigns", is_personal: false, role: "creator" }}
-              campaigns={orphanedCampaigns}
-              isAdmin={isAdmin}
-              isViewer={isViewer}
-              user={user}
-              onDelete={handleDelete}
-              allWorkspaces={workspaces}
-              deletingId={deleting}
-            />
+        </div>
+        <SkeletonFilterTabs />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
+  } else if (campaigns.length === 0) {
+    content = (
+      <div className="empty-state">
+        <div className="empty-state-icon">🚀</div>
+        <h2 className="empty-state-title">No campaigns yet</h2>
+        <p className="empty-state-body">
+          Launch your first marketing campaign and let AI handle strategy,
+          content, and channel planning for you.
+        </p>
+        {!isViewer && (
+          <p className="empty-state-body">
+            Select a workspace to create your first campaign.
+          </p>
+        )}
+      </div>
+    );
+  } else {
+    content = (
+      <div>
+        {/* Stats hero strip — counts are clickable to activate the matching filter */}
+        <div className="dashboard-stats">
+          <div className="stat-card">
+            <span className="stat-number stat-number--total">{campaigns.length}</span>
+            <span className="stat-label">Total</span>
+          </div>
+          <button
+            className={`stat-card stat-card--clickable${activeFilter === "drafts" ? " stat-card--active" : ""}`}
+            onClick={() => handleFilterChange("drafts")}
+            aria-label="Filter by Drafts"
+          >
+            <span className="stat-number stat-number--drafts">{draftCount}</span>
+            <span className="stat-label">Drafts</span>
+          </button>
+          <button
+            className={`stat-card stat-card--clickable${activeFilter === "in_progress" ? " stat-card--active" : ""}`}
+            onClick={() => handleFilterChange("in_progress")}
+            aria-label="Filter by In Progress"
+          >
+            <span className="stat-number stat-number--progress">{inProgressCount}</span>
+            <span className="stat-label">In Progress</span>
+          </button>
+          <button
+            className={`stat-card stat-card--clickable${activeFilter === "needs_approval" ? " stat-card--active" : ""}`}
+            onClick={() => handleFilterChange("needs_approval")}
+            aria-label="Filter by Awaiting Approval"
+          >
+            <span className="stat-number stat-number--warning">{awaitingCount}</span>
+            <span className="stat-label">Awaiting Approval</span>
+          </button>
+          <button
+            className={`stat-card stat-card--clickable${activeFilter === "approved" ? " stat-card--active" : ""}`}
+            onClick={() => handleFilterChange("approved")}
+            aria-label="Filter by Approved"
+          >
+            <span className="stat-number stat-number--success">{approvedCount}</span>
+            <span className="stat-label">Approved</span>
+          </button>
+          <div className="stat-card">
+            <span className="stat-number stat-number--workspaces">{workspaceCount}</span>
+            <span className="stat-label">Workspaces</span>
+          </div>
+        </div>
+
+        {/* Filter tab bar */}
+        <FilterTabs activeTab={activeFilter} onTabChange={handleFilterChange} />
+
+        {/* Search bar */}
+        <SearchBar
+          value={searchQuery}
+          onChange={handleSearchChange}
+          onClear={handleSearchClear}
+        />
+
+        {/* Saved views: system presets + user-created views */}
+        <SavedViews
+          activeFilter={activeFilter}
+          searchQuery={debouncedQuery}
+          views={views}
+          onApply={handleApplyView}
+          onAdd={addView}
+          onRemove={removeView}
+          onRename={renameView}
+        />
+
+        <div className="section-header">
+          <h2>Campaigns</h2>
+          {loading && campaigns.length > 0 && (
+            <span className="campaign-list-loading" aria-live="polite">
+              <span className="spinner" />
+              Refreshing…
+            </span>
+          )}
+          {debouncedQuery && (
+            <span className="search-result-count">
+              Showing {searchedCampaigns.length} of {filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? "s" : ""}
+            </span>
           )}
         </div>
-      )}
+
+        {searchedCampaigns.length === 0 ? (
+          <div id="campaign-tabpanel" role="tabpanel" className="empty-state">
+            <div className="empty-state-icon">🔍</div>
+            {debouncedQuery ? (
+              <>
+                <h2 className="empty-state-title">No campaigns match your search</h2>
+                <p className="empty-state-body">
+                  No results for &ldquo;{debouncedQuery}&rdquo;.{" "}
+                  <button className="empty-state-reset" onClick={handleSearchClear}>
+                    Clear search
+                  </button>{" "}
+                  or try a different term.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="empty-state-title">No campaigns match this filter</h2>
+                <p className="empty-state-body">
+                  Try selecting a different filter or{" "}
+                  <button className="empty-state-reset" onClick={() => handleFilterChange("all")}>
+                    view all campaigns
+                  </button>
+                  .
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
+          <div id="campaign-tabpanel" role="tabpanel" className="workspace-list">
+            {sortedWorkspaces
+              .filter((ws) => !isFiltered || (campaignsByWorkspace[ws.id]?.length ?? 0) > 0)
+              .map((ws) => (
+              <WorkspaceSection
+                key={ws.id}
+                workspace={ws}
+                campaigns={campaignsByWorkspace[ws.id] ?? []}
+                isAdmin={isAdmin}
+                isViewer={isViewer}
+                user={user}
+                onDelete={handleDelete}
+                allWorkspaces={workspaces}
+                deletingId={deleting}
+              />
+            ))}
+            {/* Orphaned campaigns: admin only */}
+            {isAdmin && orphanedCampaigns.length > 0 && (
+              <WorkspaceSection
+                workspace={{ id: "__orphaned__", name: "Orphaned Campaigns", is_personal: false, role: "creator" }}
+                campaigns={orphanedCampaigns}
+                isAdmin={isAdmin}
+                isViewer={isViewer}
+                user={user}
+                onDelete={handleDelete}
+                allWorkspaces={workspaces}
+                deletingId={deleting}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {content}
       <Toast events={events} notifications={notifications} />
-    </div>
+    </>
   );
 }
 
