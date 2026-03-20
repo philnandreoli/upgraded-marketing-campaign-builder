@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
@@ -196,39 +196,51 @@ export default function Dashboard({ events }) {
     ]);
   };
 
-  const draftCount = campaigns.filter((c) => DRAFT_STATUSES.includes(c.status)).length;
-  const inProgressCount = campaigns.filter((c) => IN_PROGRESS_STATUSES.includes(c.status)).length;
-  const awaitingCount = campaigns.filter((c) => AWAITING_APPROVAL_STATUSES.includes(c.status)).length;
-  const approvedCount = campaigns.filter((c) => APPROVED_STATUSES.includes(c.status)).length;
+  const draftCount = useMemo(() => campaigns.filter((c) => DRAFT_STATUSES.includes(c.status)).length, [campaigns]);
+  const inProgressCount = useMemo(() => campaigns.filter((c) => IN_PROGRESS_STATUSES.includes(c.status)).length, [campaigns]);
+  const awaitingCount = useMemo(() => campaigns.filter((c) => AWAITING_APPROVAL_STATUSES.includes(c.status)).length, [campaigns]);
+  const approvedCount = useMemo(() => campaigns.filter((c) => APPROVED_STATUSES.includes(c.status)).length, [campaigns]);
   const workspaceCount = workspaces.length;
 
   // Apply the active filter tab to narrow the campaign list
-  const filteredCampaigns = applyFilter(campaigns, activeFilter, user, workspaces);
+  const filteredCampaigns = useMemo(
+    () => applyFilter(campaigns, activeFilter, user, workspaces),
+    [campaigns, activeFilter, user, workspaces]
+  );
 
   // Apply search query on top of the tab-filtered results
-  const searchedCampaigns = filteredCampaigns.filter((c) => matchesSearch(c, debouncedQuery));
+  const searchedCampaigns = useMemo(
+    () => filteredCampaigns.filter((c) => matchesSearch(c, debouncedQuery)),
+    [filteredCampaigns, debouncedQuery]
+  );
 
   // Group searched campaigns by workspace_id; null workspace_id → orphaned
-  const campaignsByWorkspace = {};
-  const orphanedCampaigns = [];
-  for (const c of searchedCampaigns) {
-    if (c.workspace_id) {
-      if (!campaignsByWorkspace[c.workspace_id]) campaignsByWorkspace[c.workspace_id] = [];
-      campaignsByWorkspace[c.workspace_id].push(c);
-    } else {
-      orphanedCampaigns.push(c);
+  const { campaignsByWorkspace, orphanedCampaigns } = useMemo(() => {
+    const byWorkspace = {};
+    const orphaned = [];
+    for (const c of searchedCampaigns) {
+      if (c.workspace_id) {
+        if (!byWorkspace[c.workspace_id]) byWorkspace[c.workspace_id] = [];
+        byWorkspace[c.workspace_id].push(c);
+      } else {
+        orphaned.push(c);
+      }
     }
-  }
+    return { campaignsByWorkspace: byWorkspace, orphanedCampaigns: orphaned };
+  }, [searchedCampaigns]);
 
   // Determine whether any filter or search is active
   const isFiltered = activeFilter !== "all" || debouncedQuery.length > 0;
 
   // Sort workspaces: personal workspace first, then alphabetically
-  const sortedWorkspaces = [...workspaces].sort((a, b) => {
-    if (a.is_personal && !b.is_personal) return -1;
-    if (!a.is_personal && b.is_personal) return 1;
-    return a.name.localeCompare(b.name);
-  });
+  const sortedWorkspaces = useMemo(
+    () => [...workspaces].sort((a, b) => {
+      if (a.is_personal && !b.is_personal) return -1;
+      if (!a.is_personal && b.is_personal) return 1;
+      return a.name.localeCompare(b.name);
+    }),
+    [workspaces]
+  );
 
   let content;
   if (loading && campaigns.length === 0) {
