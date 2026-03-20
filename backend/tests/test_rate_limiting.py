@@ -24,8 +24,8 @@ from sqlalchemy.pool import StaticPool
 
 from backend.main import app
 from backend.models.user import User, UserRole
-from backend.services.auth import get_current_user
-from backend.services.database import Base, UserRow, get_db
+from backend.infrastructure.auth import get_current_user
+from backend.infrastructure.database import Base, UserRow, get_db
 from backend.tests.mock_store import InMemoryCampaignStore
 from backend.infrastructure.ticket_store import InMemoryTicketStore
 

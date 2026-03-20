@@ -16,7 +16,7 @@ from backend.main import app
 from backend.models.campaign import Campaign, CampaignBrief, CampaignContent, CampaignStatus, ContentApprovalStatus, ContentPiece
 from backend.models.user import User, UserRole
 from backend.core.exceptions import ConcurrentUpdateError
-from backend.services.auth import get_current_user
+from backend.infrastructure.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
 
 _TEST_USER = User(
@@ -917,7 +917,7 @@ class TestAuthDependencies:
 
     async def test_require_authenticated_passes_for_user(self):
         """require_authenticated returns the user when one is present."""
-        from backend.services.auth import require_authenticated
+        from backend.infrastructure.auth import require_authenticated
 
         result = await require_authenticated(_TEST_USER)
         assert result == _TEST_USER
@@ -925,7 +925,7 @@ class TestAuthDependencies:
     async def test_require_authenticated_raises_401_for_none(self):
         """require_authenticated raises 401 when user is None (auth disabled)."""
         from fastapi import HTTPException
-        from backend.services.auth import require_authenticated
+        from backend.infrastructure.auth import require_authenticated
 
         with pytest.raises(HTTPException) as exc_info:
             await require_authenticated(None)
@@ -933,14 +933,14 @@ class TestAuthDependencies:
 
     async def test_require_campaign_builder_passes_for_builder(self):
         """require_campaign_builder passes for campaign_builder role."""
-        from backend.services.auth import require_campaign_builder
+        from backend.infrastructure.auth import require_campaign_builder
 
         result = await require_campaign_builder(_TEST_USER)
         assert result == _TEST_USER
 
     async def test_require_campaign_builder_passes_for_admin(self):
         """require_campaign_builder passes for admin role."""
-        from backend.services.auth import require_campaign_builder
+        from backend.infrastructure.auth import require_campaign_builder
 
         admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
         result = await require_campaign_builder(admin_user)
@@ -949,7 +949,7 @@ class TestAuthDependencies:
     async def test_require_campaign_builder_raises_403_for_viewer(self):
         """require_campaign_builder raises 403 for viewer role."""
         from fastapi import HTTPException
-        from backend.services.auth import require_campaign_builder
+        from backend.infrastructure.auth import require_campaign_builder
 
         viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
         with pytest.raises(HTTPException) as exc_info:
@@ -959,7 +959,7 @@ class TestAuthDependencies:
     async def test_require_campaign_builder_raises_401_for_none(self):
         """require_campaign_builder raises 401 when user is None."""
         from fastapi import HTTPException
-        from backend.services.auth import require_campaign_builder
+        from backend.infrastructure.auth import require_campaign_builder
 
         with pytest.raises(HTTPException) as exc_info:
             await require_campaign_builder(None)
@@ -967,7 +967,7 @@ class TestAuthDependencies:
 
     async def test_require_admin_passes_for_admin(self):
         """require_admin passes for admin role."""
-        from backend.services.auth import require_admin
+        from backend.infrastructure.auth import require_admin
 
         admin_user = User(id="admin-001", email="admin@example.com", display_name="Admin", roles=[UserRole.ADMIN])
         result = await require_admin(admin_user)
@@ -976,7 +976,7 @@ class TestAuthDependencies:
     async def test_require_admin_raises_403_for_campaign_builder(self):
         """require_admin raises 403 for campaign_builder role."""
         from fastapi import HTTPException
-        from backend.services.auth import require_admin
+        from backend.infrastructure.auth import require_admin
 
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(_TEST_USER)
@@ -985,7 +985,7 @@ class TestAuthDependencies:
     async def test_require_admin_raises_403_for_viewer(self):
         """require_admin raises 403 for viewer role."""
         from fastapi import HTTPException
-        from backend.services.auth import require_admin
+        from backend.infrastructure.auth import require_admin
 
         viewer = User(id="viewer-001", email="viewer@example.com", display_name="Viewer", roles=[UserRole.VIEWER])
         with pytest.raises(HTTPException) as exc_info:
@@ -995,7 +995,7 @@ class TestAuthDependencies:
     async def test_require_admin_raises_401_for_none(self):
         """require_admin raises 401 when user is None."""
         from fastapi import HTTPException
-        from backend.services.auth import require_admin
+        from backend.infrastructure.auth import require_admin
 
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(None)

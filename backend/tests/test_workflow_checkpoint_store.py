@@ -304,7 +304,7 @@ class TestWorkflowCheckpointStoreIntegration:
     async def persisted_campaign(self):
         """Insert a campaign row so FK constraints are satisfied."""
         from backend.services import database as db_mod
-        from backend.services.database import async_session, CampaignRow
+        from backend.infrastructure.database import async_session, CampaignRow
         from datetime import datetime
 
         now = datetime.utcnow()
