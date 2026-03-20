@@ -20,8 +20,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from backend.models.user import User, UserRole
@@ -146,7 +145,10 @@ async def create_workspace(
 
 @router.get("/workspaces", response_model=list[WorkspaceSummary])
 async def list_workspaces(
+    response: Response,
     user: Optional[User] = Depends(get_current_user),
+    limit: Optional[int] = Query(default=None, ge=1, description="Optional max number of workspaces to return."),
+    offset: int = Query(default=0, ge=0, description="Optional number of workspaces to skip before returning results."),
 ) -> list[WorkspaceSummary]:
     """List workspaces the current user belongs to. Admins see all workspaces."""
     store = get_campaign_store()
@@ -203,7 +205,16 @@ async def list_workspaces(
                 created_at=ws.created_at,
             )
         )
-    return result
+    total_count = len(result)
+    end = offset + limit if limit is not None else None
+    paged_result = result[offset:end]
+    returned_count = len(paged_result)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Limit"] = str(limit) if limit is not None else "all"
+    response.headers["X-Returned-Count"] = str(returned_count)
+    response.headers["X-Has-More"] = str(offset + returned_count < total_count).lower()
+    return paged_result
 
 
 @router.get("/workspaces/{workspace_id}", response_model=WorkspaceResponse)

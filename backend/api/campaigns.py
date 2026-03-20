@@ -205,13 +205,17 @@ async def update_draft_campaign(
 @router.get("/campaigns", response_model=list[CampaignSummary])
 async def list_campaigns(
     workspace_id: str,
+    response: Response,
     user: Optional[User] = Depends(get_current_user),
     include_drafts: bool = Query(default=False, description="When true, include DRAFT campaigns in the response."),
+    limit: Optional[int] = Query(default=None, ge=1, description="Optional max number of campaigns to return."),
+    offset: int = Query(default=0, ge=0, description="Optional number of campaigns to skip before returning results."),
 ) -> list[CampaignSummary]:
     """Return campaigns in the specified workspace visible to the current user.
 
     Draft campaigns are excluded by default.  Pass ``?include_drafts=true`` to
-    include them (e.g. for the Drafts section of the dashboard).
+    include them (e.g. for the Drafts section of the dashboard). Pagination is
+    optional; if ``limit`` is omitted, all remaining campaigns are returned.
     """
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
@@ -223,6 +227,16 @@ async def list_campaigns(
 
     if not include_drafts:
         campaigns = [c for c in campaigns if c.status != CampaignStatus.DRAFT]
+
+    total_count = len(campaigns)
+    end = offset + limit if limit is not None else None
+    campaigns = campaigns[offset:end]
+    returned_count = len(campaigns)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Limit"] = str(limit) if limit is not None else "all"
+    response.headers["X-Returned-Count"] = str(returned_count)
+    response.headers["X-Has-More"] = str(offset + returned_count < total_count).lower()
 
     return [
         CampaignSummary(

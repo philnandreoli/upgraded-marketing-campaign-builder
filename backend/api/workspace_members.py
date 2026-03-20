@@ -13,8 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from backend.models.user import User
@@ -62,7 +61,10 @@ class WorkspaceMemberResponse(BaseModel):
 @router.get("/workspaces/{workspace_id}/members", response_model=list[WorkspaceMemberResponse])
 async def list_workspace_members(
     workspace_id: str,
+    response: Response,
     user: Optional[User] = Depends(get_current_user),
+    limit: Optional[int] = Query(default=None, ge=1, description="Optional max number of members to return."),
+    offset: int = Query(default=0, ge=0, description="Optional number of members to skip before returning results."),
 ) -> list[WorkspaceMemberResponse]:
     """List all members of a workspace. Requires workspace membership or admin."""
     store = _ws.get_campaign_store()
@@ -71,6 +73,15 @@ async def list_workspace_members(
         raise HTTPException(status_code=404, detail="Workspace not found")
     await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
     members = await store.list_workspace_members(workspace_id)
+    total_count = len(members)
+    end = offset + limit if limit is not None else None
+    members = members[offset:end]
+    returned_count = len(members)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Limit"] = str(limit) if limit is not None else "all"
+    response.headers["X-Returned-Count"] = str(returned_count)
+    response.headers["X-Has-More"] = str(offset + returned_count < total_count).lower()
     return [
         WorkspaceMemberResponse(
             workspace_id=m.workspace_id,

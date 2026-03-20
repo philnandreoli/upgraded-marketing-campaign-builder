@@ -13,8 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from backend.models.campaign import Campaign
 from backend.models.user import CampaignMemberRole, User
@@ -34,11 +33,23 @@ router = APIRouter(tags=["campaigns"])
 
 @router.get("/campaigns/{campaign_id}/members")
 async def list_campaign_members(
+    response: Response,
     campaign: Campaign = Depends(get_campaign_for_read),
+    limit: Optional[int] = Query(default=None, ge=1, description="Optional max number of members to return."),
+    offset: int = Query(default=0, ge=0, description="Optional number of members to skip before returning results."),
 ) -> list[CampaignMemberResponse]:
     """List all members of a campaign. Requires READ access."""
     store = get_campaign_store()
     members = await store.list_members(campaign.id)
+    total_count = len(members)
+    end = offset + limit if limit is not None else None
+    members = members[offset:end]
+    returned_count = len(members)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Limit"] = str(limit) if limit is not None else "all"
+    response.headers["X-Returned-Count"] = str(returned_count)
+    response.headers["X-Has-More"] = str(offset + returned_count < total_count).lower()
     return [
         CampaignMemberResponse(
             campaign_id=m.campaign_id,
