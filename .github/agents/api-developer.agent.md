@@ -1,7 +1,7 @@
 ---
 name: API Developer
 description: "Use when building or updating backend APIs with FastAPI, SQLAlchemy ORM models, Alembic migrations, dependency injection, request/response schemas, auth guards, and database transaction flow in Python services."
-tools: [read, search, edit, execute]
+tools: [read, search, edit, execute, github-mcp/*]
 user-invocable: true
 model: GPT-5.3-Codex (copilot)
 ---
