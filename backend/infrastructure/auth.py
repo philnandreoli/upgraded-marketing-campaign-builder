@@ -15,6 +15,7 @@ admin role (bootstrap); all subsequent new users default to viewer.
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from datetime import datetime
@@ -231,6 +232,41 @@ async def get_current_user(
     return await validate_token(token, db)
 
 
+# ---------------------------------------------------------------------------
+# Issuer helpers
+# ---------------------------------------------------------------------------
+
+# Matches the Azure AD authority pattern and captures the tenant ID.
+_AZURE_AD_AUTHORITY_RE = re.compile(
+    r"https://login\.microsoftonline\.com/(?P<tenant>[^/]+)"
+)
+
+
+def _build_valid_issuers(authority: str) -> list[str]:
+    """Return a list of accepted ``iss`` claim values for the given authority.
+
+    Azure AD issues v1.0 or v2.0 format access tokens depending on the
+    ``accessTokenAcceptedVersion`` in the app registration manifest — *not*
+    the endpoint URL.  The issuer claim differs between versions:
+
+    * v1.0 → ``https://sts.windows.net/{tenant}/``
+    * v2.0 → ``https://login.microsoftonline.com/{tenant}/v2.0``
+
+    To avoid 401 errors when the manifest setting doesn't match the
+    authority URL, we accept both formats.
+    """
+    authority = authority.rstrip("/")
+    m = _AZURE_AD_AUTHORITY_RE.match(authority)
+    if m:
+        tenant = m.group("tenant")
+        return [
+            f"https://login.microsoftonline.com/{tenant}/v2.0",
+            f"https://sts.windows.net/{tenant}/",
+        ]
+    # Non-Azure provider: use the authority as-is.
+    return [authority]
+
+
 async def validate_token(token: str, db: AsyncSession) -> User:
     """Validate a raw JWT token string and return the authenticated User.
 
@@ -293,14 +329,18 @@ async def validate_token(token: str, db: AsyncSession) -> User:
 
         # Enforce the expected token issuer to prevent tokens from other tenants
         # or identity providers from being accepted.
-        expected_issuer = settings.oidc.authority.rstrip("/")
+        # Azure AD may issue v1.0 or v2.0 tokens depending on the app
+        # registration's accessTokenAcceptedVersion — the issuer format
+        # differs between the two versions.  Accept both so that either
+        # token version is validated correctly.
+        valid_issuers = _build_valid_issuers(settings.oidc.authority)
 
         payload = jwt.decode(
             token,
             signing_key,
             algorithms=["RS256"],
             audience=valid_audiences,
-            issuer=expected_issuer,
+            issuer=valid_issuers,
         )
 
         # Enforce access-token semantics: require at least one authorization

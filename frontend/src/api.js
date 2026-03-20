@@ -1,5 +1,5 @@
 import { request } from "./lib/apiClient.js";
-import { getBearerToken } from "./lib/auth.js";
+import { authEnabled } from "./lib/auth.js";
 
 export { ApiError, RateLimitError } from "./lib/apiClient.js";
 
@@ -147,8 +147,7 @@ export async function getWsUrl(campaignId = null) {
     base = `${proto}://${window.location.host}`;
   }
   const path = campaignId ? `${base}/ws/${campaignId}` : `${base}/ws`;
-  const token = await getBearerToken();
-  if (!token) {
+  if (!authEnabled) {
     // Auth disabled (local-dev) — connect without a ticket
     return path;
   }

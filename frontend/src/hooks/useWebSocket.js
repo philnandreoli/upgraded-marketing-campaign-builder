@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getWsUrl, RateLimitError } from "../api";
+import { getWsUrl, ApiError, RateLimitError } from "../api";
 
 /** Starting reconnect delay in milliseconds. */
 const BASE_DELAY_MS = 1000;
@@ -32,6 +32,13 @@ export default function useWebSocket(campaignId = null) {
       url = await getWsUrl(campaignId);
     } catch (err) {
       console.error("Failed to obtain WS ticket:", err);
+
+      // Auth errors (401/403) are not transient — retrying won't help.
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        queueMicrotask(() => setConnectionFailed(true));
+        return;
+      }
+
       failureCountRef.current += 1;
       if (failureCountRef.current >= MAX_FAILURES) {
         queueMicrotask(() => setConnectionFailed(true));

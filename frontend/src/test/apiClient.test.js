@@ -13,6 +13,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Mock the auth module before importing apiClient
 vi.mock("../lib/auth.js", () => ({
   authHeaders: vi.fn().mockResolvedValue({}),
+  authEnabled: false,
+  redirectToLogin: vi.fn(),
 }));
 
 import { request, ApiError, RateLimitError } from "../lib/apiClient.js";
