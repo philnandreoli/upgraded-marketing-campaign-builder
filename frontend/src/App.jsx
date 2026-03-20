@@ -16,6 +16,8 @@ import AppNavbar from "./components/AppNavbar.jsx";
 import { loginRequest } from "./authConfig.js";
 import { UserProvider, useUser } from "./UserContext.jsx";
 import { WorkspaceProvider } from "./WorkspaceContext.jsx";
+import { ConfirmDialogProvider } from "./ConfirmDialogContext.jsx";
+import { ToastProvider } from "./ToastContext.jsx";
 
 /**
  * When VITE_AZURE_CLIENT_ID is set we enforce authentication;
@@ -121,7 +123,11 @@ export default function App() {
     return (
       <UserProvider>
         <WorkspaceProvider>
-          <AuthenticatedApp />
+          <ConfirmDialogProvider>
+            <ToastProvider>
+              <AuthenticatedApp />
+            </ToastProvider>
+          </ConfirmDialogProvider>
         </WorkspaceProvider>
       </UserProvider>
     );
@@ -132,7 +138,11 @@ export default function App() {
       <AuthenticatedTemplate>
         <UserProvider>
           <WorkspaceProvider>
-            <AuthenticatedApp />
+            <ConfirmDialogProvider>
+              <ToastProvider>
+                <AuthenticatedApp />
+              </ToastProvider>
+            </ConfirmDialogProvider>
           </WorkspaceProvider>
         </UserProvider>
       </AuthenticatedTemplate>

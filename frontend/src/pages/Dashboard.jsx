@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
+import { useConfirm } from "../ConfirmDialogContext";
 import { SkeletonCard, SkeletonStat, SkeletonFilterTabs } from "../components/Skeleton";
 import WorkspaceSection from "../components/WorkspaceSection";
 import FilterTabs from "../components/FilterTabs";
@@ -93,6 +94,7 @@ export default function Dashboard({ events }) {
   const { isViewer, isAdmin, user } = useUser();
   const { workspaces } = useWorkspace();
   const { views, addView, removeView, renameView } = useSavedViews();
+  const confirm = useConfirm();
 
   const updateSearchParams = (filter, query) => {
     setSearchParams(
@@ -185,8 +187,14 @@ export default function Dashboard({ events }) {
     };
   }, []);
 
-  const handleDelete = (id, workspaceId) => {
-    if (!confirm("Delete this campaign?")) return;
+  const handleDelete = async (id, workspaceId) => {
+    const confirmed = await confirm({
+      title: "Delete this campaign?",
+      message: "This action cannot be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     const campaign = campaigns.find((c) => c.id === id);
     if (!campaign) return;

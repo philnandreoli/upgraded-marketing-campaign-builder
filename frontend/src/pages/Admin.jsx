@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import { useConfirm } from "../ConfirmDialogContext";
 
 const ROLES = ["admin", "campaign_builder", "viewer"];
 const INCOMPATIBLE = { campaign_builder: "viewer", viewer: "campaign_builder" };
@@ -113,6 +114,7 @@ export default function Admin() {
   const [deactivateError, setDeactivateError] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
   const navigate = useNavigate();
+  const confirm = useConfirm();
 
   // Entra ID directory search state
   const [entraSearch, setEntraSearch] = useState("");
@@ -181,7 +183,13 @@ export default function Admin() {
   };
 
   const handleDeactivate = async (userId) => {
-    if (!confirm("Deactivate this user? They will lose access to the platform.")) return;
+    const confirmed = await confirm({
+      title: "Deactivate user?",
+      message: "Deactivate this user? They will lose access to the platform.",
+      confirmLabel: "Deactivate",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setDeactivateError(null);
     try {
       await deactivateUser(userId);

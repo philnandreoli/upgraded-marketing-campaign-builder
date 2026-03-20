@@ -2,12 +2,14 @@
  * Tests for WorkspaceSettings page.
  */
 
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import WorkspaceSettings from '../pages/WorkspaceSettings';
 import { UserProvider } from '../UserContext';
 import { WorkspaceProvider } from '../WorkspaceContext';
+import { ConfirmDialogProvider } from '../ConfirmDialogContext';
+import { ToastProvider } from '../ToastContext';
 
 vi.mock('../api');
 
@@ -46,9 +48,13 @@ async function renderSettings(
     <MemoryRouter initialEntries={[`/workspaces/${wsId}/settings`]}>
       <UserProvider>
         <WorkspaceProvider>
-          <Routes>
-            <Route path="/workspaces/:id/settings" element={<WorkspaceSettings />} />
-          </Routes>
+          <ConfirmDialogProvider>
+            <ToastProvider>
+              <Routes>
+                <Route path="/workspaces/:id/settings" element={<WorkspaceSettings />} />
+              </Routes>
+            </ToastProvider>
+          </ConfirmDialogProvider>
         </WorkspaceProvider>
       </UserProvider>
     </MemoryRouter>,
@@ -155,28 +161,37 @@ describe('WorkspaceSettings – danger zone', () => {
 
   it('calls deleteWorkspace and navigates on confirm', async () => {
     api.deleteWorkspace.mockResolvedValue(undefined);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     await renderSettings('ws-1', ws, []);
     await waitFor(() => screen.getByRole('button', { name: /delete workspace/i }));
-    fireEvent.click(screen.getByRole('button', { name: /delete workspace/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /delete workspace/i }));
+    });
+
+    // Confirm via the modal
+    const dialog = await waitFor(() => screen.getByRole('dialog'));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: /^delete workspace$/i }));
+    });
 
     await waitFor(() => expect(api.deleteWorkspace).toHaveBeenCalledWith('ws-1'));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/workspaces'));
-
-    window.confirm.mockRestore();
   });
 
   it('does not delete when confirm is cancelled', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-
     await renderSettings('ws-1', ws, []);
     await waitFor(() => screen.getByRole('button', { name: /delete workspace/i }));
-    fireEvent.click(screen.getByRole('button', { name: /delete workspace/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /delete workspace/i }));
+    });
+
+    // Cancel via the modal
+    await waitFor(() => screen.getByRole('dialog'));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    });
 
     expect(api.deleteWorkspace).not.toHaveBeenCalled();
-
-    window.confirm.mockRestore();
   });
 });
 

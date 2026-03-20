@@ -6,6 +6,7 @@ import {
   removeWorkspaceMember,
   updateWorkspaceMemberRole,
 } from "../api";
+import { useConfirm } from "../ConfirmDialogContext";
 
 const WORKSPACE_ROLES = ["creator", "contributor", "viewer"];
 const ROLE_LABELS = { creator: "Creator", contributor: "Contributor", viewer: "Viewer" };
@@ -219,6 +220,7 @@ export default function WorkspaceMembersSection({ workspaceId, isPersonal = fals
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [removeError, setRemoveError] = useState(null);
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     setError(null);
@@ -257,7 +259,13 @@ export default function WorkspaceMembersSection({ workspaceId, isPersonal = fals
   };
 
   const handleRemove = async (userId) => {
-    if (!confirm("Remove this member from the workspace?")) return;
+    const confirmed = await confirm({
+      title: "Remove member?",
+      message: "Remove this member from the workspace?",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!confirmed) return;
     setRemoveError(null);
     try {
       await removeWorkspaceMember(workspaceId, userId);

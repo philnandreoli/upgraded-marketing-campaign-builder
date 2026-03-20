@@ -16,6 +16,8 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import Dashboard from "../pages/Dashboard";
 import { UserProvider } from "../UserContext";
 import { WorkspaceProvider } from "../WorkspaceContext";
+import { ConfirmDialogProvider } from "../ConfirmDialogContext";
+import { ToastProvider } from "../ToastContext";
 import { SAVED_VIEWS_STORAGE_KEY, MAX_SAVED_VIEWS } from "../hooks/useSavedViews";
 
 vi.mock("../api");
@@ -74,7 +76,11 @@ async function renderDashboard({ initialUrl = "/" } = {}, campaigns = [], worksp
     <MemoryRouter initialEntries={[initialUrl]}>
       <UserProvider>
         <WorkspaceProvider>
-          <Dashboard events={[]} />
+          <ConfirmDialogProvider>
+            <ToastProvider>
+              <Dashboard events={[]} />
+            </ToastProvider>
+          </ConfirmDialogProvider>
         </WorkspaceProvider>
       </UserProvider>
     </MemoryRouter>
