@@ -1,4 +1,4 @@
-import { authHeaders } from "./auth.js";
+import { authHeaders, authEnabled, redirectToLogin } from "./auth.js";
 
 const API_BASE = "";
 
@@ -39,7 +39,8 @@ async function handleResponse(res) {
 }
 
 export async function request(method, path, { body, headers, retries = 2 } = {}) {
-  const merged = { ...(await authHeaders()), ...headers };
+  const auth = await authHeaders();
+  const merged = { ...auth, ...headers };
   if (body !== undefined) merged["Content-Type"] ??= "application/json";
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -51,6 +52,23 @@ export async function request(method, path, { body, headers, retries = 2 } = {})
     try {
       return await handleResponse(res);
     } catch (err) {
+      // On 401, try once more with a force-refreshed token.  This handles
+      // stale cached tokens without forcing the user to re-login.
+      if (
+        err instanceof ApiError &&
+        err.status === 401 &&
+        authEnabled &&
+        attempt < retries
+      ) {
+        const freshAuth = await authHeaders({ forceRefresh: true });
+        if (!freshAuth.Authorization) {
+          // No valid token available — redirect to login.
+          redirectToLogin();
+          throw err;
+        }
+        Object.assign(merged, freshAuth);
+        continue;
+      }
       if (err instanceof RateLimitError && attempt < retries) {
         await new Promise((r) => setTimeout(r, err.retryAfter * 1000));
         continue;

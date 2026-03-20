@@ -17,6 +17,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from backend.services.database import Base, UserRow, WorkspaceMemberRow, WorkspaceRow
 from backend.services.auth import _provision_user, validate_token
+from backend.infrastructure.auth import _build_valid_issuers
 import backend.infrastructure.auth as _auth_module
 
 
@@ -530,3 +531,34 @@ class TestIssuerAndClaimsValidation:
                 await validate_token("fake.jwt.token", db_session)
 
         assert exc_info.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# _build_valid_issuers unit tests
+# ---------------------------------------------------------------------------
+
+class TestBuildValidIssuers:
+    """_build_valid_issuers returns both v1 and v2 Azure AD issuer formats."""
+
+    def test_azure_v2_authority_returns_both_issuers(self):
+        authority = "https://login.microsoftonline.com/my-tenant-id/v2.0"
+        issuers = _build_valid_issuers(authority)
+        assert "https://login.microsoftonline.com/my-tenant-id/v2.0" in issuers
+        assert "https://sts.windows.net/my-tenant-id/" in issuers
+
+    def test_azure_v1_authority_returns_both_issuers(self):
+        authority = "https://login.microsoftonline.com/my-tenant-id"
+        issuers = _build_valid_issuers(authority)
+        assert "https://login.microsoftonline.com/my-tenant-id/v2.0" in issuers
+        assert "https://sts.windows.net/my-tenant-id/" in issuers
+
+    def test_trailing_slash_stripped(self):
+        authority = "https://login.microsoftonline.com/my-tenant-id/v2.0/"
+        issuers = _build_valid_issuers(authority)
+        assert "https://login.microsoftonline.com/my-tenant-id/v2.0" in issuers
+        assert "https://sts.windows.net/my-tenant-id/" in issuers
+
+    def test_non_azure_authority_returns_as_is(self):
+        authority = "https://auth.example.com/realms/myrealm"
+        issuers = _build_valid_issuers(authority)
+        assert issuers == ["https://auth.example.com/realms/myrealm"]
