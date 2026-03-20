@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   getWorkspace,
@@ -8,6 +8,7 @@ import {
 import { useUser } from "../UserContext";
 import { SkeletonCard } from "../components/Skeleton";
 import StatusBadge from "../components/StatusBadge.jsx";
+import Toast from "../components/Toast.jsx";
 
 const IN_PROGRESS_STATUSES = ["draft", "strategy", "content", "channel_planning", "analytics_setup", "review", "review_clarification", "content_revision", "clarification"];
 const AWAITING_APPROVAL_STATUSES = ["content_approval", "awaiting_approval"];
@@ -72,6 +73,9 @@ export default function WorkspaceDetail({ events = [] }) {
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [error, setError] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const pendingDeletesRef = useRef(new Set());
+  const undoTimersRef = useRef({});
 
   // Fetch workspace detail
   useEffect(() => {
@@ -85,7 +89,9 @@ export default function WorkspaceDetail({ events = [] }) {
   // Fetch campaigns
   const loadCampaigns = useCallback(async () => {
     try {
-      setCampaigns(await listWorkspaceCampaigns(id));
+      const all = await listWorkspaceCampaigns(id);
+      // Filter out campaigns currently in the soft-delete undo window
+      setCampaigns(all.filter((c) => !pendingDeletesRef.current.has(c.id)));
     } catch {
       /* silent */
     } finally {
@@ -110,15 +116,68 @@ export default function WorkspaceDetail({ events = [] }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events.length]);
 
-  const handleDelete = async (campaignId) => {
+  // Clean up any pending undo timers on unmount
+  useEffect(() => {
+    const timers = undoTimersRef.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
+
+  const handleDelete = (campaignId) => {
     if (!confirm("Delete this campaign?")) return;
-    setDeleting(campaignId);
-    try {
-      await deleteCampaign(id, campaignId);
-      loadCampaigns();
-    } finally {
-      setDeleting(null);
-    }
+
+    const campaign = campaigns.find((c) => c.id === campaignId);
+    if (!campaign) return;
+
+    // Optimistically remove from local state
+    pendingDeletesRef.current.add(campaignId);
+    setCampaigns((prev) => prev.filter((c) => c.id !== campaignId));
+    setDeleting(null);
+
+    const notifId = `delete-${campaignId}`;
+
+    const executeDelete = async () => {
+      delete undoTimersRef.current[notifId];
+      // Dismiss toast before the API call
+      setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+      try {
+        await deleteCampaign(id, campaignId);
+      } catch {
+        // Restore campaign if API call fails
+        setCampaigns((prev) => {
+          if (prev.find((c) => c.id === campaignId)) return prev;
+          return [...prev, campaign];
+        });
+      } finally {
+        pendingDeletesRef.current.delete(campaignId);
+      }
+    };
+
+    undoTimersRef.current[notifId] = setTimeout(executeDelete, 5000);
+
+    setNotifications((prev) => [
+      ...prev,
+      {
+        id: notifId,
+        icon: "🗑️",
+        stage: "Campaign deleted",
+        message: null,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(undoTimersRef.current[notifId]);
+            delete undoTimersRef.current[notifId];
+            pendingDeletesRef.current.delete(campaignId);
+            setCampaigns((prev) => {
+              if (prev.find((c) => c.id === campaignId)) return prev;
+              return [...prev, campaign];
+            });
+            setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+          },
+        },
+      },
+    ]);
   };
 
   if (loadingWs) {
@@ -230,6 +289,7 @@ export default function WorkspaceDetail({ events = [] }) {
         </>
       )}
 
+      <Toast events={events} notifications={notifications} />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import WorkspaceSection from "../components/WorkspaceSection";
 import FilterTabs from "../components/FilterTabs";
 import SearchBar from "../components/SearchBar";
 import SavedViews from "../components/SavedViews";
+import Toast from "../components/Toast";
 import useSavedViews from "../hooks/useSavedViews";
 import {
   DRAFT_STATUSES,
@@ -76,6 +77,9 @@ export default function Dashboard({ events }) {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const pendingDeletesRef = useRef(new Set());
+  const undoTimersRef = useRef({});
   const [activeFilter, setActiveFilter] = useState(
     () =>
       searchParams.get("status") ??
@@ -155,7 +159,8 @@ export default function Dashboard({ events }) {
       const allArrays = await Promise.all(
         workspaces.map((ws) => listCampaigns(ws.id, { includeDrafts: true }).catch(() => []))
       );
-      setCampaigns(allArrays.flat());
+      // Filter out campaigns currently in the soft-delete undo window
+      setCampaigns(allArrays.flat().filter((c) => !pendingDeletesRef.current.has(c.id)));
     } catch {
       /* silent */
     } finally {
@@ -172,15 +177,68 @@ export default function Dashboard({ events }) {
     if (events.length > 0) load();
   }, [events.length]);
 
-  const handleDelete = async (id, workspaceId) => {
+  // Clean up any pending undo timers on unmount
+  useEffect(() => {
+    const timers = undoTimersRef.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
+
+  const handleDelete = (id, workspaceId) => {
     if (!confirm("Delete this campaign?")) return;
-    setDeleting(id);
-    try {
-      await deleteCampaign(workspaceId, id);
-      load();
-    } finally {
-      setDeleting(null);
-    }
+
+    const campaign = campaigns.find((c) => c.id === id);
+    if (!campaign) return;
+
+    // Optimistically remove from local state
+    pendingDeletesRef.current.add(id);
+    setCampaigns((prev) => prev.filter((c) => c.id !== id));
+    setDeleting(null);
+
+    const notifId = `delete-${id}`;
+
+    const executeDelete = async () => {
+      delete undoTimersRef.current[notifId];
+      // Dismiss toast before the API call
+      setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+      try {
+        await deleteCampaign(workspaceId, id);
+      } catch {
+        // Restore campaign if API call fails
+        setCampaigns((prev) => {
+          if (prev.find((c) => c.id === id)) return prev;
+          return [...prev, campaign];
+        });
+      } finally {
+        pendingDeletesRef.current.delete(id);
+      }
+    };
+
+    undoTimersRef.current[notifId] = setTimeout(executeDelete, 5000);
+
+    setNotifications((prev) => [
+      ...prev,
+      {
+        id: notifId,
+        icon: "🗑️",
+        stage: "Campaign deleted",
+        message: null,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            clearTimeout(undoTimersRef.current[notifId]);
+            delete undoTimersRef.current[notifId];
+            pendingDeletesRef.current.delete(id);
+            setCampaigns((prev) => {
+              if (prev.find((c) => c.id === id)) return prev;
+              return [...prev, campaign];
+            });
+            setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+          },
+        },
+      },
+    ]);
   };
 
   if (loading && campaigns.length === 0) {
@@ -195,6 +253,7 @@ export default function Dashboard({ events }) {
         <SkeletonCard />
         <SkeletonCard />
         <SkeletonCard />
+        <Toast events={events} notifications={notifications} />
       </div>
     );
   }
@@ -213,6 +272,7 @@ export default function Dashboard({ events }) {
             Select a workspace to create your first campaign.
           </p>
         )}
+        <Toast events={events} notifications={notifications} />
       </div>
     );
   }
@@ -392,6 +452,8 @@ export default function Dashboard({ events }) {
           )}
         </div>
       )}
+      <Toast events={events} notifications={notifications} />
     </div>
   );
 }
+
