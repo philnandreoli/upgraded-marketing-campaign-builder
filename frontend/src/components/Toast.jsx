@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 const DISPLAY_MS = 3500;
@@ -33,6 +33,8 @@ function eventIcon(type) {
  * Toast — renders auto-dismissing notifications for WebSocket pipeline events,
  * plus optional programmatic notifications (e.g. delete-undo prompts).
  *
+ * Hovering a toast pauses its auto-dismiss timer; moving the mouse away resumes it.
+ *
  * Props:
  *   events        — array of WebSocket event objects from useWebSocket
  *   notifications — array of manually-managed notification items:
@@ -45,7 +47,46 @@ export default function Toast({ events, notifications = [] }) {
   const [manualToasts, setManualToasts] = useState([]);
   const seenRef = useRef(new Set());
   const timersRef = useRef({});
+  const remainingRef = useRef({});
   const prevNotifIdsRef = useRef(new Set());
+
+  /** Schedule exit + remove timers for a toast. */
+  const scheduleAutoDismiss = useCallback((toastId, delayMs) => {
+    const startedAt = Date.now();
+    remainingRef.current[toastId] = { delay: delayMs, startedAt };
+
+    const exitTimer = setTimeout(() => {
+      setToasts((prev) =>
+        prev.map((x) => (x.id === toastId ? { ...x, exiting: true } : x))
+      );
+    }, delayMs);
+
+    const removeTimer = setTimeout(() => {
+      setToasts((prev) => prev.filter((x) => x.id !== toastId));
+      delete timersRef.current[toastId];
+      delete remainingRef.current[toastId];
+    }, delayMs + EXIT_MS);
+
+    timersRef.current[toastId] = { exitTimer, removeTimer, startedAt };
+  }, []);
+
+  /** Pause the auto-dismiss timer for a hovered toast. */
+  const handleMouseEnter = useCallback((toastId) => {
+    const timers = timersRef.current[toastId];
+    if (!timers) return;
+    clearTimeout(timers.exitTimer);
+    clearTimeout(timers.removeTimer);
+    const elapsed = Date.now() - timers.startedAt;
+    const remaining = Math.max(0, (remainingRef.current[toastId]?.delay ?? DISPLAY_MS) - elapsed);
+    remainingRef.current[toastId] = { delay: remaining, startedAt: null };
+  }, []);
+
+  /** Resume the auto-dismiss timer when the mouse leaves a toast. */
+  const handleMouseLeave = useCallback((toastId) => {
+    const info = remainingRef.current[toastId];
+    if (!info) return;
+    scheduleAutoDismiss(toastId, info.delay);
+  }, [scheduleAutoDismiss]);
 
   useEffect(() => {
     if (!events || events.length === 0) return;
@@ -72,20 +113,9 @@ export default function Toast({ events, notifications = [] }) {
 
     // Schedule per-toast auto-dismiss timers immediately
     items.forEach((toast) => {
-      const exitTimer = setTimeout(() => {
-        setToasts((prev) =>
-          prev.map((x) => (x.id === toast.id ? { ...x, exiting: true } : x))
-        );
-      }, DISPLAY_MS);
-
-      const removeTimer = setTimeout(() => {
-        setToasts((prev) => prev.filter((x) => x.id !== toast.id));
-        delete timersRef.current[toast.id];
-      }, DISPLAY_MS + EXIT_MS);
-
-      timersRef.current[toast.id] = [exitTimer, removeTimer];
+      scheduleAutoDismiss(toast.id, DISPLAY_MS);
     });
-  }, [events]);
+  }, [events, scheduleAutoDismiss]);
 
   // Sync programmatic notifications prop → manualToasts state with animations
   useEffect(() => {
@@ -118,7 +148,10 @@ export default function Toast({ events, notifications = [] }) {
   useEffect(() => {
     const timers = timersRef.current;
     return () => {
-      Object.values(timers).flat().forEach(clearTimeout);
+      Object.values(timers).forEach((t) => {
+        if (t.exitTimer != null) clearTimeout(t.exitTimer);
+        if (t.removeTimer != null) clearTimeout(t.removeTimer);
+      });
     };
   }, []);
 
@@ -128,7 +161,13 @@ export default function Toast({ events, notifications = [] }) {
   return createPortal(
     <div className="toast-container" aria-live="polite" aria-atomic="false">
       {allToasts.map((t) => (
-        <div key={t.id} className={`toast${t.exiting ? " toast-exiting" : ""}`} role="status">
+        <div
+          key={t.id}
+          className={`toast${t.exiting ? " toast-exiting" : ""}`}
+          role="status"
+          onMouseEnter={() => handleMouseEnter(t.id)}
+          onMouseLeave={() => handleMouseLeave(t.id)}
+        >
           <span className="toast-icon">{t.icon}</span>
           <div className="toast-body">
             {t.stage && <div className="toast-stage">{t.stage}</div>}
