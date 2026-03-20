@@ -30,15 +30,22 @@ function eventIcon(type) {
 }
 
 /**
- * Toast — renders auto-dismissing notifications for WebSocket pipeline events.
+ * Toast — renders auto-dismissing notifications for WebSocket pipeline events,
+ * plus optional programmatic notifications (e.g. delete-undo prompts).
  *
  * Props:
- *   events  — array of WebSocket event objects from useWebSocket
+ *   events        — array of WebSocket event objects from useWebSocket
+ *   notifications — array of manually-managed notification items:
+ *                   { id, icon, stage, message, action?: { label, onClick } }
+ *                   The parent controls adding/removing these; Toast handles
+ *                   entry/exit animations when items appear/disappear.
  */
-export default function Toast({ events }) {
+export default function Toast({ events, notifications = [] }) {
   const [toasts, setToasts] = useState([]);
+  const [manualToasts, setManualToasts] = useState([]);
   const seenRef = useRef(new Set());
   const timersRef = useRef({});
+  const prevNotifIdsRef = useRef(new Set());
 
   useEffect(() => {
     if (!events || events.length === 0) return;
@@ -80,6 +87,33 @@ export default function Toast({ events }) {
     });
   }, [events]);
 
+  // Sync programmatic notifications prop → manualToasts state with animations
+  useEffect(() => {
+    const currentIds = new Set(notifications.map((n) => n.id));
+
+    // Add newly-appearing notifications
+    const newNotifs = notifications.filter((n) => !prevNotifIdsRef.current.has(n.id));
+    if (newNotifs.length > 0) {
+      setManualToasts((prev) => [
+        ...prev,
+        ...newNotifs.map((n) => ({ ...n, exiting: false })),
+      ]);
+    }
+
+    // Trigger exit animation for notifications removed from the prop
+    const removedIds = [...prevNotifIdsRef.current].filter((id) => !currentIds.has(id));
+    if (removedIds.length > 0) {
+      setManualToasts((prev) =>
+        prev.map((t) => (removedIds.includes(t.id) ? { ...t, exiting: true } : t))
+      );
+      setTimeout(() => {
+        setManualToasts((prev) => prev.filter((t) => !removedIds.includes(t.id)));
+      }, EXIT_MS);
+    }
+
+    prevNotifIdsRef.current = currentIds;
+  }, [notifications]);
+
   // Clean up all pending timers on unmount
   useEffect(() => {
     const timers = timersRef.current;
@@ -88,17 +122,23 @@ export default function Toast({ events }) {
     };
   }, []);
 
-  if (toasts.length === 0) return null;
+  const allToasts = [...toasts, ...manualToasts];
+  if (allToasts.length === 0) return null;
 
   return createPortal(
     <div className="toast-container" aria-live="polite" aria-atomic="false">
-      {toasts.map((t) => (
+      {allToasts.map((t) => (
         <div key={t.id} className={`toast${t.exiting ? " toast-exiting" : ""}`} role="status">
           <span className="toast-icon">{t.icon}</span>
           <div className="toast-body">
             {t.stage && <div className="toast-stage">{t.stage}</div>}
             {t.message && <div className="toast-message">{t.message}</div>}
           </div>
+          {t.action && (
+            <button className="toast-action" onClick={t.action.onClick}>
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>,

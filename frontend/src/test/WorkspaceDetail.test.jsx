@@ -2,9 +2,9 @@
  * Tests for WorkspaceDetail page.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import WorkspaceDetail from '../pages/WorkspaceDetail';
 import { UserProvider } from '../UserContext';
 import { WorkspaceProvider } from '../WorkspaceContext';
@@ -120,6 +120,113 @@ describe('WorkspaceDetail – campaigns', () => {
     await renderDetail('ws-1', ws, []);
     await waitFor(() => screen.getByText(/no campaigns in this workspace/i));
     expect(screen.getByText(/no campaigns in this workspace/i)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Undo delete
+// ---------------------------------------------------------------------------
+
+describe('WorkspaceDetail – undo delete', () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('optimistically removes campaign and shows undo toast on delete confirmation', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await renderDetail('ws-1', ws, [campaign]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    // Enable fake timers only after the initial render is settled
+    vi.useFakeTimers();
+
+    const deleteBtn = screen.getByRole('button', { name: /delete/i });
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    // Campaign should be removed immediately (optimistic)
+    expect(screen.queryByText('ProductA')).not.toBeInTheDocument();
+    // Undo toast should appear
+    expect(screen.getByText('Campaign deleted')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+
+    window.confirm.mockRestore();
+    vi.clearAllTimers();
+  });
+
+  it('restores campaign when Undo is clicked', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.listWorkspaceCampaigns.mockResolvedValue([campaign]);
+    await renderDetail('ws-1', ws, [campaign]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    vi.useFakeTimers();
+
+    const deleteBtn = screen.getByRole('button', { name: /delete/i });
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    // Click Undo
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /undo/i }));
+    });
+
+    // Campaign should be restored
+    expect(screen.getByText('ProductA')).toBeInTheDocument();
+    // deleteCampaign API should NOT have been called
+    expect(api.deleteCampaign).not.toHaveBeenCalled();
+
+    window.confirm.mockRestore();
+    vi.clearAllTimers();
+  });
+
+  it('calls deleteCampaign API after 5 seconds if Undo is not clicked', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.deleteCampaign.mockResolvedValue(undefined);
+    await renderDetail('ws-1', ws, [campaign]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    vi.useFakeTimers();
+
+    const deleteBtn = screen.getByRole('button', { name: /delete/i });
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    // deleteCampaign should not be called yet
+    expect(api.deleteCampaign).not.toHaveBeenCalled();
+
+    // Advance past the 5-second undo window and drain all resulting async ops
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(api.deleteCampaign).toHaveBeenCalledWith('ws-1', 'c1');
+
+    window.confirm.mockRestore();
+    // Ensure no timers or mock state leaks into the next test
+    vi.clearAllTimers();
+    api.deleteCampaign.mockClear();
+  });
+
+  it('does not delete when confirm is cancelled', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await renderDetail('ws-1', ws, [campaign]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    const deleteBtn = screen.getByRole('button', { name: /delete/i });
+    fireEvent.click(deleteBtn);
+
+    // Campaign should still be visible
+    expect(screen.getByText('ProductA')).toBeInTheDocument();
+    expect(api.deleteCampaign).not.toHaveBeenCalled();
+
+    window.confirm.mockRestore();
   });
 });
 
