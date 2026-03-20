@@ -212,6 +212,30 @@ class TestListWorkspaces:
         assert items["ws-a"]["owner_display_name"] == _CREATOR_USER.display_name
         assert "created_at" in items["ws-a"]
 
+    def test_list_workspaces_supports_pagination(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-a"] = _make_workspace("ws-a", "WS A", _CREATOR_USER.id)
+        _isolated_store._workspaces["ws-b"] = _make_workspace("ws-b", "WS B", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-a", _CREATOR_USER.id)] = "creator"
+        _isolated_store._workspace_members[("ws-b", _CREATOR_USER.id)] = "creator"
+
+        r = creator_client.get("/api/workspaces?limit=1&offset=1")
+        assert r.status_code == 200
+        assert len(r.json()) == 1
+        assert r.headers["X-Total-Count"] == "2"
+        assert r.headers["X-Offset"] == "1"
+        assert r.headers["X-Limit"] == "1"
+        assert r.headers["X-Returned-Count"] == "1"
+
+    def test_list_workspaces_offset_beyond_total_returns_empty(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-a"] = _make_workspace("ws-a", "WS A", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-a", _CREATOR_USER.id)] = "creator"
+
+        r = creator_client.get("/api/workspaces?offset=5")
+        assert r.status_code == 200
+        assert r.json() == []
+        assert r.headers["X-Total-Count"] == "1"
+        assert r.headers["X-Returned-Count"] == "0"
+
 
 # ---------------------------------------------------------------------------
 # GET /api/workspaces/{id}
@@ -403,6 +427,32 @@ class TestListWorkspaceMembers:
         with _as_user(_CREATOR_USER) as c:
             r = c.get("/api/workspaces/ws-1/members")
         assert r.status_code == 404
+
+    def test_member_list_supports_pagination(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+        _isolated_store._workspace_members[("ws-1", _OTHER_USER.id)] = "viewer"
+        _isolated_store._users[_CREATOR_USER.id] = _CREATOR_USER
+        _isolated_store._users[_OTHER_USER.id] = _OTHER_USER
+
+        r = creator_client.get("/api/workspaces/ws-1/members?limit=1&offset=1")
+        assert r.status_code == 200
+        assert len(r.json()) == 1
+        assert r.headers["X-Total-Count"] == "2"
+        assert r.headers["X-Offset"] == "1"
+        assert r.headers["X-Limit"] == "1"
+        assert r.headers["X-Returned-Count"] == "1"
+
+    def test_member_list_offset_beyond_total_returns_empty(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+        _isolated_store._users[_CREATOR_USER.id] = _CREATOR_USER
+
+        r = creator_client.get("/api/workspaces/ws-1/members?offset=3")
+        assert r.status_code == 200
+        assert r.json() == []
+        assert r.headers["X-Total-Count"] == "1"
+        assert r.headers["X-Returned-Count"] == "0"
 
 
 # ---------------------------------------------------------------------------

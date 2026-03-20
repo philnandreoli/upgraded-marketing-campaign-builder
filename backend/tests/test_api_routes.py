@@ -374,6 +374,47 @@ class TestListCampaigns:
             items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()
             assert len(items) == 2  # Both campaigns are in the workspace
 
+    def test_list_campaigns_pagination_headers_default_mode(self, authed_client):
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "A", "goal": "A"})
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "B", "goal": "B"})
+
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true")
+        assert r.status_code == 200
+        assert len(r.json()) == 2
+        assert r.headers["X-Total-Count"] == "2"
+        assert r.headers["X-Offset"] == "0"
+        assert r.headers["X-Limit"] == "all"
+        assert r.headers["X-Returned-Count"] == "2"
+        assert r.headers["X-Has-More"] == "false"
+
+    def test_list_campaigns_supports_limit_offset(self, authed_client):
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "A", "goal": "A"})
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "B", "goal": "B"})
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "C", "goal": "C"})
+
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&limit=1&offset=1")
+        assert r.status_code == 200
+        assert len(r.json()) == 1
+        assert r.headers["X-Total-Count"] == "3"
+        assert r.headers["X-Offset"] == "1"
+        assert r.headers["X-Limit"] == "1"
+        assert r.headers["X-Returned-Count"] == "1"
+        assert r.headers["X-Has-More"] == "true"
+
+    def test_list_campaigns_offset_beyond_total_returns_empty_page(self, authed_client):
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "A", "goal": "A"})
+
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&offset=10&limit=5")
+        assert r.status_code == 200
+        assert r.json() == []
+        assert r.headers["X-Total-Count"] == "1"
+        assert r.headers["X-Returned-Count"] == "0"
+        assert r.headers["X-Has-More"] == "false"
+
+    def test_list_campaigns_invalid_limit_returns_422(self, authed_client):
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&limit=0")
+        assert r.status_code == 422
+
 
 # ---- GET /api/campaigns/{id} ----
 
@@ -1397,6 +1438,27 @@ class TestCampaignMembers:
         with _as_user(_OTHER_USER) as c:
             r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members")
         assert r.status_code == 200  # _OTHER_USER is CREATOR in the workspace
+
+    def test_list_members_supports_pagination(self, _isolated_store):
+        campaign = self._setup_campaign(_isolated_store)
+        _isolated_store._members[(campaign.id, _OTHER_USER.id)] = "editor"
+        with _as_user(_TEST_USER) as c:
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members?limit=1&offset=1")
+        assert r.status_code == 200
+        assert len(r.json()) == 1
+        assert r.headers["X-Total-Count"] == "2"
+        assert r.headers["X-Offset"] == "1"
+        assert r.headers["X-Limit"] == "1"
+        assert r.headers["X-Returned-Count"] == "1"
+
+    def test_list_members_offset_beyond_total_returns_empty(self, _isolated_store):
+        campaign = self._setup_campaign(_isolated_store)
+        with _as_user(_TEST_USER) as c:
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/members?offset=5")
+        assert r.status_code == 200
+        assert r.json() == []
+        assert r.headers["X-Total-Count"] == "1"
+        assert r.headers["X-Returned-Count"] == "0"
 
     # ---- POST /members ----
 
