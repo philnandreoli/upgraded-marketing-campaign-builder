@@ -522,7 +522,7 @@ def _db_available() -> bool:
     """Check whether the PostgreSQL database is reachable."""
     try:
         import asyncio
-        from backend.services.database import engine
+        from backend.infrastructure.database import engine
 
         async def _ping():
             async with engine.connect() as conn:
@@ -580,7 +580,7 @@ class TestCampaignStoreIntegration:
 
     @pytest.fixture
     def pg_store(self):
-        from backend.services.campaign_store import CampaignStore
+        from backend.infrastructure.campaign_store import CampaignStore
         return CampaignStore()
 
     @pytest.mark.asyncio

@@ -39,7 +39,7 @@ from backend.main import app
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import User, UserRole
 from backend.models.workspace import Workspace
-from backend.services.auth import get_current_user
+from backend.infrastructure.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
 
 

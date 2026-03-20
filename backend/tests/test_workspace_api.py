@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.models.user import User, UserRole
-from backend.services.auth import get_current_user
+from backend.infrastructure.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
 
 _CREATOR_USER = User(

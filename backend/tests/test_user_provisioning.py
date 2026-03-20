@@ -15,8 +15,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from backend.services.database import Base, UserRow, WorkspaceMemberRow, WorkspaceRow
-from backend.services.auth import _provision_user, validate_token
+from backend.infrastructure.database import Base, UserRow, WorkspaceMemberRow, WorkspaceRow
+from backend.infrastructure.auth import _provision_user, validate_token
 from backend.infrastructure.auth import _build_valid_issuers
 import backend.infrastructure.auth as _auth_module
 
@@ -104,7 +104,7 @@ class TestProvisionUser:
 
     async def test_provision_returns_userrow(self, db_session):
         """_provision_user returns the UserRow for the provisioned user."""
-        from backend.services.database import UserRow as UR
+        from backend.infrastructure.database import UserRow as UR
 
         row = await _provision_user(db_session, "user-ret", "ret@example.com", "Return Test")
         assert isinstance(row, UR)

@@ -191,6 +191,19 @@ backend/
 └── Dockerfile                # Docker build definition
 ```
 
+## Canonical Backend Import Boundaries
+
+To keep runtime and tests aligned, dependencies for auth/store/database must use
+the canonical `backend.infrastructure.*` modules:
+
+- `backend.infrastructure.auth`
+- `backend.infrastructure.database`
+- `backend.infrastructure.campaign_store`
+
+`backend.services.*` remains a backward-compatibility shim surface for legacy
+imports, but new or refactored runtime/test code should import from
+`backend.infrastructure.*` directly.
+
 ## Running Tests
 
 ```bash
