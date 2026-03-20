@@ -117,9 +117,10 @@ describe('WorkspaceDetail – campaigns', () => {
     await waitFor(() => screen.getByText('ProductA'));
     expect(screen.getByText('ProductA')).toBeInTheDocument();
     expect(screen.getByText('ProductB')).toBeInTheDocument();
-    expect(screen.getByText('In Progress')).toBeInTheDocument();
-    // "Approved" appears as both the status group label and the campaign badge
-    expect(screen.getAllByText('Approved')).toHaveLength(2);
+    // "In Progress" appears as both a filter tab and status group label
+    expect(screen.getAllByText('In Progress').length).toBeGreaterThanOrEqual(2);
+    // "Approved" appears as a filter tab, status group label, and campaign badge
+    expect(screen.getAllByText('Approved').length).toBeGreaterThanOrEqual(3);
   });
 
   it('shows empty state when no campaigns', async () => {
@@ -250,6 +251,171 @@ describe('WorkspaceDetail – undo delete', () => {
     // Campaign should still be visible
     expect(screen.getByText('ProductA')).toBeInTheDocument();
     expect(api.deleteCampaign).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Filter tabs
+// ---------------------------------------------------------------------------
+
+const campaignStrategy = { id: 'c3', product_or_service: 'StrategyCampaign', goal: 'Launch', status: 'strategy', owner_id: 'user-1', workspace_id: 'ws-1' };
+const campaignAwaiting = { id: 'c4', product_or_service: 'AwaitingCampaign', goal: 'Review', status: 'content_approval', owner_id: 'user-1', workspace_id: 'ws-1' };
+
+describe('WorkspaceDetail – Filter tabs', () => {
+  it('renders filter tabs when campaigns exist', async () => {
+    await renderDetail('ws-1', ws, [campaign]);
+    await waitFor(() => screen.getByText('ProductA'));
+    expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'In Progress' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Approved' })).toBeInTheDocument();
+  });
+
+  it('does not render filter tabs when no campaigns', async () => {
+    await renderDetail('ws-1', ws, []);
+    await waitFor(() => screen.getByText(/no campaigns in this workspace/i));
+    expect(screen.queryByRole('tab', { name: 'All' })).not.toBeInTheDocument();
+  });
+
+  it('defaults to "All" tab and shows all campaigns', async () => {
+    await renderDetail('ws-1', ws, [campaignStrategy, campaignApproved]);
+    await waitFor(() => screen.getByText('StrategyCampaign'));
+    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('StrategyCampaign')).toBeInTheDocument();
+    expect(screen.getByText('ProductB')).toBeInTheDocument();
+  });
+
+  it('"In Progress" tab shows only in-progress campaigns', async () => {
+    await renderDetail('ws-1', ws, [campaignStrategy, campaignApproved]);
+    await waitFor(() => screen.getByText('StrategyCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'In Progress' }));
+    expect(screen.getByText('StrategyCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('ProductB')).not.toBeInTheDocument();
+  });
+
+  it('"Approved" tab shows only approved campaigns', async () => {
+    await renderDetail('ws-1', ws, [campaignStrategy, campaignApproved]);
+    await waitFor(() => screen.getByText('StrategyCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    expect(screen.queryByText('StrategyCampaign')).not.toBeInTheDocument();
+    expect(screen.getByText('ProductB')).toBeInTheDocument();
+  });
+
+  it('shows empty state when no campaigns match filter', async () => {
+    await renderDetail('ws-1', ws, [campaignStrategy]);
+    await waitFor(() => screen.getByText('StrategyCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    expect(screen.getByText(/no campaigns match this filter/i)).toBeInTheDocument();
+  });
+
+  it('"Needs Approval" tab shows awaiting campaigns', async () => {
+    await renderDetail('ws-1', ws, [campaignStrategy, campaignAwaiting]);
+    await waitFor(() => screen.getByText('StrategyCampaign'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Needs Approval' }));
+    expect(screen.getByText('AwaitingCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('StrategyCampaign')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Search bar
+// ---------------------------------------------------------------------------
+
+/** Helper: fire a search change and advance fake timers to trigger the debounce. */
+async function typeSearch(inputValue) {
+  vi.useFakeTimers();
+  fireEvent.change(screen.getByPlaceholderText('Search campaigns...'), {
+    target: { value: inputValue },
+  });
+  await act(async () => vi.advanceTimersByTime(300));
+  vi.useRealTimers();
+}
+
+describe('WorkspaceDetail – Search bar', () => {
+  it('renders search bar when campaigns exist', async () => {
+    await renderDetail('ws-1', ws, [campaign]);
+    await waitFor(() => screen.getByText('ProductA'));
+    expect(screen.getByPlaceholderText('Search campaigns...')).toBeInTheDocument();
+  });
+
+  it('filters campaigns by product name (debounced)', async () => {
+    await renderDetail('ws-1', ws, [campaign, campaignApproved]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    await typeSearch('ProductA');
+
+    expect(screen.getByText('ProductA')).toBeInTheDocument();
+    expect(screen.queryByText('ProductB')).not.toBeInTheDocument();
+  });
+
+  it('filters campaigns by goal', async () => {
+    await renderDetail('ws-1', ws, [campaign, campaignApproved]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    await typeSearch('Scale');
+
+    expect(screen.queryByText('ProductA')).not.toBeInTheDocument();
+    expect(screen.getByText('ProductB')).toBeInTheDocument();
+  });
+
+  it('is case-insensitive', async () => {
+    await renderDetail('ws-1', ws, [campaign, campaignApproved]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    await typeSearch('producta');
+
+    expect(screen.getByText('ProductA')).toBeInTheDocument();
+    expect(screen.queryByText('ProductB')).not.toBeInTheDocument();
+  });
+
+  it('shows result count when search is active', async () => {
+    await renderDetail('ws-1', ws, [campaign, campaignApproved]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    await typeSearch('ProductA');
+
+    expect(screen.getByText(/showing 1 of 2 campaigns/i)).toBeInTheDocument();
+  });
+
+  it('does not show result count when search is empty', async () => {
+    await renderDetail('ws-1', ws, [campaign, campaignApproved]);
+    await waitFor(() => screen.getByText('ProductA'));
+    expect(screen.queryByText(/showing/i)).not.toBeInTheDocument();
+  });
+
+  it('shows empty state when search yields no results', async () => {
+    await renderDetail('ws-1', ws, [campaign]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    await typeSearch('nomatch-xyz');
+
+    expect(screen.getByText(/no campaigns match your search/i)).toBeInTheDocument();
+  });
+
+  it('clear button resets search and shows all campaigns', async () => {
+    await renderDetail('ws-1', ws, [campaign, campaignApproved]);
+    await waitFor(() => screen.getByText('ProductA'));
+
+    await typeSearch('ProductA');
+    expect(screen.queryByText('ProductB')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear search/i }));
+
+    expect(screen.getByText('ProductA')).toBeInTheDocument();
+    expect(screen.getByText('ProductB')).toBeInTheDocument();
+  });
+
+  it('search composes with active filter tab', async () => {
+    await renderDetail('ws-1', ws, [campaignStrategy, campaignApproved]);
+    await waitFor(() => screen.getByText('StrategyCampaign'));
+
+    // Activate "Approved" tab — only campaignApproved is visible
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    await waitFor(() => expect(screen.queryByText('StrategyCampaign')).not.toBeInTheDocument());
+
+    // Search for "strategy" while on Approved tab should yield no results
+    await typeSearch('strategy');
+
+    expect(screen.getByText(/no campaigns match your search/i)).toBeInTheDocument();
   });
 });
 
