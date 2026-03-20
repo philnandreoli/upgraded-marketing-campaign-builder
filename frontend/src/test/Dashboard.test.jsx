@@ -488,6 +488,55 @@ describe('Dashboard – Filter tabs', () => {
     expect(screen.getByText('AwaitingCampaign')).toBeInTheDocument();
     expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
   });
+
+  it('clicking "Total" stat card sets filter to "all" and shows all campaigns', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignDraft, campaignApproved, campaignAwaiting],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    // First narrow down to Approved
+    fireEvent.click(screen.getByRole('button', { name: /filter by approved/i }));
+    expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
+    // Now click Total to see everything
+    fireEvent.click(screen.getByRole('button', { name: /filter by total/i }));
+    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.getByText('ApprovedCampaign')).toBeInTheDocument();
+    expect(screen.getByText('AwaitingCampaign')).toBeInTheDocument();
+  });
+
+  it('"Total" stat card has active styling when "all" filter is selected', async () => {
+    await renderDashboard({ userId: 'user-1' }, [campaignDraft], [WS_FILTER]);
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    const totalBtn = screen.getByRole('button', { name: /filter by total/i });
+    // Default filter is "all", so Total should be active
+    expect(totalBtn.className).toContain('stat-card--active');
+    // Switch to Drafts — Total should lose active state
+    fireEvent.click(screen.getByRole('button', { name: /filter by drafts/i }));
+    expect(totalBtn.className).not.toContain('stat-card--active');
+    // Switch back to Total
+    fireEvent.click(totalBtn);
+    expect(totalBtn.className).toContain('stat-card--active');
+  });
+
+  it('status filters continue to work after toggling from Total', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignDraft, campaignApproved],
+      [WS_FILTER],
+    );
+    await waitFor(() => screen.getByText('DraftCampaign'));
+    // Click Total first
+    fireEvent.click(screen.getByRole('button', { name: /filter by total/i }));
+    expect(screen.getByText('DraftCampaign')).toBeInTheDocument();
+    expect(screen.getByText('ApprovedCampaign')).toBeInTheDocument();
+    // Now click Approved stat card
+    fireEvent.click(screen.getByRole('button', { name: /filter by approved/i }));
+    expect(screen.getByText('ApprovedCampaign')).toBeInTheDocument();
+    expect(screen.queryByText('DraftCampaign')).not.toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
