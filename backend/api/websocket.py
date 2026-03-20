@@ -21,9 +21,11 @@ outside the single WebSocket upgrade request.
 """
 
 import hashlib
+import asyncio
 import json
 import logging
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request, Response, WebSocket, WebSocketDisconnect
@@ -56,6 +58,8 @@ class ConnectionManager:
         # WebSocket -> (user_id | None, is_admin)
         # user_id is None when auth is disabled (local-dev mode).
         self._ws_meta: dict[WebSocket, tuple[Optional[str], bool]] = {}
+        # WebSocket -> campaign_id -> (is_member, expires_at_utc)
+        self._authz_cache: dict[WebSocket, dict[str, tuple[bool, datetime]]] = {}
 
     async def connect(
         self,
@@ -74,6 +78,7 @@ class ConnectionManager:
         if websocket in conns:
             conns.remove(websocket)
         self._ws_meta.pop(websocket, None)
+        self._authz_cache.pop(websocket, None)
         logger.info("WS disconnected: campaign=%s (total=%d)", campaign_id, self._total())
 
     async def broadcast(self, message: dict[str, Any]) -> None:
@@ -85,8 +90,10 @@ class ConnectionManager:
         they are a member of; unauthenticated connections (auth disabled)
         receive all events.
         """
+        settings = get_settings()
         payload = json.dumps(message, default=str)
         cid = message.get("campaign_id")
+        now = datetime.now(timezone.utc)
 
         # (bucket_key, websocket) pairs to send to
         targets: list[tuple[str, WebSocket]] = []
@@ -105,25 +112,62 @@ class ConnectionManager:
             elif is_admin:
                 targets.append(("*", ws))
             elif cid:
-                store = get_campaign_store()
-                role = await store.get_member_role(cid, user_id)
-                if role is not None:
+                is_member = await self._is_global_ws_authorized_for_campaign(
+                    ws=ws,
+                    campaign_id=cid,
+                    user_id=user_id,
+                    now=now,
+                    ttl_seconds=settings.websocket.authz_cache_ttl_seconds,
+                )
+                if is_member:
                     targets.append(("*", ws))
             else:
                 # Message has no campaign_id — treated as a system-level broadcast
                 # (not campaign-specific), safe to send to all authenticated users.
                 targets.append(("*", ws))
 
+        fanout_semaphore = asyncio.Semaphore(settings.websocket.fanout_max_concurrency)
+
+        async def _send_one(bucket: str, ws: WebSocket) -> tuple[str, WebSocket] | None:
+            async with fanout_semaphore:
+                try:
+                    await ws.send_text(payload)
+                    return None
+                except Exception:
+                    # Connection probably closed — mark for cleanup
+                    return (bucket, ws)
+
+        send_results = await asyncio.gather(*(_send_one(bucket, ws) for bucket, ws in targets), return_exceptions=False)
         stale: list[tuple[str, WebSocket]] = []
-        for bucket, ws in targets:
-            try:
-                await ws.send_text(payload)
-            except Exception:
-                # Connection probably closed — mark for cleanup
-                stale.append((bucket, ws))
+        for result in send_results:
+            if result is not None:
+                stale.append(result)
 
         for key, ws in stale:
             self.disconnect(ws, key)
+
+    async def _is_global_ws_authorized_for_campaign(
+        self,
+        ws: WebSocket,
+        campaign_id: str,
+        user_id: str,
+        now: datetime,
+        ttl_seconds: int,
+    ) -> bool:
+        ws_cache = self._authz_cache.setdefault(ws, {})
+        if ttl_seconds > 0:
+            cached = ws_cache.get(campaign_id)
+            if cached is not None:
+                is_member, expires_at = cached
+                if now < expires_at:
+                    return is_member
+
+        store = get_campaign_store()
+        role = await store.get_member_role(campaign_id, user_id)
+        is_member = role is not None
+        expires_at = now + timedelta(seconds=ttl_seconds)
+        ws_cache[campaign_id] = (is_member, expires_at)
+        return is_member
 
     def _total(self) -> int:
         return sum(len(v) for v in self._connections.values())

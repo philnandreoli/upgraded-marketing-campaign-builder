@@ -85,6 +85,8 @@ def _auth_enabled_settings():
     """Return a mock Settings object with auth enabled."""
     settings = MagicMock()
     settings.oidc.enabled = True
+    settings.websocket.authz_cache_ttl_seconds = 5
+    settings.websocket.fanout_max_concurrency = 25
     return settings
 
 
@@ -92,6 +94,8 @@ def _auth_disabled_settings():
     """Return a mock Settings object with auth disabled."""
     settings = MagicMock()
     settings.oidc.enabled = False
+    settings.websocket.authz_cache_ttl_seconds = 5
+    settings.websocket.fanout_max_concurrency = 25
     return settings
 
 
@@ -392,3 +396,72 @@ class TestBroadcastFiltering:
             await mgr.broadcast({"campaign_id": "any-campaign", "event": "test"})
 
         mock_ws.send_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_global_membership_lookup_cached_within_ttl(self, fresh_store):
+        """Repeated broadcasts for same campaign/user reuse authz cache inside TTL."""
+        from backend.api.websocket import ConnectionManager
+
+        mgr = ConnectionManager()
+        mock_ws = AsyncMock()
+        mock_ws.send_text = AsyncMock()
+        fresh_store.get_member_role = AsyncMock(return_value=CampaignMemberRole.VIEWER.value)
+
+        await mgr.connect(mock_ws, "*", user_id=_MEMBER.id, is_admin=False)
+
+        settings = MagicMock()
+        settings.websocket.authz_cache_ttl_seconds = 30
+        settings.websocket.fanout_max_concurrency = 25
+        with patch("backend.api.websocket.get_settings", return_value=settings), \
+             patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
+            await mgr.broadcast({"campaign_id": _CAMPAIGN_ID, "event": "e1"})
+            await mgr.broadcast({"campaign_id": _CAMPAIGN_ID, "event": "e2"})
+
+        assert fresh_store.get_member_role.await_count == 1
+        assert mock_ws.send_text.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_global_membership_lookup_revalidated_when_ttl_zero(self, fresh_store):
+        """TTL=0 disables cache reuse and revalidates each broadcast."""
+        from backend.api.websocket import ConnectionManager
+
+        mgr = ConnectionManager()
+        mock_ws = AsyncMock()
+        mock_ws.send_text = AsyncMock()
+        fresh_store.get_member_role = AsyncMock(return_value=CampaignMemberRole.VIEWER.value)
+
+        await mgr.connect(mock_ws, "*", user_id=_MEMBER.id, is_admin=False)
+
+        settings = MagicMock()
+        settings.websocket.authz_cache_ttl_seconds = 0
+        settings.websocket.fanout_max_concurrency = 25
+        with patch("backend.api.websocket.get_settings", return_value=settings), \
+             patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
+            await mgr.broadcast({"campaign_id": _CAMPAIGN_ID, "event": "e1"})
+            await mgr.broadcast({"campaign_id": _CAMPAIGN_ID, "event": "e2"})
+
+        assert fresh_store.get_member_role.await_count == 2
+        assert mock_ws.send_text.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_broadcast_continues_when_one_send_fails(self, fresh_store):
+        """One failing websocket send does not block other recipients."""
+        from backend.api.websocket import ConnectionManager
+
+        mgr = ConnectionManager()
+        failing_ws = AsyncMock()
+        failing_ws.send_text = AsyncMock(side_effect=RuntimeError("socket closed"))
+        healthy_ws = AsyncMock()
+        healthy_ws.send_text = AsyncMock()
+
+        await mgr.connect(failing_ws, "*", user_id=None, is_admin=False)
+        await mgr.connect(healthy_ws, "*", user_id=None, is_admin=False)
+
+        settings = MagicMock()
+        settings.websocket.authz_cache_ttl_seconds = 5
+        settings.websocket.fanout_max_concurrency = 2
+        with patch("backend.api.websocket.get_settings", return_value=settings), \
+             patch("backend.api.websocket.get_campaign_store", return_value=fresh_store):
+            await mgr.broadcast({"campaign_id": _CAMPAIGN_ID, "event": "test"})
+
+        healthy_ws.send_text.assert_awaited_once()
