@@ -819,6 +819,7 @@ a:hover { color: var(--color-primary-hover); }
 .empty-state-icon { font-size: 3.5rem; line-height: 1; margin-bottom: 1rem; }
 .empty-state-title { font-size: var(--text-2xl); font-family: var(--font-display); margin-bottom: 0.6rem; }
 .empty-state-body { color: var(--color-text-muted); font-size: var(--text-sm); max-width: 420px; margin: 0 auto 1.5rem; }
+.empty-state-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 0.5rem; }
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .section-header h2 { font-size: var(--text-2xl); }
 .page-title { font-size: var(--text-2xl); margin-bottom: 1rem; }

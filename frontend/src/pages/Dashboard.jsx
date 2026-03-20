@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { listCampaigns, deleteCampaign } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
@@ -299,6 +299,9 @@ export default function Dashboard({ events }) {
       </div>
     );
   } else if (campaigns.length === 0) {
+    const personalWorkspace = workspaces.find(
+      (ws) => ws.is_personal && ws.role === "creator"
+    );
     content = (
       <div className="empty-state">
         <div className="empty-state-icon">🚀</div>
@@ -308,9 +311,19 @@ export default function Dashboard({ events }) {
           content, and channel planning for you.
         </p>
         {!isViewer && (
-          <p className="empty-state-body">
-            Select a workspace to create your first campaign.
-          </p>
+          <div className="empty-state-actions">
+            <Link to="/workspaces" className="btn btn-primary">
+              Browse Workspaces
+            </Link>
+            {personalWorkspace && (
+              <Link
+                to={`/workspaces/${personalWorkspace.id}/campaigns/new`}
+                className="btn btn-outline"
+              >
+                Create Campaign
+              </Link>
+            )}
+          </div>
         )}
       </div>
     );
