@@ -51,6 +51,7 @@ from backend.apps.api.schemas.workflow import (  # noqa: F401
     UpdatePieceNotesRequest,
     WorkflowActionResponse,
 )
+from backend.core.exceptions import ConcurrentUpdateError
 from backend.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,11 @@ async def update_draft_campaign(
 
     try:
         campaign = await store.update(campaign)
+    except ConcurrentUpdateError:
+        raise HTTPException(
+            status_code=409,
+            detail="Draft was updated by another editor. Refetch the latest draft and retry your changes.",
+        )
     except Exception as exc:
         logger.exception("Failed to update draft campaign %s: %s", campaign_id, exc)
         raise HTTPException(status_code=500, detail="Campaign update failed. Please try again or contact support.")

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from backend.main import app
 from backend.models.campaign import Campaign, CampaignBrief, CampaignContent, CampaignStatus, ContentApprovalStatus, ContentPiece
 from backend.models.user import User, UserRole
+from backend.core.exceptions import ConcurrentUpdateError
 from backend.services.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
 
@@ -495,6 +496,29 @@ class TestUpdateDraftCampaign:
             "product_or_service": "Ghost",
         })
         assert r.status_code == 404
+
+    def test_patch_conflict_returns_409_with_actionable_detail(self, authed_client, _isolated_store):
+        """PATCH returns 409 with refetch/retry guidance when optimistic locking conflicts."""
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="Initial", goal="Original"),
+            owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+
+        with patch.object(
+            _isolated_store,
+            "update",
+            new=AsyncMock(side_effect=ConcurrentUpdateError("injected conflict")),
+        ):
+            r = authed_client.patch(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}",
+                json={"product_or_service": "Updated"},
+            )
+
+        assert r.status_code == 409
+        assert r.json()["detail"] == "Draft was updated by another editor. Refetch the latest draft and retry your changes."
 
     def test_patch_viewer_returns_403(self, _isolated_store):
         """A viewer cannot update a campaign."""
