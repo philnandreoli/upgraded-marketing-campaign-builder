@@ -70,8 +70,8 @@ describe("NotificationCenter", () => {
 
   it("shows unread badge after events are pushed", () => {
     const events = [
-      { type: "stage_start", stage: "strategy", message: "Starting strategy", timestamp: new Date().toISOString() },
-      { type: "stage_complete", stage: "strategy", message: "Strategy done", timestamp: new Date().toISOString() },
+      { event: "stage_started", stage: "strategy", message: "Starting strategy", timestamp: new Date().toISOString() },
+      { event: "stage_completed", stage: "strategy", message: "Strategy done", timestamp: new Date().toISOString() },
     ];
     renderWithEvents(events);
 
@@ -87,7 +87,7 @@ describe("NotificationCenter", () => {
 
   it("shows events in the dropdown with stage, message, and timestamp", () => {
     const events = [
-      { type: "stage_start", stage: "content_generation", message: "Generating content", timestamp: new Date().toISOString() },
+      { event: "stage_started", stage: "content_generation", message: "Generating content", timestamp: new Date().toISOString() },
     ];
     renderWithEvents(events);
 
@@ -105,7 +105,7 @@ describe("NotificationCenter", () => {
 
   it("shows correct event icons", () => {
     const events = [
-      { type: "stage_error", stage: "review", message: "Failed", timestamp: new Date().toISOString() },
+      { event: "stage_error", stage: "review", message: "Failed", timestamp: new Date().toISOString() },
     ];
     renderWithEvents(events);
 
@@ -120,7 +120,7 @@ describe("NotificationCenter", () => {
 
   it("marks all notifications as read when dropdown is opened", () => {
     const events = [
-      { type: "stage_start", stage: "strategy", message: "Starting", timestamp: new Date().toISOString() },
+      { event: "stage_started", stage: "strategy", message: "Starting", timestamp: new Date().toISOString() },
     ];
     renderWithEvents(events);
 
@@ -165,8 +165,8 @@ describe("NotificationCenter", () => {
 
   it("deduplicates events by key", () => {
     const events = [
-      { type: "stage_start", stage: "strategy", message: "Starting", timestamp: "2026-03-20T10:00:00Z" },
-      { type: "stage_start", stage: "strategy", message: "Starting", timestamp: "2026-03-20T10:00:00Z" },
+      { event: "stage_started", stage: "strategy", message: "Starting", timestamp: "2026-03-20T10:00:00Z" },
+      { event: "stage_started", stage: "strategy", message: "Starting", timestamp: "2026-03-20T10:00:00Z" },
     ];
     renderWithEvents(events);
 
@@ -181,7 +181,7 @@ describe("NotificationCenter", () => {
 
   it("limits stored notifications to 20", () => {
     const events = Array.from({ length: 25 }, (_, i) => ({
-      type: "stage_start",
+      event: "stage_started",
       stage: `stage_${i}`,
       message: `Message ${i}`,
       timestamp: new Date(Date.now() + i * 1000).toISOString(),
@@ -200,7 +200,7 @@ describe("NotificationCenter", () => {
 
   it("marks individual notification as read on click", () => {
     const events = [
-      { type: "stage_start", stage: "strategy", message: "Starting", timestamp: new Date().toISOString() },
+      { event: "stage_started", stage: "strategy", message: "Starting", timestamp: new Date().toISOString() },
     ];
     renderWithEvents(events);
 
@@ -213,4 +213,94 @@ describe("NotificationCenter", () => {
     const item = screen.getByRole("listitem");
     expect(item.classList.contains("notification-item--unread")).toBe(false); // already marked read by opening panel
   });
-});
+  // -----------------------------------------------------------------------
+  // Backend event shape coverage (event field, not type)
+  // -----------------------------------------------------------------------
+
+  it("shows fallback message for pipeline_started event with no explicit message", () => {
+    const events = [
+      { event: "pipeline_started", campaign_id: "abc123", timestamp: new Date().toISOString() },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    expect(screen.getByText("Pipeline started")).toBeInTheDocument();
+  });
+
+  it("shows fallback message for pipeline_completed event with no explicit message", () => {
+    const events = [
+      { event: "pipeline_completed", campaign_id: "abc123", timestamp: new Date().toISOString() },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    expect(screen.getByText("Pipeline completed")).toBeInTheDocument();
+  });
+
+  it("derives 'Started {Stage}' fallback for stage_started with no message", () => {
+    const events = [
+      { event: "stage_started", event_type: "stage_started", campaign_id: "abc", stage: "strategy", timestamp: new Date().toISOString() },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    expect(screen.getByText("Started Strategy")).toBeInTheDocument();
+  });
+
+  it("resolves event kind from event field and shows correct icon", () => {
+    const events = [
+      { event: "stage_completed", stage: "strategy", timestamp: new Date().toISOString() },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    expect(screen.getByText("✅")).toBeInTheDocument();
+  });
+
+  it("shows 🚀 icon for pipeline_started event", () => {
+    const events = [
+      { event: "pipeline_started", campaign_id: "abc", timestamp: new Date().toISOString() },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    expect(screen.getByText("🚀")).toBeInTheDocument();
+  });
+
+  it("shows clarification_requested notification with correct text and icon", () => {
+    const events = [
+      { event: "clarification_requested", campaign_id: "abc", timestamp: new Date().toISOString() },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    expect(screen.getByText("❓")).toBeInTheDocument();
+    expect(screen.getByText("Clarification requested")).toBeInTheDocument();
+  });
+
+  it("never renders a blank notification item (no empty body)", () => {
+    // Minimal backend-shape event with no stage, no message, no detail
+    const events = [
+      { event: "pipeline_started", campaign_id: "abc", timestamp: new Date().toISOString() },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    const body = document.querySelector(".notification-item-body");
+    expect(body).not.toBeNull();
+    expect(body.textContent.trim()).not.toBe("");
+  });});

@@ -16,17 +16,50 @@ function stageLabel(stage) {
 }
 
 /**
- * Derives the emoji icon for a given event type.
+ * Resolves the canonical event kind from a raw WebSocket event object.
+ * Backend emits payloads with an "event" key (and an "event_type" from the
+ * Pydantic model); legacy / test payloads may use "type" instead.
  */
-function eventIcon(type) {
-  switch (type) {
-    case "stage_complete": return "✅";
-    case "stage_start":   return "▶️";
-    case "stage_error":   return "❌";
-    case "pipeline_complete": return "🎉";
-    case "clarification_needed": return "❓";
-    case "content_approval_needed": return "👀";
-    default: return "🔔";
+function resolveEventKind(event) {
+  return event.event ?? event.type ?? event.event_type ?? "";
+}
+
+/**
+ * Derives the emoji icon for a given (normalised) event kind.
+ */
+function eventIcon(kind) {
+  switch (kind) {
+    case "stage_completed":            return "✅";
+    case "stage_started":              return "▶️";
+    case "stage_error":                return "❌";
+    case "pipeline_completed":         return "🎉";
+    case "pipeline_started":           return "🚀";
+    case "clarification_requested":    return "❓";
+    case "content_approval_requested": return "👀";
+    default:                           return "🔔";
+  }
+}
+
+/**
+ * Builds a human-readable fallback message for events that carry no explicit
+ * "message" or "detail" field.
+ */
+function buildFallbackMessage(kind, stageText) {
+  switch (kind) {
+    case "pipeline_started":           return "Pipeline started";
+    case "pipeline_completed":         return "Pipeline completed";
+    case "stage_started":              return stageText ? `Started ${stageText}` : "Stage started";
+    case "stage_completed":            return stageText ? `Completed ${stageText}` : "Stage completed";
+    case "stage_error":                return stageText ? `Error in ${stageText}` : "Stage error";
+    case "clarification_requested":    return "Clarification requested";
+    case "clarification_completed":    return "Clarification completed";
+    case "content_approval_requested": return "Content approval requested";
+    case "content_approval_completed": return "Content approval completed";
+    case "wait_timeout":               return "Pipeline timed out waiting for input";
+    default:
+      return kind
+        ? kind.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+        : "Notification";
   }
 }
 
@@ -46,16 +79,20 @@ export function NotificationProvider({ children }) {
   const seenRef = useRef(new Set());
 
   const addEvent = useCallback((event) => {
-    const key = event.id ?? `${event.type}-${event.stage}-${event.timestamp}`;
+    const kind = resolveEventKind(event);
+    const key = event.id ?? `${kind}-${event.stage ?? ""}-${event.timestamp ?? ""}`;
     if (seenRef.current.has(key)) return;
     seenRef.current.add(key);
 
+    const stageText = stageLabel(event.stage || event.status);
+    const explicitMessage = event.message || event.detail || event.error || "";
+
     const item = {
       id: Math.random().toString(36).slice(2),
-      icon: eventIcon(event.type),
-      type: event.type,
-      stage: stageLabel(event.stage || event.status),
-      message: event.message || event.detail || "",
+      icon: eventIcon(kind),
+      type: kind,
+      stage: stageText,
+      message: explicitMessage || buildFallbackMessage(kind, stageText),
       timestamp: event.timestamp || new Date().toISOString(),
       read: false,
     };
