@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getCampaign } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
+import usePolling from "../hooks/usePolling";
 import StrategySection from "../components/StrategySection.jsx";
 import ContentSection from "../components/ContentSection.jsx";
 import ChannelPlanSection from "../components/ChannelPlanSection.jsx";
@@ -73,7 +74,6 @@ export default function CampaignDetail() {
     setViewMode(mode);
     localStorage.setItem(VIEW_MODE_KEY, mode);
   };
-  const pollRef = useRef(null);
   const isFetchingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -88,18 +88,17 @@ export default function CampaignDetail() {
     }
   }, [id, workspaceId]);
 
-  // Set up polling; defer initial fetch so setState isn't synchronous in the effect.
-  // Uses a 5s interval and stops entirely for terminal states.
+  // Set up visibility-aware polling; stops entirely for terminal states.
   const status = campaign?.status;
+  const isTerminal = status && TERMINAL_STATES.includes(status);
+
   useEffect(() => {
-    if (status && TERMINAL_STATES.includes(status)) return;
+    if (isTerminal) return;
     const immediate = setTimeout(load, 0);
-    pollRef.current = setInterval(load, 5000);
-    return () => {
-      clearTimeout(immediate);
-      clearInterval(pollRef.current);
-    };
-  }, [load, status]);
+    return () => clearTimeout(immediate);
+  }, [load, isTerminal]);
+
+  usePolling(load, isTerminal ? null : 15000);
 
   // Refresh on WebSocket events (deferred to avoid synchronous setState).
   // Skip if campaign is already in a terminal state.
