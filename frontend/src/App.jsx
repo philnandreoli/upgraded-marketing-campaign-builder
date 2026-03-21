@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import NewCampaign from "./pages/NewCampaign.jsx";
 import CampaignDetail from "./pages/CampaignDetail.jsx";
 import Admin from "./pages/Admin.jsx";
+import UserSettings from "./pages/UserSettings.jsx";
 import WorkspaceList from "./pages/WorkspaceList.jsx";
 import WorkspaceDetail from "./pages/WorkspaceDetail.jsx";
 import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
@@ -127,6 +128,7 @@ function AuthenticatedApp() {
             <Route path="/workspaces/:workspaceId/campaigns/:campaignId/edit" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
             <Route path="/workspaces/:workspaceId/campaigns/:id" element={<CampaignDetail />} />
             <Route path="/campaign/:id" element={<CampaignDetail />} />
+            <Route path="/settings" element={<UserSettings />} />
             <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
           </Routes>
         </ErrorBoundary>
