@@ -10,6 +10,7 @@ import AnalyticsSection from "../components/AnalyticsSection.jsx";
 import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
+import ProgressIndicator from "../components/ProgressIndicator.jsx";
 import Toast from "../components/Toast.jsx";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
@@ -158,6 +159,15 @@ export default function CampaignDetail() {
     const cs = campaign.status;
     return !TERMINAL_STATES.includes(cs) && !PAUSE_STATES.includes(cs);
   }, [campaign]);
+
+  // Compute overall progress from stage states
+  const { completedCount, totalCount } = useMemo(() => {
+    const entries = Object.values(stageStates);
+    return {
+      completedCount: entries.filter((s) => s === "completed").length,
+      totalCount: entries.length,
+    };
+  }, [stageStates]);
 
   // At approval stage, hide content & revision tabs (approval tab shows the content)
   const isAtApproval = campaign?.status === "content_approval" || campaign?.status === "approved" || campaign?.status === "rejected" || campaign?.status === "manual_review_required";
@@ -355,6 +365,9 @@ export default function CampaignDetail() {
             {connected ? "Live" : connectionFailed ? "Disconnected" : "Reconnecting…"}
           </span>
           <StatusBadge status={campaign.status} pulse={badgePulse} />
+          {totalCount > 0 && (
+            <ProgressIndicator completedCount={completedCount} totalCount={totalCount} />
+          )}
           {isViewer && (
             <span className="badge" style={{ background: "rgba(148,163,184,0.2)", color: "var(--color-text-muted)", fontSize: "0.75rem" }}>
               👁 Read-only
