@@ -15,6 +15,12 @@ const THEME_OPTIONS = [
   { value: "system", label: "System" },
 ];
 
+const DIGEST_FREQUENCY_OPTIONS = [
+  { value: "realtime", label: "Real-time" },
+  { value: "daily", label: "Daily digest" },
+  { value: "weekly", label: "Weekly digest" },
+];
+
 const LOCALE_OPTIONS = [
   { value: "en-US", label: "English (US)" },
   { value: "en-GB", label: "English (UK)" },
@@ -299,6 +305,205 @@ function PreferencesTab({ settings, onSettingsSaved }) {
 }
 
 // ---------------------------------------------------------------------------
+// NotificationsTab
+// ---------------------------------------------------------------------------
+
+function NotificationsTab({ settings, onSettingsSaved }) {
+  const prefs = settings?.notification_prefs ?? {};
+
+  const [pipelineUpdates, setPipelineUpdates] = useState(prefs.pipeline_updates !== false);
+  const [approvalsRequired, setApprovalsRequired] = useState(prefs.approvals_required !== false);
+  const [failuresErrors, setFailuresErrors] = useState(prefs.failures_errors !== false);
+  const [digestFrequency, setDigestFrequency] = useState(prefs.digest_frequency ?? "realtime");
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(prefs.quiet_hours_enabled ?? false);
+  const [quietHoursStart, setQuietHoursStart] = useState(prefs.quiet_hours_start ?? "22:00");
+  const [quietHoursEnd, setQuietHoursEnd] = useState(prefs.quiet_hours_end ?? "08:00");
+
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const addToast = useToast();
+
+  const hasDigestFrequency = prefs.digest_frequency !== undefined;
+  const hasQuietHours = prefs.quiet_hours_enabled !== undefined;
+
+  const savedRef = useRef({
+    pipeline_updates: prefs.pipeline_updates !== false,
+    approvals_required: prefs.approvals_required !== false,
+    failures_errors: prefs.failures_errors !== false,
+    digest_frequency: prefs.digest_frequency ?? "realtime",
+    quiet_hours_enabled: prefs.quiet_hours_enabled ?? false,
+    quiet_hours_start: prefs.quiet_hours_start ?? "22:00",
+    quiet_hours_end: prefs.quiet_hours_end ?? "08:00",
+  });
+
+  const dirty =
+    pipelineUpdates !== savedRef.current.pipeline_updates ||
+    approvalsRequired !== savedRef.current.approvals_required ||
+    failuresErrors !== savedRef.current.failures_errors ||
+    digestFrequency !== savedRef.current.digest_frequency ||
+    quietHoursEnabled !== savedRef.current.quiet_hours_enabled ||
+    quietHoursStart !== savedRef.current.quiet_hours_start ||
+    quietHoursEnd !== savedRef.current.quiet_hours_end;
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    try {
+      const patch = {
+        pipeline_updates: pipelineUpdates,
+        approvals_required: approvalsRequired,
+        failures_errors: failuresErrors,
+      };
+      if (hasDigestFrequency) {
+        patch.digest_frequency = digestFrequency;
+      }
+      if (hasQuietHours) {
+        patch.quiet_hours_enabled = quietHoursEnabled;
+        patch.quiet_hours_start = quietHoursStart;
+        patch.quiet_hours_end = quietHoursEnd;
+      }
+      const updated = await patchMeSettings({ notification_prefs: patch });
+      const updatedPrefs = updated.notification_prefs ?? patch;
+      savedRef.current = {
+        pipeline_updates: updatedPrefs.pipeline_updates ?? pipelineUpdates,
+        approvals_required: updatedPrefs.approvals_required ?? approvalsRequired,
+        failures_errors: updatedPrefs.failures_errors ?? failuresErrors,
+        digest_frequency: updatedPrefs.digest_frequency ?? digestFrequency,
+        quiet_hours_enabled: updatedPrefs.quiet_hours_enabled ?? quietHoursEnabled,
+        quiet_hours_start: updatedPrefs.quiet_hours_start ?? quietHoursStart,
+        quiet_hours_end: updatedPrefs.quiet_hours_end ?? quietHoursEnd,
+      };
+      setSaveSuccess(true);
+      addToast({ icon: "✅", stage: "Notifications", message: "Notification preferences saved successfully.", duration: 3000 });
+      setTimeout(() => setSaveSuccess(false), 3000);
+      if (onSettingsSaved) onSettingsSaved();
+    } catch (err) {
+      setSaveError(err.message ?? "Failed to save notification preferences.");
+      addToast({ icon: "❌", stage: "Notifications", message: err.message ?? "Failed to save notification preferences." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div data-testid="tab-notifications">
+      <h3>Notifications</h3>
+      <form onSubmit={handleSave}>
+        <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+          <legend style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Notification Categories</legend>
+
+          <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              id="notif-pipeline-updates"
+              type="checkbox"
+              checked={pipelineUpdates}
+              onChange={(e) => setPipelineUpdates(e.target.checked)}
+            />
+            <label htmlFor="notif-pipeline-updates">Pipeline updates</label>
+          </div>
+
+          <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              id="notif-approvals-required"
+              type="checkbox"
+              checked={approvalsRequired}
+              onChange={(e) => setApprovalsRequired(e.target.checked)}
+            />
+            <label htmlFor="notif-approvals-required">Approvals required</label>
+          </div>
+
+          <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              id="notif-failures-errors"
+              type="checkbox"
+              checked={failuresErrors}
+              onChange={(e) => setFailuresErrors(e.target.checked)}
+            />
+            <label htmlFor="notif-failures-errors">Failures / errors</label>
+          </div>
+        </fieldset>
+
+        {hasDigestFrequency && (
+          <div className="form-group" style={{ marginTop: "1rem" }}>
+            <label htmlFor="notif-digest-frequency">Digest frequency</label>
+            <select
+              id="notif-digest-frequency"
+              value={digestFrequency}
+              onChange={(e) => setDigestFrequency(e.target.value)}
+            >
+              {DIGEST_FREQUENCY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {hasQuietHours && (
+          <fieldset style={{ border: "none", padding: 0, margin: "1rem 0 0" }}>
+            <legend style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Quiet Hours</legend>
+
+            <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input
+                id="notif-quiet-hours-enabled"
+                type="checkbox"
+                checked={quietHoursEnabled}
+                onChange={(e) => setQuietHoursEnabled(e.target.checked)}
+              />
+              <label htmlFor="notif-quiet-hours-enabled">Enable quiet hours</label>
+            </div>
+
+            {quietHoursEnabled && (
+              <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem" }}>
+                <div className="form-group">
+                  <label htmlFor="notif-quiet-start">Start</label>
+                  <input
+                    id="notif-quiet-start"
+                    type="time"
+                    value={quietHoursStart}
+                    onChange={(e) => setQuietHoursStart(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="notif-quiet-end">End</label>
+                  <input
+                    id="notif-quiet-end"
+                    type="time"
+                    value={quietHoursEnd}
+                    onChange={(e) => setQuietHoursEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </fieldset>
+        )}
+
+        {saveError && (
+          <p data-testid="notifications-save-error" style={{ color: "var(--color-danger)", fontSize: "0.875rem", marginBottom: "0.75rem" }}>
+            {saveError}
+          </p>
+        )}
+        {saveSuccess && (
+          <p data-testid="notifications-save-success" style={{ color: "var(--color-success)", fontSize: "0.875rem", marginBottom: "0.75rem" }}>
+            Notification preferences saved successfully.
+          </p>
+        )}
+        {dirty && !saving && (
+          <p data-testid="notifications-unsaved-changes" style={{ color: "var(--color-warning)", fontSize: "0.75rem", marginBottom: "0.5rem" }}>
+            You have unsaved changes.
+          </p>
+        )}
+        <button type="submit" className="btn btn-primary" disabled={saving}>
+          {saving ? "Saving…" : "Save Notifications"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // UserSettings (main)
 // ---------------------------------------------------------------------------
 
@@ -411,12 +616,7 @@ export default function UserSettings() {
           <PreferencesTab settings={settings} onSettingsSaved={handleSettingsSaved} />
         )}
         {activeTab === "notifications" && (
-          <div data-testid="tab-notifications">
-            <h3>Notifications</h3>
-            <p style={{ color: "var(--color-text-muted)" }}>
-              Notification settings will appear here.
-            </p>
-          </div>
+          <NotificationsTab settings={settings} onSettingsSaved={handleSettingsSaved} />
         )}
       </div>
     </div>
