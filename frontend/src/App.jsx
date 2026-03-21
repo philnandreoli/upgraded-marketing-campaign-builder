@@ -14,6 +14,7 @@ import WorkspaceDetail from "./pages/WorkspaceDetail.jsx";
 import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
 import useWebSocket from "./hooks/useWebSocket.js";
 import AppNavbar from "./components/AppNavbar.jsx";
+import NavigationProgress from "./components/NavigationProgress.jsx";
 import { loginRequest } from "./authConfig.js";
 import { UserProvider, useUser } from "./UserContext.jsx";
 import { WorkspaceProvider } from "./WorkspaceContext.jsx";
@@ -104,6 +105,7 @@ function AuthenticatedApp() {
 
   return (
     <div className="app-shell">
+      <NavigationProgress />
       <AppNavbar
         connected={connected}
         activeAccount={activeAccount}
