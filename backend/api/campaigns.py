@@ -25,11 +25,13 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Res
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import User, UserRole
+from backend.models.user_settings import UserSettingsPatch
 from backend.models.workspace import WorkspaceRole
 from backend.models.events import CampaignEventLog
 from backend.infrastructure.auth import get_current_user
 from backend.infrastructure.campaign_store import get_campaign_store
 from backend.infrastructure.event_store import get_event_store
+from backend.infrastructure.user_settings_store import get_user_settings_store
 from backend.application.campaign_workflow_service import get_workflow_service
 from backend.infrastructure.workflow_executor import get_executor, WorkflowJob
 
@@ -41,6 +43,8 @@ from backend.apps.api.schemas.campaigns import (  # noqa: F401
     CreateCampaignRequest,
     CreateCampaignResponse,
     MeResponse,
+    MeSettingsResponse,
+    PatchMeSettingsRequest,
     UpdateDraftRequest,
     UpdateMemberRoleRequest,
 )
@@ -87,6 +91,72 @@ async def get_me(
         is_admin=user.is_admin,
         can_build=user.can_build,
         is_viewer=user.is_viewer,
+    )
+
+
+@me_router.get("/me/settings", response_model=MeSettingsResponse)
+async def get_me_settings(
+    user: Optional[User] = Depends(get_current_user),
+) -> MeSettingsResponse:
+    """Return the current user's effective settings (persisted or defaults)."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    settings = await get_user_settings_store().get(user.id)
+    return MeSettingsResponse(
+        theme=settings.ui_theme,
+        locale=settings.locale,
+        timezone=settings.timezone,
+        default_workspace_id=settings.default_workspace_id,
+        notification_prefs=settings.notification_prefs,
+        dashboard_prefs=settings.dashboard_prefs,
+    )
+
+
+@me_router.patch("/me/settings", response_model=MeSettingsResponse)
+async def patch_me_settings(
+    body: PatchMeSettingsRequest = Body(),
+    user: Optional[User] = Depends(get_current_user),
+) -> MeSettingsResponse:
+    """Apply partial updates to current user's settings with strict validation."""
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    patch_data = body.model_dump(exclude_unset=True)
+    workspace_id = patch_data.get("default_workspace_id")
+    if workspace_id is not None:
+        membership = await get_campaign_store().get_workspace_member_role(workspace_id, user.id)
+        if membership is None:
+            raise HTTPException(
+                status_code=422,
+                detail="default_workspace_id must reference a workspace the user belongs to",
+            )
+
+    patch_kwargs: dict[str, Any] = {}
+    if "theme" in patch_data:
+        patch_kwargs["ui_theme"] = patch_data["theme"]
+    if "locale" in patch_data:
+        patch_kwargs["locale"] = patch_data["locale"]
+    if "timezone" in patch_data:
+        patch_kwargs["timezone"] = patch_data["timezone"]
+    if "default_workspace_id" in patch_data:
+        patch_kwargs["default_workspace_id"] = patch_data["default_workspace_id"]
+    if "notification_prefs" in patch_data:
+        patch_kwargs["notification_prefs"] = patch_data["notification_prefs"]
+    if "dashboard_prefs" in patch_data:
+        patch_kwargs["dashboard_prefs"] = patch_data["dashboard_prefs"]
+
+    updated = await get_user_settings_store().patch(
+        user.id,
+        UserSettingsPatch(**patch_kwargs),
+    )
+    return MeSettingsResponse(
+        theme=updated.ui_theme,
+        locale=updated.locale,
+        timezone=updated.timezone,
+        default_workspace_id=updated.default_workspace_id,
+        notification_prefs=updated.notification_prefs,
+        dashboard_prefs=updated.dashboard_prefs,
     )
 
 
