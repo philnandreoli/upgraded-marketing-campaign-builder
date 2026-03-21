@@ -799,6 +799,55 @@ a:hover { color: var(--color-primary-hover); }
 .kpi-card .kpi-target { font-size: 0.8rem; color: var(--color-text-muted); }
 .kpi-card .kpi-method { font-size: 0.75rem; color: var(--color-text-dim); margin-top: 0.25rem; }
 
+/* Strategy Section */
+.strategy-section { margin-bottom: 0.75rem; }
+.strategy-base-text { font-size: var(--text-base); }
+.strategy-sm-text { font-size: 0.85rem; }
+.strategy-list { margin-left: 1.25rem; }
+.strategy-list-item { font-size: 0.85rem; margin-bottom: 0.25rem; }
+
+/* Analytics Section */
+.analytics-meta { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.85rem; }
+.analytics-tools { margin-top: 1rem; }
+.analytics-criteria { margin-top: 0.75rem; }
+.analytics-text { font-size: 0.85rem; }
+
+/* Review Section — score container & verdict */
+.review-score-container { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1rem; }
+.review-score-label { font-size: 0.8rem; color: var(--color-text-dim); }
+.review-score-suffix { font-size: 0.85rem; }
+.review-verdict { font-weight: 600; }
+.review-verdict--approved { color: var(--color-success); }
+.review-verdict--needs-review { color: var(--color-warning); }
+.review-section-block { margin-bottom: 0.75rem; }
+.review-text { font-size: 0.85rem; }
+.review-feedback-note { font-size: 0.8rem; color: var(--color-text-muted); margin-top: 1rem; }
+
+/* Channel Plan Section */
+.channel-budget { font-size: var(--text-base); margin-bottom: 0.75rem; }
+.channel-bars-container { margin-bottom: 1rem; }
+.channel-platform-bars { margin-left: 1rem; margin-bottom: 0.25rem; }
+.channel-bar--platform { margin-top: 0.2rem; }
+.channel-bar--platform .bar-label { font-size: 0.78rem; text-transform: capitalize; color: var(--color-text-muted); }
+.channel-bar--platform .bar-track { height: 0.5rem; }
+.channel-bar--platform .bar-fill { opacity: 0.75; }
+.channel-bar--platform .bar-value { font-size: 0.78rem; color: var(--color-text-muted); }
+.channel-rationale { margin-bottom: 0.75rem; padding-left: 0.5rem; border-left: 2px solid var(--color-border); }
+.channel-name { font-size: 0.85rem; text-transform: capitalize; }
+.channel-rationale-text { font-size: 0.82rem; color: var(--color-text-muted); }
+.channel-timing { font-size: 0.8rem; color: var(--color-text-dim); }
+.channel-tactics { margin-left: 1.25rem; }
+.channel-tactic { font-size: 0.8rem; color: var(--color-text-muted); }
+.channel-platform-breakdown { margin-top: 0.5rem; }
+.channel-platform-item { margin-bottom: 0.5rem; padding-left: 0.5rem; border-left: 2px solid var(--color-border-subtle, var(--color-border)); }
+.channel-platform-name { font-size: 0.8rem; text-transform: capitalize; }
+.channel-platform-budget { font-weight: normal; color: var(--color-text-muted); margin-left: 0.4rem; }
+.channel-platform-timing { font-size: 0.78rem; color: var(--color-text-dim); }
+.channel-platform-tactics { margin-left: 1.25rem; }
+.channel-platform-tactic { font-size: 0.78rem; color: var(--color-text-muted); }
+.channel-timeline { margin-top: 0.5rem; }
+.channel-timeline-text { font-size: 0.85rem; }
+
 /* Channel picker (NewCampaign form) */
 .channel-picker { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .channel-chip {

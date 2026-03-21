@@ -30,25 +30,25 @@ export default function StrategySection({ data, error }) {
       <h2>📋 Strategy</h2>
 
       {data.value_proposition && (
-        <div style={{ marginBottom: "0.75rem" }}>
+        <div className="strategy-section">
           <h3>Value Proposition</h3>
-          <p style={{ fontSize: "0.9rem" }}>{data.value_proposition}</p>
+          <p className="strategy-base-text">{data.value_proposition}</p>
         </div>
       )}
 
       {data.positioning && (
-        <div style={{ marginBottom: "0.75rem" }}>
+        <div className="strategy-section">
           <h3>Positioning</h3>
-          <p style={{ fontSize: "0.9rem" }}>{data.positioning}</p>
+          <p className="strategy-base-text">{data.positioning}</p>
         </div>
       )}
 
       {data.objectives?.length > 0 && (
-        <div style={{ marginBottom: "0.75rem" }}>
+        <div className="strategy-section">
           <h3>Objectives</h3>
-          <ul style={{ marginLeft: "1.25rem" }}>
+          <ul className="strategy-list">
             {data.objectives.map((o, i) => (
-              <li key={i} style={{ fontSize: "0.85rem", marginBottom: "0.25rem" }}>
+              <li key={i} className="strategy-list-item">
                 {o}
               </li>
             ))}
@@ -57,11 +57,11 @@ export default function StrategySection({ data, error }) {
       )}
 
       {data.key_messages?.length > 0 && (
-        <div style={{ marginBottom: "0.75rem" }}>
+        <div className="strategy-section">
           <h3>Key Messages</h3>
-          <ul style={{ marginLeft: "1.25rem" }}>
+          <ul className="strategy-list">
             {data.key_messages.map((m, i) => (
-              <li key={i} style={{ fontSize: "0.85rem", marginBottom: "0.25rem" }}>
+              <li key={i} className="strategy-list-item">
                 {m}
               </li>
             ))}
@@ -70,34 +70,34 @@ export default function StrategySection({ data, error }) {
       )}
 
       {(audience.demographics || audience.psychographics) && (
-        <div style={{ marginBottom: "0.75rem" }}>
+        <div className="strategy-section">
           <h3>Target Audience</h3>
           {audience.demographics && (
-            <p style={{ fontSize: "0.85rem" }}>
+            <p className="strategy-sm-text">
               <strong>Demographics:</strong> {audience.demographics}
             </p>
           )}
           {audience.psychographics && (
-            <p style={{ fontSize: "0.85rem" }}>
+            <p className="strategy-sm-text">
               <strong>Psychographics:</strong> {audience.psychographics}
             </p>
           )}
           {audience.pain_points?.length > 0 && (
             <>
-              <strong style={{ fontSize: "0.85rem" }}>Pain Points:</strong>
-              <ul style={{ marginLeft: "1.25rem" }}>
+              <strong className="strategy-sm-text">Pain Points:</strong>
+              <ul className="strategy-list">
                 {audience.pain_points.map((p, i) => (
-                  <li key={i} style={{ fontSize: "0.85rem" }}>{p}</li>
+                  <li key={i} className="strategy-sm-text">{p}</li>
                 ))}
               </ul>
             </>
           )}
           {audience.personas?.length > 0 && (
             <>
-              <strong style={{ fontSize: "0.85rem" }}>Personas:</strong>
-              <ul style={{ marginLeft: "1.25rem" }}>
+              <strong className="strategy-sm-text">Personas:</strong>
+              <ul className="strategy-list">
                 {audience.personas.map((p, i) => (
-                  <li key={i} style={{ fontSize: "0.85rem" }}>{p}</li>
+                  <li key={i} className="strategy-sm-text">{p}</li>
                 ))}
               </ul>
             </>
@@ -108,7 +108,7 @@ export default function StrategySection({ data, error }) {
       {data.competitive_landscape && (
         <div>
           <h3>Competitive Landscape</h3>
-          <p style={{ fontSize: "0.85rem" }}>{data.competitive_landscape}</p>
+          <p className="strategy-sm-text">{data.competitive_landscape}</p>
         </div>
       )}
     </div>
