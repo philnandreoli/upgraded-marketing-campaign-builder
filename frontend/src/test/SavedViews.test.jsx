@@ -395,6 +395,119 @@ describe("SavedViews – URL state", () => {
 // Tests: localStorage persistence
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Tests: Active highlight
+// ---------------------------------------------------------------------------
+
+describe("SavedViews – Active highlight", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("highlights the saved view chip whose filter+search matches the current state", async () => {
+    localStorage.setItem(
+      SAVED_VIEWS_STORAGE_KEY,
+      JSON.stringify([
+        { id: "sv-h1", name: "Approved View", filter: "approved", search: "" },
+      ])
+    );
+
+    await renderDashboard({}, [campaignDraft, campaignApproved]);
+    await waitFor(() => screen.getByText("DraftProduct"));
+
+    // Switch to the Approved tab — now matches the saved view
+    fireEvent.click(screen.getByRole("tab", { name: "Approved" }));
+
+    const chip = screen.getByRole("button", { name: /apply saved view: approved view/i }).closest(".saved-view-chip--user");
+    expect(chip).toHaveClass("saved-view-chip--active");
+  });
+
+  it("does not highlight a saved view when the current state does not match any view", async () => {
+    localStorage.setItem(
+      SAVED_VIEWS_STORAGE_KEY,
+      JSON.stringify([
+        { id: "sv-h2", name: "Approved View", filter: "approved", search: "" },
+      ])
+    );
+
+    await renderDashboard({}, [campaignDraft, campaignApproved]);
+    await waitFor(() => screen.getByText("DraftProduct"));
+
+    // Default state is "all" + empty search — does not match the saved view
+    const chip = screen.getByRole("button", { name: /apply saved view: approved view/i }).closest(".saved-view-chip--user");
+    expect(chip).not.toHaveClass("saved-view-chip--active");
+  });
+
+  it("updates highlight when the user changes the filter to match a different saved view", async () => {
+    localStorage.setItem(
+      SAVED_VIEWS_STORAGE_KEY,
+      JSON.stringify([
+        { id: "sv-h3", name: "Approved View", filter: "approved", search: "" },
+        { id: "sv-h4", name: "In Progress View", filter: "in_progress", search: "" },
+      ])
+    );
+
+    await renderDashboard({}, [campaignDraft, campaignApproved]);
+    await waitFor(() => screen.getByText("DraftProduct"));
+
+    // Activate Approved tab
+    fireEvent.click(screen.getByRole("tab", { name: "Approved" }));
+
+    const approvedChip = screen.getByRole("button", { name: /apply saved view: approved view/i }).closest(".saved-view-chip--user");
+    const progressChip = screen.getByRole("button", { name: /apply saved view: in progress view/i }).closest(".saved-view-chip--user");
+
+    expect(approvedChip).toHaveClass("saved-view-chip--active");
+    expect(progressChip).not.toHaveClass("saved-view-chip--active");
+
+    // Now switch to In Progress tab
+    fireEvent.click(screen.getByRole("tab", { name: "In Progress" }));
+
+    expect(approvedChip).not.toHaveClass("saved-view-chip--active");
+    expect(progressChip).toHaveClass("saved-view-chip--active");
+  });
+
+  it("clears highlight when the user modifies the search away from any saved view", async () => {
+    localStorage.setItem(
+      SAVED_VIEWS_STORAGE_KEY,
+      JSON.stringify([
+        { id: "sv-h5", name: "Approved View", filter: "approved", search: "" },
+      ])
+    );
+
+    await renderDashboard({}, [campaignDraft, campaignApproved]);
+    await waitFor(() => screen.getByText("DraftProduct"));
+
+    // Match the saved view
+    fireEvent.click(screen.getByRole("tab", { name: "Approved" }));
+    const chip = screen.getByRole("button", { name: /apply saved view: approved view/i }).closest(".saved-view-chip--user");
+    expect(chip).toHaveClass("saved-view-chip--active");
+
+    // Type a search query — now it no longer matches
+    await typeSearch("something");
+    expect(chip).not.toHaveClass("saved-view-chip--active");
+  });
+
+  it("highlights a saved view that includes a search query when both filter and search match", async () => {
+    localStorage.setItem(
+      SAVED_VIEWS_STORAGE_KEY,
+      JSON.stringify([
+        { id: "sv-h6", name: "Draft Search", filter: "all", search: "draft" },
+      ])
+    );
+
+    await renderDashboard({}, [campaignDraft, campaignApproved]);
+    await waitFor(() => screen.getByText("DraftProduct"));
+
+    // Initially no highlight (search is empty)
+    const chip = screen.getByRole("button", { name: /apply saved view: draft search/i }).closest(".saved-view-chip--user");
+    expect(chip).not.toHaveClass("saved-view-chip--active");
+
+    // Type the matching search query
+    await typeSearch("draft");
+    expect(chip).toHaveClass("saved-view-chip--active");
+  });
+});
+
 describe("SavedViews – Persistence across refresh", () => {
   beforeEach(() => {
     localStorage.clear();
