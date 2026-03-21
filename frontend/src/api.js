@@ -5,6 +5,11 @@ export { ApiError, RateLimitError } from "./lib/apiClient.js";
 
 export const getMe = () => request("GET", "/api/me");
 
+export const getMeSettings = () => request("GET", "/api/me/settings");
+
+export const patchMeSettings = (patch) =>
+  request("PATCH", "/api/me/settings", { body: patch });
+
 export const createCampaign = (brief, workspaceId) =>
   request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns`, { body: brief });
 

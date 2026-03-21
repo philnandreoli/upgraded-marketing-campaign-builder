@@ -6,6 +6,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import UserSettings from '../pages/UserSettings';
+import { ToastProvider } from '../ToastContext';
 
 vi.mock('../api');
 
@@ -23,14 +24,35 @@ function makeMeResponse() {
   };
 }
 
+function makeSettingsResponse(overrides = {}) {
+  return {
+    theme: 'system',
+    locale: 'en-US',
+    timezone: 'UTC',
+    default_workspace_id: null,
+    notification_prefs: {},
+    dashboard_prefs: {},
+    ...overrides,
+  };
+}
+
 function renderSettings() {
   return render(
     <MemoryRouter initialEntries={['/settings']}>
-      <Routes>
-        <Route path="/settings" element={<UserSettings />} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/settings" element={<UserSettings />} />
+        </Routes>
+      </ToastProvider>
     </MemoryRouter>,
   );
+}
+
+/** Set up mocks so the page loads successfully. */
+function mockSuccessfulLoad(settingsOverrides = {}) {
+  api.getMe.mockResolvedValue(makeMeResponse());
+  api.getMeSettings.mockResolvedValue(makeSettingsResponse(settingsOverrides));
+  api.listWorkspaces.mockResolvedValue([]);
 }
 
 beforeEach(() => {
@@ -40,6 +62,7 @@ beforeEach(() => {
 describe('UserSettings – loading state', () => {
   it('shows loading indicator initially', () => {
     api.getMe.mockReturnValue(new Promise(() => {})); // never resolves
+    api.getMeSettings.mockReturnValue(new Promise(() => {}));
     renderSettings();
     expect(screen.getByTestId('settings-loading')).toBeInTheDocument();
     expect(screen.getByText(/loading settings/i)).toBeInTheDocument();
@@ -49,6 +72,7 @@ describe('UserSettings – loading state', () => {
 describe('UserSettings – error state', () => {
   it('shows error message on API failure', async () => {
     api.getMe.mockRejectedValue(new Error('Network error'));
+    api.getMeSettings.mockRejectedValue(new Error('Network error'));
     renderSettings();
     await waitFor(() => expect(screen.getByTestId('settings-error')).toBeInTheDocument());
     expect(screen.getByText('Network error')).toBeInTheDocument();
@@ -56,6 +80,7 @@ describe('UserSettings – error state', () => {
 
   it('shows retry button on error', async () => {
     api.getMe.mockRejectedValue(new Error('Network error'));
+    api.getMeSettings.mockRejectedValue(new Error('Network error'));
     renderSettings();
     await waitFor(() => expect(screen.getByTestId('settings-error')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
@@ -63,7 +88,9 @@ describe('UserSettings – error state', () => {
 
   it('retries loading when retry button is clicked', async () => {
     api.getMe.mockRejectedValueOnce(new Error('Network error'));
+    api.getMeSettings.mockRejectedValueOnce(new Error('Network error'));
     api.getMe.mockResolvedValueOnce(makeMeResponse());
+    api.getMeSettings.mockResolvedValueOnce(makeSettingsResponse());
     renderSettings();
 
     await waitFor(() => expect(screen.getByTestId('settings-error')).toBeInTheDocument());
@@ -76,14 +103,14 @@ describe('UserSettings – error state', () => {
 
 describe('UserSettings – success state', () => {
   it('renders page with user info after load', async () => {
-    api.getMe.mockResolvedValue(makeMeResponse());
+    mockSuccessfulLoad();
     renderSettings();
     await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
-    expect(screen.getByText(/test user/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Test User')).toBeInTheDocument();
   });
 
   it('renders breadcrumb with link to dashboard', async () => {
-    api.getMe.mockResolvedValue(makeMeResponse());
+    mockSuccessfulLoad();
     renderSettings();
     await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
     expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute('href', '/');
@@ -92,7 +119,7 @@ describe('UserSettings – success state', () => {
 
 describe('UserSettings – tab scaffold', () => {
   it('shows Profile, Preferences, and Notifications tabs', async () => {
-    api.getMe.mockResolvedValue(makeMeResponse());
+    mockSuccessfulLoad();
     renderSettings();
     await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
     expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
@@ -101,7 +128,7 @@ describe('UserSettings – tab scaffold', () => {
   });
 
   it('Profile tab is selected by default', async () => {
-    api.getMe.mockResolvedValue(makeMeResponse());
+    mockSuccessfulLoad();
     renderSettings();
     await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
     expect(screen.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true');
@@ -109,7 +136,7 @@ describe('UserSettings – tab scaffold', () => {
   });
 
   it('switches to Preferences tab on click', async () => {
-    api.getMe.mockResolvedValue(makeMeResponse());
+    mockSuccessfulLoad();
     renderSettings();
     await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
@@ -119,12 +146,188 @@ describe('UserSettings – tab scaffold', () => {
   });
 
   it('switches to Notifications tab on click', async () => {
-    api.getMe.mockResolvedValue(makeMeResponse());
+    mockSuccessfulLoad();
     renderSettings();
     await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('tab', { name: 'Notifications' }));
     expect(screen.getByRole('tab', { name: 'Notifications' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('tab-notifications')).toBeInTheDocument();
     expect(screen.queryByTestId('tab-profile')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Profile tab
+// ---------------------------------------------------------------------------
+
+describe('UserSettings – Profile tab', () => {
+  it('displays display name in an editable input', async () => {
+    mockSuccessfulLoad();
+    renderSettings();
+    await waitFor(() => expect(screen.getByTestId('tab-profile')).toBeInTheDocument());
+    const input = screen.getByLabelText(/display name/i);
+    expect(input).toBeInTheDocument();
+    expect(input.value).toBe('Test User');
+    expect(input).not.toBeDisabled();
+  });
+
+  it('displays email as read-only', async () => {
+    mockSuccessfulLoad();
+    renderSettings();
+    await waitFor(() => expect(screen.getByTestId('tab-profile')).toBeInTheDocument());
+    const input = screen.getByLabelText(/email/i);
+    expect(input).toBeInTheDocument();
+    expect(input.value).toBe('test@example.com');
+    expect(input).toBeDisabled();
+  });
+
+  it('displays roles as read-only', async () => {
+    mockSuccessfulLoad();
+    renderSettings();
+    await waitFor(() => expect(screen.getByTestId('tab-profile')).toBeInTheDocument());
+    const input = screen.getByLabelText(/roles/i);
+    expect(input).toBeInTheDocument();
+    expect(input.value).toBe('campaign_builder');
+    expect(input).toBeDisabled();
+  });
+
+  it('shows save button that triggers API call', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockResolvedValue(makeSettingsResponse());
+    renderSettings();
+    await waitFor(() => expect(screen.getByTestId('tab-profile')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /save profile/i }));
+
+    await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('profile-save-success')).toBeInTheDocument());
+  });
+
+  it('shows error message on save failure', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockRejectedValue(new Error('Save failed'));
+    renderSettings();
+    await waitFor(() => expect(screen.getByTestId('tab-profile')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /save profile/i }));
+
+    await waitFor(() => expect(screen.getByTestId('profile-save-error')).toBeInTheDocument());
+    expect(screen.getByTestId('profile-save-error')).toHaveTextContent('Save failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Preferences tab
+// ---------------------------------------------------------------------------
+
+describe('UserSettings – Preferences tab', () => {
+  it('loads existing settings into form fields', async () => {
+    mockSuccessfulLoad({ theme: 'dark', locale: 'fr-FR', timezone: 'Europe/Paris' });
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
+
+    await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
+    expect(screen.getByLabelText(/theme/i).value).toBe('dark');
+    expect(screen.getByLabelText(/locale/i).value).toBe('fr-FR');
+    expect(screen.getByLabelText(/timezone/i).value).toBe('Europe/Paris');
+  });
+
+  it('saves preferences successfully', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockResolvedValue(makeSettingsResponse({ theme: 'dark' }));
+    api.listWorkspaces.mockResolvedValue([]);
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
+
+    await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/theme/i), { target: { value: 'dark' } });
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+
+    await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ theme: 'dark' }),
+    ));
+    await waitFor(() => expect(screen.getByTestId('preferences-save-success')).toBeInTheDocument());
+  });
+
+  it('shows error message on save failure', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockRejectedValue(new Error('Server error'));
+    api.listWorkspaces.mockResolvedValue([]);
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
+
+    await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+
+    await waitFor(() => expect(screen.getByTestId('preferences-save-error')).toBeInTheDocument());
+    expect(screen.getByTestId('preferences-save-error')).toHaveTextContent('Server error');
+  });
+
+  it('shows unsaved changes warning when form is dirty', async () => {
+    mockSuccessfulLoad();
+    api.listWorkspaces.mockResolvedValue([]);
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
+
+    await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/theme/i), { target: { value: 'dark' } });
+
+    expect(screen.getByTestId('unsaved-changes')).toBeInTheDocument();
+    expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument();
+  });
+
+  it('lists workspaces in the default workspace selector', async () => {
+    api.getMe.mockResolvedValue(makeMeResponse());
+    api.getMeSettings.mockResolvedValue(makeSettingsResponse());
+    api.listWorkspaces.mockResolvedValue([
+      { id: 'ws-1', name: 'Marketing' },
+      { id: 'ws-2', name: 'Engineering' },
+    ]);
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
+
+    await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
+
+    const wsSelect = screen.getByLabelText(/default workspace/i);
+    await waitFor(() => {
+      const options = Array.from(wsSelect.querySelectorAll('option'));
+      expect(options.map((o) => o.textContent)).toContain('Marketing');
+      expect(options.map((o) => o.textContent)).toContain('Engineering');
+    });
+  });
+
+  it('sends correct patch payload with all preferences', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockResolvedValue(makeSettingsResponse({
+      theme: 'light',
+      locale: 'de-DE',
+      timezone: 'Europe/Berlin',
+      default_workspace_id: null,
+    }));
+    api.listWorkspaces.mockResolvedValue([]);
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
+
+    await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/theme/i), { target: { value: 'light' } });
+    fireEvent.change(screen.getByLabelText(/locale/i), { target: { value: 'de-DE' } });
+    fireEvent.change(screen.getByLabelText(/timezone/i), { target: { value: 'Europe/Berlin' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
+
+    await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith({
+      theme: 'light',
+      locale: 'de-DE',
+      timezone: 'Europe/Berlin',
+      default_workspace_id: null,
+    }));
   });
 });
