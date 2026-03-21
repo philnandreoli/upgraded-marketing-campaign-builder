@@ -35,14 +35,14 @@ export default function ChannelPlanSection({ data, error }) {
       <h2>📡 Channel Plan</h2>
 
       {data.total_budget > 0 && (
-        <p style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
+        <p className="channel-budget">
           <strong>Total Budget:</strong> {data.currency || "USD"}{" "}
           {data.total_budget.toLocaleString()}
         </p>
       )}
 
       {data.recommendations?.length > 0 && (
-        <div style={{ marginBottom: "1rem" }}>
+        <div className="channel-bars-container">
           {data.recommendations.map((rec, i) => (
             <div key={i}>
               <div className="channel-bar">
@@ -56,21 +56,21 @@ export default function ChannelPlanSection({ data, error }) {
                 <span className="bar-value">{rec.budget_pct}%</span>
               </div>
               {rec.platform_breakdown?.length > 0 && (
-                <div style={{ marginLeft: "1rem", marginBottom: "0.25rem" }}>
+                <div className="channel-platform-bars">
                   {rec.platform_breakdown.map((pb, j) => {
                     const dollarAmt = platformBudget(data.total_budget, rec.budget_pct, pb.budget_pct, data.currency);
                     return (
-                      <div key={j} className="channel-bar" style={{ marginTop: "0.2rem" }}>
-                        <span className="bar-label" style={{ fontSize: "0.78rem", textTransform: "capitalize", color: "var(--color-text-muted)" }}>
+                      <div key={j} className="channel-bar channel-bar--platform">
+                        <span className="bar-label">
                           ↳ {pb.platform}
                         </span>
-                        <div className="bar-track" style={{ height: "0.5rem" }}>
+                        <div className="bar-track">
                           <div
                             className="bar-fill"
-                            style={{ width: `${Math.min(pb.budget_pct, 100)}%`, opacity: 0.75 }}
+                            style={{ width: `${Math.min(pb.budget_pct, 100)}%` }}
                           />
                         </div>
-                        <span className="bar-value" style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
+                        <span className="bar-value">
                           {pb.budget_pct}%{dollarAmt ? ` · ${dollarAmt}` : ""}
                         </span>
                       </div>
@@ -84,50 +84,50 @@ export default function ChannelPlanSection({ data, error }) {
       )}
 
       {data.recommendations?.map((rec, i) => (
-        <div key={i} style={{ marginBottom: "0.75rem", paddingLeft: "0.5rem", borderLeft: "2px solid var(--color-border)" }}>
-          <strong style={{ fontSize: "0.85rem", textTransform: "capitalize" }}>
+        <div key={i} className="channel-rationale">
+          <strong className="channel-name">
             {rec.channel.replace(/_/g, " ")}
           </strong>
           {rec.rationale && (
-            <p style={{ fontSize: "0.82rem", color: "var(--color-text-muted)" }}>
+            <p className="channel-rationale-text">
               {rec.rationale}
             </p>
           )}
           {rec.timing && (
-            <p style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
+            <p className="channel-timing">
               ⏰ {rec.timing}
             </p>
           )}
           {rec.tactics?.length > 0 && (
-            <ul style={{ marginLeft: "1.25rem" }}>
+            <ul className="channel-tactics">
               {rec.tactics.map((t, j) => (
-                <li key={j} style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                <li key={j} className="channel-tactic">
                   {t}
                 </li>
               ))}
             </ul>
           )}
           {rec.platform_breakdown?.length > 0 && (
-            <div style={{ marginTop: "0.5rem" }}>
+            <div className="channel-platform-breakdown">
               {rec.platform_breakdown.map((pb, j) => (
-                <div key={j} style={{ marginBottom: "0.5rem", paddingLeft: "0.5rem", borderLeft: "2px solid var(--color-border-subtle, var(--color-border))" }}>
-                  <strong style={{ fontSize: "0.8rem", textTransform: "capitalize" }}>
+                <div key={j} className="channel-platform-item">
+                  <strong className="channel-platform-name">
                     {pb.platform}
                     {data.total_budget > 0 && (
-                      <span style={{ fontWeight: "normal", color: "var(--color-text-muted)", marginLeft: "0.4rem" }}>
+                      <span className="channel-platform-budget">
                         ({pb.budget_pct}% · {platformBudget(data.total_budget, rec.budget_pct, pb.budget_pct, data.currency)})
                       </span>
                     )}
                   </strong>
                   {pb.timing && (
-                    <p style={{ fontSize: "0.78rem", color: "var(--color-text-dim)" }}>
+                    <p className="channel-platform-timing">
                       ⏰ {pb.timing}
                     </p>
                   )}
                   {pb.tactics?.length > 0 && (
-                    <ul style={{ marginLeft: "1.25rem" }}>
+                    <ul className="channel-platform-tactics">
                       {pb.tactics.map((t, k) => (
-                        <li key={k} style={{ fontSize: "0.78rem", color: "var(--color-text-muted)" }}>
+                        <li key={k} className="channel-platform-tactic">
                           {t}
                         </li>
                       ))}
@@ -141,9 +141,9 @@ export default function ChannelPlanSection({ data, error }) {
       ))}
 
       {data.timeline_summary && (
-        <div style={{ marginTop: "0.5rem" }}>
+        <div className="channel-timeline">
           <h3>Timeline</h3>
-          <p style={{ fontSize: "0.85rem" }}>{data.timeline_summary}</p>
+          <p className="channel-timeline-text">{data.timeline_summary}</p>
         </div>
       )}
     </div>

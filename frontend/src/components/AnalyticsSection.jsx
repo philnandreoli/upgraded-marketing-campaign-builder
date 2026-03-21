@@ -27,7 +27,7 @@ export default function AnalyticsSection({ data, error }) {
     <div className="card">
       <h2>📊 Analytics Plan</h2>
 
-      <div style={{ display: "flex", gap: "1.5rem", marginBottom: "1rem", fontSize: "0.85rem" }}>
+      <div className="analytics-meta">
         {data.reporting_cadence && (
           <span>
             <strong>Reporting:</strong> {data.reporting_cadence}
@@ -60,16 +60,16 @@ export default function AnalyticsSection({ data, error }) {
       )}
 
       {data.tracking_tools?.length > 0 && (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="analytics-tools">
           <h3>Tracking Tools</h3>
-          <p style={{ fontSize: "0.85rem" }}>{data.tracking_tools.join(", ")}</p>
+          <p className="analytics-text">{data.tracking_tools.join(", ")}</p>
         </div>
       )}
 
       {data.success_criteria && (
-        <div style={{ marginTop: "0.75rem" }}>
+        <div className="analytics-criteria">
           <h3>Success Criteria</h3>
-          <p style={{ fontSize: "0.85rem" }}>{data.success_criteria}</p>
+          <p className="analytics-text">{data.success_criteria}</p>
         </div>
       )}
     </div>

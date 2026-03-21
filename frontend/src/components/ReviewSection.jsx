@@ -36,27 +36,27 @@ export default function ReviewSection({ data, _campaignId, status, error }) {
 
       {data && (
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: "1.5rem", marginBottom: "1rem" }}>
+          <div className="review-score-container">
             <div>
-              <span style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
+              <span className="review-score-label">
                 Brand Consistency
               </span>
               <div className={`review-score ${scoreClass}`}>
-                {data.brand_consistency_score?.toFixed(1)} <span style={{ fontSize: "0.85rem" }}>/ 10</span>
+                {data.brand_consistency_score?.toFixed(1)} <span className="review-score-suffix">/ 10</span>
               </div>
             </div>
             <div>
-              <span style={{ fontSize: "0.8rem", color: "var(--color-text-dim)" }}>
+              <span className="review-score-label">
                 AI Verdict
               </span>
-              <div style={{ fontWeight: 600, color: data.approved ? "var(--color-success)" : "var(--color-warning)" }}>
+              <div className={`review-verdict ${data.approved ? "review-verdict--approved" : "review-verdict--needs-review"}`}>
                 {data.approved ? "✅ Approved" : "⚠️ Needs Review"}
               </div>
             </div>
           </div>
 
           {data.issues?.length > 0 && (
-            <div style={{ marginBottom: "0.75rem" }}>
+            <div className="review-section-block">
               <h3>Issues</h3>
               <ul className="review-issues">
                 {data.issues.map((issue, i) => (
@@ -67,7 +67,7 @@ export default function ReviewSection({ data, _campaignId, status, error }) {
           )}
 
           {data.suggestions?.length > 0 && (
-            <div style={{ marginBottom: "0.75rem" }}>
+            <div className="review-section-block">
               <h3>Suggestions</h3>
               <ul className="review-suggestions">
                 {data.suggestions.map((s, i) => (
@@ -78,9 +78,9 @@ export default function ReviewSection({ data, _campaignId, status, error }) {
           )}
 
           {data.human_notes && (
-            <div style={{ marginBottom: "0.75rem" }}>
+            <div className="review-section-block">
               <h3>Human Reviewer Notes</h3>
-              <p style={{ fontSize: "0.85rem" }}>{data.human_notes}</p>
+              <p className="review-text">{data.human_notes}</p>
             </div>
           )}
         </>
@@ -88,7 +88,7 @@ export default function ReviewSection({ data, _campaignId, status, error }) {
 
       {/* Review is now read-only — content approval happens in the Content Approval stage */}
       {data && (
-        <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "1rem" }}>
+        <p className="review-feedback-note">
           Review feedback will be automatically sent to improve the content in the next stage.
         </p>
       )}
