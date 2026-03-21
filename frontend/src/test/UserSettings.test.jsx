@@ -331,3 +331,296 @@ describe('UserSettings – Preferences tab', () => {
     }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Notifications tab
+// ---------------------------------------------------------------------------
+
+describe('UserSettings – Notifications tab', () => {
+  function goToNotifications() {
+    fireEvent.click(screen.getByRole('tab', { name: 'Notifications' }));
+  }
+
+  it('shows three notification category toggles checked by default', async () => {
+    mockSuccessfulLoad();
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    const pipeline = screen.getByLabelText(/pipeline updates/i);
+    const approvals = screen.getByLabelText(/approvals required/i);
+    const failures = screen.getByLabelText(/failures/i);
+
+    expect(pipeline).toBeChecked();
+    expect(approvals).toBeChecked();
+    expect(failures).toBeChecked();
+  });
+
+  it('loads toggle states from backend settings', async () => {
+    mockSuccessfulLoad({
+      notification_prefs: {
+        pipeline_updates: false,
+        approvals_required: true,
+        failures_errors: false,
+      },
+    });
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    expect(screen.getByLabelText(/pipeline updates/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/approvals required/i)).toBeChecked();
+    expect(screen.getByLabelText(/failures/i)).not.toBeChecked();
+  });
+
+  it('saves notification preferences successfully', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockResolvedValue(makeSettingsResponse({
+      notification_prefs: {
+        pipeline_updates: false,
+        approvals_required: true,
+        failures_errors: true,
+      },
+    }));
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    // Uncheck pipeline updates
+    fireEvent.click(screen.getByLabelText(/pipeline updates/i));
+
+    fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
+
+    await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith({
+      notification_prefs: expect.objectContaining({
+        pipeline_updates: false,
+        approvals_required: true,
+        failures_errors: true,
+      }),
+    }));
+    await waitFor(() => expect(screen.getByTestId('notifications-save-success')).toBeInTheDocument());
+  });
+
+  it('shows error message on save failure', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockRejectedValue(new Error('Network failure'));
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
+
+    await waitFor(() => expect(screen.getByTestId('notifications-save-error')).toBeInTheDocument());
+    expect(screen.getByTestId('notifications-save-error')).toHaveTextContent('Network failure');
+  });
+
+  it('shows unsaved changes warning when a toggle is changed', async () => {
+    mockSuccessfulLoad();
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText(/approvals required/i));
+
+    expect(screen.getByTestId('notifications-unsaved-changes')).toBeInTheDocument();
+    expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument();
+  });
+
+  it('sends correct patch payload with all three categories', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockResolvedValue(makeSettingsResponse({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: false,
+        failures_errors: false,
+      },
+    }));
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    // Uncheck approvals and failures
+    fireEvent.click(screen.getByLabelText(/approvals required/i));
+    fireEvent.click(screen.getByLabelText(/failures/i));
+
+    fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
+
+    await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: false,
+        failures_errors: false,
+      },
+    }));
+  });
+
+  it('shows digest frequency control when backend includes it', async () => {
+    mockSuccessfulLoad({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: true,
+        failures_errors: true,
+        digest_frequency: 'daily',
+      },
+    });
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    const select = screen.getByLabelText(/digest frequency/i);
+    expect(select).toBeInTheDocument();
+    expect(select.value).toBe('daily');
+  });
+
+  it('does not show digest frequency when backend omits it', async () => {
+    mockSuccessfulLoad({ notification_prefs: {} });
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+    expect(screen.queryByLabelText(/digest frequency/i)).not.toBeInTheDocument();
+  });
+
+  it('shows quiet hours controls when backend includes them', async () => {
+    mockSuccessfulLoad({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: true,
+        failures_errors: true,
+        quiet_hours_enabled: true,
+        quiet_hours_start: '23:00',
+        quiet_hours_end: '07:00',
+      },
+    });
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    expect(screen.getByLabelText(/enable quiet hours/i)).toBeChecked();
+    expect(screen.getByLabelText(/start/i).value).toBe('23:00');
+    expect(screen.getByLabelText(/end/i).value).toBe('07:00');
+  });
+
+  it('does not show quiet hours when backend omits them', async () => {
+    mockSuccessfulLoad({ notification_prefs: {} });
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+    expect(screen.queryByLabelText(/enable quiet hours/i)).not.toBeInTheDocument();
+  });
+
+  it('includes digest_frequency in patch when backend provides it', async () => {
+    mockSuccessfulLoad({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: true,
+        failures_errors: true,
+        digest_frequency: 'daily',
+      },
+    });
+    api.patchMeSettings.mockResolvedValue(makeSettingsResponse({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: true,
+        failures_errors: true,
+        digest_frequency: 'weekly',
+      },
+    }));
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/digest frequency/i), { target: { value: 'weekly' } });
+    fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
+
+    await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith({
+      notification_prefs: expect.objectContaining({
+        digest_frequency: 'weekly',
+      }),
+    }));
+  });
+
+  it('includes quiet hours fields in patch when backend provides them', async () => {
+    mockSuccessfulLoad({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: true,
+        failures_errors: true,
+        quiet_hours_enabled: false,
+        quiet_hours_start: '22:00',
+        quiet_hours_end: '08:00',
+      },
+    });
+    api.patchMeSettings.mockResolvedValue(makeSettingsResponse({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: true,
+        failures_errors: true,
+        quiet_hours_enabled: true,
+        quiet_hours_start: '22:00',
+        quiet_hours_end: '08:00',
+      },
+    }));
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText(/enable quiet hours/i));
+    fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
+
+    await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith({
+      notification_prefs: expect.objectContaining({
+        quiet_hours_enabled: true,
+        quiet_hours_start: '22:00',
+        quiet_hours_end: '08:00',
+      }),
+    }));
+  });
+
+  it('clears error state on subsequent successful save', async () => {
+    mockSuccessfulLoad();
+    api.patchMeSettings.mockRejectedValueOnce(new Error('Temporary error'));
+    renderSettings();
+    await waitFor(() => expect(screen.getByText('User Settings')).toBeInTheDocument());
+    goToNotifications();
+
+    await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
+
+    await waitFor(() => expect(screen.getByTestId('notifications-save-error')).toBeInTheDocument());
+
+    // Second save succeeds
+    api.patchMeSettings.mockResolvedValueOnce(makeSettingsResponse({
+      notification_prefs: {
+        pipeline_updates: true,
+        approvals_required: true,
+        failures_errors: true,
+      },
+    }));
+    fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
+
+    await waitFor(() => expect(screen.queryByTestId('notifications-save-error')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('notifications-save-success')).toBeInTheDocument());
+  });
+});
