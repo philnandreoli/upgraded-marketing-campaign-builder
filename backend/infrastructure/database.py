@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -373,6 +373,22 @@ class CampaignEventRow(Base):
     __table_args__ = (
         Index("ix_campaign_events_campaign_id", "campaign_id"),
     )
+
+
+class UserSettingsRow(Base):
+    """Durable per-user settings persisted across sessions and devices."""
+
+    __tablename__ = "user_settings"
+
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    ui_theme = Column(String, nullable=False, default="system")
+    locale = Column(String, nullable=False, default="en-US")
+    timezone = Column(String, nullable=False, default="UTC")
+    default_workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True)
+    notification_prefs = Column(JSON, nullable=False, default=dict)
+    dashboard_prefs = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
 
 
 # ---------------------------------------------------------------------------
