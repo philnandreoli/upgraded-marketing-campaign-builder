@@ -125,11 +125,18 @@ async def patch_me_settings(
     patch_data = body.model_dump(exclude_unset=True)
     workspace_id = patch_data.get("default_workspace_id")
     if workspace_id is not None:
-        membership = await get_campaign_store().get_workspace_member_role(workspace_id, user.id)
-        if membership is None:
+        store = get_campaign_store()
+        workspace = await store.get_workspace(workspace_id)
+        if workspace is None:
             raise HTTPException(
-                status_code=422,
-                detail="default_workspace_id must reference a workspace the user belongs to",
+                status_code=404,
+                detail="Workspace not found",
+            )
+        membership = await store.get_workspace_member_role(workspace_id, user.id)
+        if membership is None and not user.is_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to set this workspace as default",
             )
 
     patch_kwargs: dict[str, Any] = {}

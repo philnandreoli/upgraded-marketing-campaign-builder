@@ -294,12 +294,52 @@ class TestMeSettings:
 
     def test_patch_me_settings_rejects_workspace_without_membership(self, authed_client):
         r = authed_client.patch("/api/me/settings", json={"default_workspace_id": "ws-unknown"})
-        assert r.status_code == 422
+        assert r.status_code == 404
+        assert r.json()["detail"] == "Workspace not found"
+
+    def test_patch_me_settings_rejects_existing_workspace_without_membership(self, _isolated_store, authed_client):
+        import asyncio
+        created_workspace_id: str | None = None
+
+        async def _setup():
+            nonlocal created_workspace_id
+            ws = await _isolated_store.create_workspace(name="Private Workspace", owner_id="someone-else")
+            created_workspace_id = ws.id
+
+        asyncio.get_event_loop().run_until_complete(_setup())
+        assert created_workspace_id is not None
+
+        r = authed_client.patch("/api/me/settings", json={"default_workspace_id": created_workspace_id})
+        assert r.status_code == 403
+        assert r.json()["detail"] == "Not authorized to set this workspace as default"
 
     def test_patch_me_settings_accepts_member_workspace(self, authed_client):
         r = authed_client.patch("/api/me/settings", json={"default_workspace_id": TEST_WS_ID})
         assert r.status_code == 200
         assert r.json()["default_workspace_id"] == TEST_WS_ID
+
+    def test_patch_me_settings_admin_can_set_existing_non_member_workspace(self, _isolated_store):
+        import asyncio
+        created_workspace_id: str | None = None
+
+        async def _setup():
+            nonlocal created_workspace_id
+            ws = await _isolated_store.create_workspace(name="Admin Target Workspace", owner_id="owner-xyz")
+            created_workspace_id = ws.id
+
+        asyncio.get_event_loop().run_until_complete(_setup())
+        assert created_workspace_id is not None
+        admin = User(
+            id="admin-001",
+            email="admin@example.com",
+            display_name="Admin User",
+            roles=[UserRole.ADMIN],
+        )
+
+        with _as_user(admin) as c:
+            r = c.patch("/api/me/settings", json={"default_workspace_id": created_workspace_id})
+            assert r.status_code == 200
+            assert r.json()["default_workspace_id"] == created_workspace_id
 
 
 # ---- POST /api/campaigns ----
