@@ -8,12 +8,15 @@ These schemas are shared across campaign route modules:
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from backend.models.campaign import CampaignBrief, ChannelType, SocialMediaPlatform
+from backend.models.user_settings import UITheme
 
 
 # ---------------------------------------------------------------------------
@@ -103,3 +106,51 @@ class MeResponse(BaseModel):
     is_admin: bool
     can_build: bool
     is_viewer: bool
+
+
+_LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$")
+
+
+def _normalize_locale(locale: str) -> str:
+    parts = locale.split("-")
+    if len(parts) == 1:
+        return parts[0].lower()
+    return f"{parts[0].lower()}-{parts[1].upper()}"
+
+
+class MeSettingsResponse(BaseModel):
+    theme: UITheme = UITheme.SYSTEM
+    locale: str = "en-US"
+    timezone: str = "UTC"
+    default_workspace_id: Optional[str] = None
+    notification_prefs: dict[str, Any] = Field(default_factory=dict)
+    dashboard_prefs: dict[str, Any] = Field(default_factory=dict)
+
+
+class PatchMeSettingsRequest(BaseModel):
+    theme: UITheme | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    default_workspace_id: str | None = None
+    notification_prefs: dict[str, Any] | None = None
+    dashboard_prefs: dict[str, Any] | None = None
+
+    @field_validator("locale")
+    @classmethod
+    def validate_locale(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not _LOCALE_PATTERN.fullmatch(value):
+            raise ValueError("Invalid locale format. Expected language or language-region (e.g. en-US).")
+        return _normalize_locale(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("Invalid timezone.") from exc
+        return value

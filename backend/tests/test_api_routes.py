@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from backend.main import app
 from backend.models.campaign import Campaign, CampaignBrief, CampaignContent, CampaignStatus, ContentApprovalStatus, ContentPiece
 from backend.models.user import User, UserRole
+from backend.models.user_settings import UserSettings, UserSettingsPatch
 from backend.core.exceptions import ConcurrentUpdateError
 from backend.infrastructure.auth import get_current_user
 from backend.tests.mock_store import InMemoryCampaignStore
@@ -36,10 +37,31 @@ TEST_WS_ID = "test-workspace-001"
 OTHER_WS_ID = "other-workspace-002"
 
 
+class InMemoryUserSettingsStore:
+    def __init__(self):
+        self._settings: dict[str, UserSettings] = {}
+
+    async def get(self, user_id: str) -> UserSettings:
+        existing = self._settings.get(user_id)
+        if existing is not None:
+            return existing
+        created = UserSettings(user_id=user_id)
+        self._settings[user_id] = created
+        return created
+
+    async def patch(self, user_id: str, patch: UserSettingsPatch) -> UserSettings:
+        current = await self.get(user_id)
+        updates = patch.model_dump(exclude_unset=True)
+        updated = current.model_copy(update=updates)
+        self._settings[user_id] = updated
+        return updated
+
+
 @pytest.fixture(autouse=True)
 def _isolated_store():
     """Give each test a fresh InMemoryCampaignStore and mock the pipeline."""
     fresh_store = InMemoryCampaignStore()
+    fresh_user_settings_store = InMemoryUserSettingsStore()
     mock_executor = MagicMock()
     mock_executor.dispatch = AsyncMock()
 
@@ -60,6 +82,7 @@ def _isolated_store():
     with patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store), \
          patch("backend.apps.api.dependencies.get_campaign_store", return_value=fresh_store), \
          patch("backend.api.campaign_members.get_campaign_store", return_value=fresh_store), \
+         patch("backend.api.campaigns.get_user_settings_store", return_value=fresh_user_settings_store), \
          patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
          patch("backend.application.campaign_workflow_service._workflow_service", None), \
          patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
@@ -226,6 +249,57 @@ class TestGetMe:
             assert data["is_admin"] is False
             assert data["can_build"] is False
             assert data["is_viewer"] is True
+
+
+class TestMeSettings:
+    def test_get_me_settings_returns_defaults(self, authed_client):
+        r = authed_client.get("/api/me/settings")
+        assert r.status_code == 200
+        assert r.json() == {
+            "theme": "system",
+            "locale": "en-US",
+            "timezone": "UTC",
+            "default_workspace_id": None,
+            "notification_prefs": {},
+            "dashboard_prefs": {},
+        }
+
+    def test_get_me_settings_requires_auth(self, client):
+        r = client.get("/api/me/settings")
+        assert r.status_code == 401
+
+    def test_patch_me_settings_applies_partial_update(self, authed_client):
+        r = authed_client.patch("/api/me/settings", json={"theme": "dark", "locale": "pt-br"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["theme"] == "dark"
+        assert data["locale"] == "pt-BR"
+        assert data["timezone"] == "UTC"
+
+    def test_patch_me_settings_requires_auth(self, client):
+        r = client.patch("/api/me/settings", json={"theme": "dark"})
+        assert r.status_code == 401
+
+    def test_patch_me_settings_rejects_invalid_theme(self, authed_client):
+        r = authed_client.patch("/api/me/settings", json={"theme": "neon"})
+        assert r.status_code == 422
+
+    def test_patch_me_settings_rejects_invalid_locale(self, authed_client):
+        r = authed_client.patch("/api/me/settings", json={"locale": "english_USA"})
+        assert r.status_code == 422
+
+    def test_patch_me_settings_rejects_invalid_timezone(self, authed_client):
+        r = authed_client.patch("/api/me/settings", json={"timezone": "Mars/Phobos"})
+        assert r.status_code == 422
+
+    def test_patch_me_settings_rejects_workspace_without_membership(self, authed_client):
+        r = authed_client.patch("/api/me/settings", json={"default_workspace_id": "ws-unknown"})
+        assert r.status_code == 422
+
+    def test_patch_me_settings_accepts_member_workspace(self, authed_client):
+        r = authed_client.patch("/api/me/settings", json={"default_workspace_id": TEST_WS_ID})
+        assert r.status_code == 200
+        assert r.json()["default_workspace_id"] == TEST_WS_ID
 
 
 # ---- POST /api/campaigns ----
