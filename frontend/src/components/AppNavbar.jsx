@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, Link } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle.jsx";
 import NotificationCenter from "./NotificationCenter.jsx";
 
@@ -105,6 +105,19 @@ export default function AppNavbar({
           <span className="navbar-status-dot" aria-hidden="true" />
           {connected ? "Live" : "Offline"}
         </span>
+
+        {/* Settings — always visible for authenticated users */}
+        <Link
+          to="/settings"
+          className="navbar-settings"
+          aria-label="User settings"
+          title="User settings"
+        >
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+            <path d="M7.5 9.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M12.6 9.2l.7.4a.5.5 0 0 1 .2.7l-.8 1.4a.5.5 0 0 1-.7.2l-.7-.4a4.4 4.4 0 0 1-1 .6v.8a.5.5 0 0 1-.5.5H8.2a.5.5 0 0 1-.5-.5v-.8a4.5 4.5 0 0 1-1-.6l-.7.4a.5.5 0 0 1-.7-.2l-.8-1.4a.5.5 0 0 1 .2-.7l.7-.4a4.4 4.4 0 0 1 0-1.2l-.7-.4a.5.5 0 0 1-.2-.7l.8-1.4a.5.5 0 0 1 .7-.2l.7.4a4.4 4.4 0 0 1 1-.6V4a.5.5 0 0 1 .5-.5h1.6a.5.5 0 0 1 .5.5v.8a4.4 4.4 0 0 1 1 .6l.7-.4a.5.5 0 0 1 .7.2l.8 1.4a.5.5 0 0 1-.2.7l-.7.4a4.4 4.4 0 0 1 0 1.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
 
         {authEnabled && activeAccount && (
           <>

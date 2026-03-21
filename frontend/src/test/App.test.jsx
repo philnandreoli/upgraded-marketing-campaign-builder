@@ -56,6 +56,7 @@ async function renderWithRoute(path, { isViewer = false, isAdmin = false } = {})
             <Route path="/workspaces" element={<div>Workspaces List</div>} />
             <Route path="/workspaces/:id" element={<div>Workspace Detail</div>} />
             <Route path="/workspaces/:id/settings" element={<ProtectedSettings />} />
+            <Route path="/settings" element={<div>User Settings Page</div>} />
           </Routes>
         </WorkspaceProvider>
       </UserProvider>
@@ -89,5 +90,22 @@ describe('App – workspace routes', () => {
     await renderWithRoute('/workspaces/ws-1/settings', { isViewer: true });
     await waitFor(() => expect(screen.getByText('Dashboard')).toBeInTheDocument());
     expect(screen.queryByText('Settings Page')).not.toBeInTheDocument();
+  });
+});
+
+describe('App – user settings route', () => {
+  it('renders UserSettings at /settings', async () => {
+    await renderWithRoute('/settings');
+    expect(screen.getByText('User Settings Page')).toBeInTheDocument();
+  });
+
+  it('is reachable for regular authenticated users', async () => {
+    await renderWithRoute('/settings', { isViewer: false });
+    expect(screen.getByText('User Settings Page')).toBeInTheDocument();
+  });
+
+  it('is reachable for viewer users', async () => {
+    await renderWithRoute('/settings', { isViewer: true });
+    expect(screen.getByText('User Settings Page')).toBeInTheDocument();
   });
 });
