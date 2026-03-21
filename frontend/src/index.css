@@ -3456,8 +3456,17 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
 
 .wizard-step-dots {
   display: flex;
-  gap: 0.5rem;
+  justify-content: space-between;
   margin-top: 0.75rem;
+}
+
+.wizard-dot-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
 }
 
 .wizard-step-dot {
@@ -3466,6 +3475,7 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   border-radius: 50%;
   background: var(--color-border);
   transition: background 0.2s, transform 0.2s;
+  flex-shrink: 0;
 }
 
 .wizard-step-dot--done {
@@ -3475,6 +3485,40 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
 .wizard-step-dot--active {
   background: var(--color-primary);
   transform: scale(1.4);
+}
+
+.wizard-dot-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.2;
+}
+
+.wizard-dot-label--active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.wizard-dot-label--done {
+  color: var(--color-text-dim);
+  opacity: 0.7;
+}
+
+@media (max-width: 480px) {
+  .wizard-dot-label {
+    display: none;
+  }
+  .wizard-step-dots {
+    gap: 0.5rem;
+    justify-content: flex-start;
+  }
+  .wizard-dot-group {
+    flex: 0;
+  }
 }
 
 /* Step card */
