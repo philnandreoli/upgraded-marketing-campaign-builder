@@ -24,12 +24,12 @@ const SOCIAL_MEDIA_PLATFORMS = [
 ];
 
 const WIZARD_STEPS = [
-  { id: 0, title: "Workspace", optional: false },
-  { id: 1, title: "What are you promoting?", optional: false },
-  { id: 2, title: "Budget & Timeline", optional: true },
-  { id: 3, title: "Pick Your Channels", optional: true },
-  { id: 4, title: "Anything else?", optional: true },
-  { id: 5, title: "Review & Launch", optional: false },
+  { id: 0, title: "Workspace", shortLabel: "Workspace", optional: false },
+  { id: 1, title: "What are you promoting?", shortLabel: "Product", optional: false },
+  { id: 2, title: "Budget & Timeline", shortLabel: "Budget", optional: true },
+  { id: 3, title: "Pick Your Channels", shortLabel: "Channels", optional: true },
+  { id: 4, title: "Anything else?", shortLabel: "Context", optional: true },
+  { id: 5, title: "Review & Launch", shortLabel: "Review", optional: false },
 ];
 
 function WorkspaceDropdown({ value, options, onChange, labelId }) {
@@ -108,10 +108,24 @@ function WizardProgress({ currentStep, hasWorkspaceStep }) {
 
   const dots = [];
   for (let i = firstContentStep; i <= lastStep; i++) {
-    let cls = "wizard-step-dot";
-    if (i < currentStep) cls += " wizard-step-dot--done";
-    else if (i === currentStep) cls += " wizard-step-dot--active";
-    dots.push(<span key={i} className={cls} aria-hidden="true" />);
+    const step = WIZARD_STEPS.find((s) => s.id === i);
+    let dotCls = "wizard-step-dot";
+    let labelCls = "wizard-dot-label";
+    if (i < currentStep) {
+      dotCls += " wizard-step-dot--done";
+      labelCls += " wizard-dot-label--done";
+    } else if (i === currentStep) {
+      dotCls += " wizard-step-dot--active";
+      labelCls += " wizard-dot-label--active";
+    }
+    dots.push(
+      <div key={i} className="wizard-dot-group">
+        <span className={dotCls} aria-hidden="true" />
+        <span className={labelCls}>
+          {i < currentStep ? "✓ " : ""}{step?.shortLabel}
+        </span>
+      </div>
+    );
   }
 
   const stepInfo = WIZARD_STEPS.find((s) => s.id === currentStep);

@@ -215,6 +215,66 @@ describe('NewCampaign — workspace picker', () => {
   });
 });
 
+describe('NewCampaign — wizard step labels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.createCampaign.mockResolvedValue({ id: 'camp-1' });
+  });
+
+  it('renders short labels beneath each wizard step dot', async () => {
+    renderNewCampaign({ workspaces: [PERSONAL_WS] });
+
+    await waitFor(() => {
+      expect(screen.getByText('Product')).toBeInTheDocument();
+    });
+
+    // Check all dot labels are rendered
+    const dotLabels = document.querySelectorAll('.wizard-dot-label');
+    const labelTexts = Array.from(dotLabels).map((el) => el.textContent);
+    expect(labelTexts).toEqual(['Workspace', 'Product', 'Budget', 'Channels', 'Context', 'Review']);
+  });
+
+  it('visually emphasizes the active step label', async () => {
+    renderNewCampaign({ workspaces: [PERSONAL_WS] });
+
+    await waitFor(() => {
+      expect(screen.getByText('Product')).toBeInTheDocument();
+    });
+
+    // On step 0, the "Workspace" dot label should have the active class
+    const activeDotLabel = document.querySelector('.wizard-dot-label--active');
+    expect(activeDotLabel).not.toBeNull();
+    expect(activeDotLabel.textContent).toBe('Workspace');
+  });
+
+  it('shows completed step labels with checkmark and dimmed style after advancing', async () => {
+    api.updateCampaignDraft.mockResolvedValue({ id: 'camp-1', status: 'draft', message: 'Draft updated.' });
+
+    renderNewCampaign({ workspaces: [PERSONAL_WS] });
+
+    // Step 0 — advance to step 1
+    await waitFor(() => {
+      expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/My Space/i);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/CloudSync/i)).toBeInTheDocument();
+    });
+
+    // "Workspace" dot label should now be completed (dimmed + checkmark)
+    const doneLabels = document.querySelectorAll('.wizard-dot-label--done');
+    expect(doneLabels.length).toBeGreaterThanOrEqual(1);
+    expect(doneLabels[0].textContent).toContain('✓');
+    expect(doneLabels[0].textContent).toContain('Workspace');
+
+    // "Product" dot label should be active
+    const activeLabel = document.querySelector('.wizard-dot-label--active');
+    expect(activeLabel).not.toBeNull();
+    expect(activeLabel.textContent).toBe('Product');
+  });
+});
+
 describe('NewCampaign — breadcrumb', () => {
   beforeEach(() => {
     vi.clearAllMocks();
