@@ -342,6 +342,14 @@ class TestMeSettings:
             assert r.json()["default_workspace_id"] == created_workspace_id
 
 
+class TestOpenAPITags:
+    def test_me_endpoints_are_grouped_under_users_tag(self, client):
+        schema = client.get("/openapi.json").json()
+        assert schema["paths"]["/api/me"]["get"]["tags"] == ["users"]
+        assert schema["paths"]["/api/me/settings"]["get"]["tags"] == ["users"]
+        assert schema["paths"]["/api/me/settings"]["patch"]["tags"] == ["users"]
+
+
 # ---- POST /api/campaigns ----
 
 class TestCreateCampaign:
