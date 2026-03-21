@@ -13,6 +13,7 @@ import FilterTabs from "../components/FilterTabs.jsx";
 import SearchBar from "../components/SearchBar.jsx";
 import Toast from "../components/Toast.jsx";
 import { applyFilter, matchesSearch } from "../lib/campaignFilters";
+import usePolling from "../hooks/usePolling";
 
 const IN_PROGRESS_STATUSES = ["draft", "strategy", "content", "channel_planning", "analytics_setup", "review", "review_clarification", "content_revision", "clarification"];
 const AWAITING_APPROVAL_STATUSES = ["content_approval", "awaiting_approval"];
@@ -26,7 +27,7 @@ const STATUS_GROUPS = [
 
 const ROLE_LABELS = { creator: "Creator", contributor: "Contributor", viewer: "Viewer" };
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 20000;
 
 function getInitials(name) {
   if (!name?.trim()) return "?";
@@ -132,11 +133,8 @@ export default function WorkspaceDetail({ events = [] }) {
     loadCampaigns();
   }, [loadCampaigns]);
 
-  // Poll campaigns every 3s
-  useEffect(() => {
-    const timer = setInterval(loadCampaigns, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [loadCampaigns]);
+  // Poll campaigns with visibility-aware interval
+  usePolling(loadCampaigns, POLL_INTERVAL_MS);
 
   // Refresh campaigns when a WebSocket event arrives
   useEffect(() => {
