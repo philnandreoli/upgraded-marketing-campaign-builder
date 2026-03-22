@@ -118,9 +118,10 @@ export default function WorkspaceDetail({ events = [] }) {
   // Fetch campaigns
   const loadCampaigns = useCallback(async () => {
     try {
-      const all = await listWorkspaceCampaigns(id);
+      const res = await listWorkspaceCampaigns(id);
+      const items = res.items ?? res;
       // Filter out campaigns currently in the soft-delete undo window
-      setCampaigns(all.filter((c) => !pendingDeletesRef.current.has(c.id)));
+      setCampaigns(items.filter((c) => !pendingDeletesRef.current.has(c.id)));
     } catch {
       /* silent */
     } finally {

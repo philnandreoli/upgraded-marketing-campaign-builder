@@ -49,6 +49,9 @@ export default function WorkspaceSection({
   onMove,
   children,
   deletingId,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }) {
   const storageKey = `ws-collapsed-${workspace.id}`;
   const [internalOpen, setInternalOpen] = useState(
@@ -202,6 +205,19 @@ export default function WorkspaceSection({
                   </div>
                 );
               })}
+              {hasMore && (
+                <div className="workspace-load-more">
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    disabled={loadingMore}
+                    onClick={onLoadMore}
+                    aria-label={`Load more campaigns in ${workspace.name}`}
+                  >
+                    {loadingMore ? "Loading…" : "Load more campaigns"}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

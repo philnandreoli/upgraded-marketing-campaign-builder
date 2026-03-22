@@ -68,7 +68,16 @@ const campaignApproved = {
 
 async function renderDashboard({ initialUrl = "/" } = {}, campaigns = [], workspaces = [WS]) {
   api.getMe.mockResolvedValue(makeMeResponse());
-  api.listCampaigns.mockResolvedValue(campaigns);
+  api.listCampaigns.mockResolvedValue({
+    items: campaigns,
+    pagination: {
+      total_count: campaigns.length,
+      offset: 0,
+      limit: 50,
+      returned_count: campaigns.length,
+      has_more: false,
+    },
+  });
   api.deleteCampaign.mockResolvedValue(undefined);
   api.listWorkspaces.mockResolvedValue(workspaces);
 
