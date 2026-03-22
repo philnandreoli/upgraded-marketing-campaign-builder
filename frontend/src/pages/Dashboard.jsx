@@ -11,13 +11,15 @@ import SearchBar from "../components/SearchBar";
 import SavedViews from "../components/SavedViews";
 import Toast from "../components/Toast";
 import useSavedViews from "../hooks/useSavedViews";
-import { applyFilter, matchesSearch } from "../lib/campaignFilters";
+import { applyFilter, matchesSearch, sortCampaigns } from "../lib/campaignFilters";
 import {
   DRAFT_STATUSES,
   IN_PROGRESS_STATUSES,
   AWAITING_APPROVAL_STATUSES,
   APPROVED_STATUSES,
   FILTER_TAB_STORAGE_KEY,
+  SORT_OPTIONS,
+  SORT_STORAGE_KEY,
 } from "../constants/statusGroups";
 
 const PAGE_SIZE = 50;
@@ -42,6 +44,9 @@ export default function Dashboard({ events }) {
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [debouncedQuery, setDebouncedQuery] = useState(initialSearch);
   const debounceRef = useRef(null);
+  const [sortBy, setSortBy] = useState(
+    () => localStorage.getItem(SORT_STORAGE_KEY) ?? "newest"
+  );
   const { isViewer, isAdmin, user } = useUser();
   const { workspaces } = useWorkspace();
   const { views, addView, removeView, renameView } = useSavedViews();
@@ -96,6 +101,12 @@ export default function Dashboard({ events }) {
     setDebouncedQuery(search);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     updateSearchParams(filter, search);
+  };
+
+  const handleSortChange = (e) => {
+    const value = e.target.value;
+    setSortBy(value);
+    localStorage.setItem(SORT_STORAGE_KEY, value);
   };
 
   // Clean up any pending debounce timer on unmount
@@ -257,10 +268,10 @@ export default function Dashboard({ events }) {
     [campaigns, activeFilter, user, workspaces]
   );
 
-  // Apply search query on top of the tab-filtered results
+  // Apply search query on top of the tab-filtered results, then sort
   const searchedCampaigns = useMemo(
-    () => filteredCampaigns.filter((c) => matchesSearch(c, debouncedQuery)),
-    [filteredCampaigns, debouncedQuery]
+    () => sortCampaigns(filteredCampaigns.filter((c) => matchesSearch(c, debouncedQuery)), sortBy),
+    [filteredCampaigns, debouncedQuery, sortBy]
   );
 
   // Group searched campaigns by workspace_id; null workspace_id → orphaned
@@ -409,17 +420,31 @@ export default function Dashboard({ events }) {
 
         <div className="section-header">
           <h2>Campaigns</h2>
-          {loading && campaigns.length > 0 && (
-            <span className="campaign-list-loading" aria-live="polite">
-              <span className="spinner" />
-              Refreshing…
-            </span>
-          )}
-          {debouncedQuery && (
-            <span className="search-result-count">
-              Showing {searchedCampaigns.length} of {filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? "s" : ""}
-            </span>
-          )}
+          <div className="section-header__controls">
+            <select
+              className="sort-select"
+              value={sortBy}
+              onChange={handleSortChange}
+              aria-label="Sort campaigns"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {loading && campaigns.length > 0 && (
+              <span className="campaign-list-loading" aria-live="polite">
+                <span className="spinner" />
+                Refreshing…
+              </span>
+            )}
+            {debouncedQuery && (
+              <span className="search-result-count">
+                Showing {searchedCampaigns.length} of {filteredCampaigns.length} campaign{filteredCampaigns.length !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
         </div>
 
         {searchedCampaigns.length === 0 ? (

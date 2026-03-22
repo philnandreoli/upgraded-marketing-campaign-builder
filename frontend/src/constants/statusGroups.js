@@ -35,3 +35,14 @@ export const FILTER_TABS = [
 ];
 
 export const FILTER_TAB_STORAGE_KEY = "dashboard-active-filter";
+
+// Dashboard campaign sort options
+export const SORT_OPTIONS = [
+  { id: "newest", label: "Newest first" },
+  { id: "oldest", label: "Oldest first" },
+  { id: "name_asc", label: "Name A–Z" },
+  { id: "name_desc", label: "Name Z–A" },
+  { id: "status", label: "Status" },
+];
+
+export const SORT_STORAGE_KEY = "dashboard-sort-by";
