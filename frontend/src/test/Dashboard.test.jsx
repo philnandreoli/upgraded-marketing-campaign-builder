@@ -864,3 +864,252 @@ describe('Dashboard – undo delete', () => {
     expect(api.deleteCampaign).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests: Sort dropdown
+// ---------------------------------------------------------------------------
+
+const WS_SORT = { id: 'ws-sort', name: 'Sort Workspace', is_personal: true, role: 'creator' };
+
+const campaignNewest = {
+  id: 'csort-1',
+  product_or_service: 'Zebra',
+  goal: 'G',
+  status: 'strategy',
+  owner_id: 'user-1',
+  workspace_id: 'ws-sort',
+  workspace_name: 'Sort Workspace',
+  created_at: '2026-03-20T00:00:00Z',
+};
+const campaignOldest = {
+  id: 'csort-2',
+  product_or_service: 'Apple',
+  goal: 'G',
+  status: 'strategy',
+  owner_id: 'user-1',
+  workspace_id: 'ws-sort',
+  workspace_name: 'Sort Workspace',
+  created_at: '2026-01-01T00:00:00Z',
+};
+const campaignMiddle = {
+  id: 'csort-3',
+  product_or_service: 'Mango',
+  goal: 'G',
+  status: 'strategy',
+  owner_id: 'user-1',
+  workspace_id: 'ws-sort',
+  workspace_name: 'Sort Workspace',
+  created_at: '2026-02-10T00:00:00Z',
+};
+
+// Campaigns with different statuses for the status-sort test
+const campaignSortStatus1 = {
+  id: 'csort-s1',
+  product_or_service: 'StatusApproved',
+  goal: 'G',
+  status: 'approved',
+  owner_id: 'user-1',
+  workspace_id: 'ws-sort',
+  workspace_name: 'Sort Workspace',
+  created_at: '2026-03-20T00:00:00Z',
+};
+const campaignSortStatus2 = {
+  id: 'csort-s2',
+  product_or_service: 'StatusStrategy',
+  goal: 'G',
+  status: 'strategy',
+  owner_id: 'user-1',
+  workspace_id: 'ws-sort',
+  workspace_name: 'Sort Workspace',
+  created_at: '2026-01-01T00:00:00Z',
+};
+const campaignSortStatus3 = {
+  id: 'csort-s3',
+  product_or_service: 'StatusAwaiting',
+  goal: 'G',
+  status: 'content_approval',
+  owner_id: 'user-1',
+  workspace_id: 'ws-sort',
+  workspace_name: 'Sort Workspace',
+  created_at: '2026-02-10T00:00:00Z',
+};
+
+describe('Dashboard – Sort dropdown', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('renders a sort dropdown with "Newest first" as default', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignNewest, campaignOldest],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    const sortSelect = screen.getByRole('combobox', { name: /sort campaigns/i });
+    expect(sortSelect).toBeInTheDocument();
+    expect(sortSelect.value).toBe('newest');
+  });
+
+  it('has at least 5 sort options', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignNewest],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    const options = screen.getByRole('combobox', { name: /sort campaigns/i }).querySelectorAll('option');
+    expect(options.length).toBe(5);
+  });
+
+  it('sorts by newest first by default (most recent first)', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignOldest, campaignNewest, campaignMiddle],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    const cards = screen.getAllByTestId('campaign-card');
+    expect(cards[0]).toHaveTextContent('Zebra');
+    expect(cards[1]).toHaveTextContent('Mango');
+    expect(cards[2]).toHaveTextContent('Apple');
+  });
+
+  it('sorts by oldest first', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignOldest, campaignNewest, campaignMiddle],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    fireEvent.change(screen.getByRole('combobox', { name: /sort campaigns/i }), {
+      target: { value: 'oldest' },
+    });
+    const cards = screen.getAllByTestId('campaign-card');
+    expect(cards[0]).toHaveTextContent('Apple');
+    expect(cards[1]).toHaveTextContent('Mango');
+    expect(cards[2]).toHaveTextContent('Zebra');
+  });
+
+  it('sorts by name A–Z', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignNewest, campaignOldest, campaignMiddle],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    fireEvent.change(screen.getByRole('combobox', { name: /sort campaigns/i }), {
+      target: { value: 'name_asc' },
+    });
+    const cards = screen.getAllByTestId('campaign-card');
+    expect(cards[0]).toHaveTextContent('Apple');
+    expect(cards[1]).toHaveTextContent('Mango');
+    expect(cards[2]).toHaveTextContent('Zebra');
+  });
+
+  it('sorts by name Z–A', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignOldest, campaignNewest, campaignMiddle],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    fireEvent.change(screen.getByRole('combobox', { name: /sort campaigns/i }), {
+      target: { value: 'name_desc' },
+    });
+    const cards = screen.getAllByTestId('campaign-card');
+    expect(cards[0]).toHaveTextContent('Zebra');
+    expect(cards[1]).toHaveTextContent('Mango');
+    expect(cards[2]).toHaveTextContent('Apple');
+  });
+
+  it('sorts by status', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignSortStatus1, campaignSortStatus2, campaignSortStatus3],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('StatusApproved'));
+    fireEvent.change(screen.getByRole('combobox', { name: /sort campaigns/i }), {
+      target: { value: 'status' },
+    });
+    const cards = screen.getAllByTestId('campaign-card');
+    // strategy < content_approval < approved
+    expect(cards[0]).toHaveTextContent('StatusStrategy');    // strategy
+    expect(cards[1]).toHaveTextContent('StatusAwaiting');     // content_approval
+    expect(cards[2]).toHaveTextContent('StatusApproved');     // approved
+  });
+
+  it('persists sort preference in localStorage', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignNewest],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    fireEvent.change(screen.getByRole('combobox', { name: /sort campaigns/i }), {
+      target: { value: 'name_asc' },
+    });
+    expect(localStorage.getItem('dashboard-sort-by')).toBe('name_asc');
+  });
+
+  it('restores sort preference from localStorage on mount', async () => {
+    localStorage.setItem('dashboard-sort-by', 'oldest');
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignOldest, campaignNewest],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    const sortSelect = screen.getByRole('combobox', { name: /sort campaigns/i });
+    expect(sortSelect.value).toBe('oldest');
+    const cards = screen.getAllByTestId('campaign-card');
+    expect(cards[0]).toHaveTextContent('Apple');
+    expect(cards[1]).toHaveTextContent('Zebra');
+  });
+
+  it('sort works with active filter tab', async () => {
+    // Mix same-status and different-status campaigns
+    const approvedA = { ...campaignNewest, id: 'csort-filt-1', product_or_service: 'ZebraApproved', status: 'approved' };
+    const strategyA = { ...campaignOldest, id: 'csort-filt-2', product_or_service: 'AppleStrategy', status: 'strategy' };
+    await renderDashboard(
+      { userId: 'user-1' },
+      [approvedA, strategyA],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('ZebraApproved'));
+    // Switch to name_desc sort
+    fireEvent.change(screen.getByRole('combobox', { name: /sort campaigns/i }), {
+      target: { value: 'name_desc' },
+    });
+    // Activate the "Approved" filter — only approvedA should remain
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+    const cards = screen.getAllByTestId('campaign-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0]).toHaveTextContent('ZebraApproved');
+  });
+
+  it('sort works with search', async () => {
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignNewest, campaignOldest, campaignMiddle],
+      [WS_SORT],
+    );
+    await waitFor(() => screen.getByText('Zebra'));
+    // Sort by name A-Z
+    fireEvent.change(screen.getByRole('combobox', { name: /sort campaigns/i }), {
+      target: { value: 'name_asc' },
+    });
+    // Search for a term that matches multiple campaigns
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByPlaceholderText('Search campaigns...'), {
+      target: { value: 'a' },
+    });
+    await act(async () => vi.advanceTimersByTime(300));
+    vi.useRealTimers();
+    // Apple and Mango both match (have 'a'), sorted A-Z
+    const cards = screen.getAllByTestId('campaign-card');
+    expect(cards[0]).toHaveTextContent('Apple');
+    expect(cards[1]).toHaveTextContent('Mango');
+  });
+});

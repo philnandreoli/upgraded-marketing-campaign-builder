@@ -994,6 +994,17 @@ a:hover { color: var(--color-primary-hover); }
 .empty-state-actions { display: flex; gap: 0.75rem; justify-content: center; margin-top: 0.5rem; }
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .section-header h2 { font-size: var(--text-2xl); }
+.section-header__controls { display: flex; align-items: center; gap: 0.75rem; }
+.sort-select {
+  font-size: var(--text-sm);
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.sort-select:focus { border-color: var(--color-primary); outline: none; }
 .page-title { font-size: var(--text-2xl); margin-bottom: 1rem; }
 .loading { display: flex; align-items: center; justify-content: center; padding: 2rem; color: var(--color-text-dim); }
 @keyframes spin { to { transform: rotate(360deg); } }

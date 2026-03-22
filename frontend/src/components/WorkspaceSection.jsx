@@ -257,7 +257,7 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
   };
 
   return (
-    <div className="campaign-card card" data-status={c.status}>
+    <div className="campaign-card card" data-status={c.status} data-testid="campaign-card">
       <div className="campaign-card-avatar">{getInitials(c.product_or_service)}</div>
       <div className="campaign-card-body">
         <Link to={campaignUrl} className="campaign-card-title">
