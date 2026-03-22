@@ -393,41 +393,44 @@ function NotificationsTab({ settings, onSettingsSaved }) {
       <h3>Notifications</h3>
       <form onSubmit={handleSave}>
         <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
-          <legend style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Notification Categories</legend>
+          <div className="notif-section-label">Notification Categories</div>
+          <div className="notif-section-sublabel">Choose which updates you want to receive.</div>
 
-          <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              id="notif-pipeline-updates"
-              type="checkbox"
-              checked={pipelineUpdates}
-              onChange={(e) => setPipelineUpdates(e.target.checked)}
-            />
-            <label htmlFor="notif-pipeline-updates">Pipeline updates</label>
-          </div>
+          <div className="notif-category-list">
+            <div className="form-check">
+              <input
+                id="notif-pipeline-updates"
+                type="checkbox"
+                checked={pipelineUpdates}
+                onChange={(e) => setPipelineUpdates(e.target.checked)}
+              />
+              <label htmlFor="notif-pipeline-updates">Pipeline updates</label>
+            </div>
 
-          <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              id="notif-approvals-required"
-              type="checkbox"
-              checked={approvalsRequired}
-              onChange={(e) => setApprovalsRequired(e.target.checked)}
-            />
-            <label htmlFor="notif-approvals-required">Approvals required</label>
-          </div>
+            <div className="form-check">
+              <input
+                id="notif-approvals-required"
+                type="checkbox"
+                checked={approvalsRequired}
+                onChange={(e) => setApprovalsRequired(e.target.checked)}
+              />
+              <label htmlFor="notif-approvals-required">Approvals required</label>
+            </div>
 
-          <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              id="notif-failures-errors"
-              type="checkbox"
-              checked={failuresErrors}
-              onChange={(e) => setFailuresErrors(e.target.checked)}
-            />
-            <label htmlFor="notif-failures-errors">Failures / errors</label>
+            <div className="form-check">
+              <input
+                id="notif-failures-errors"
+                type="checkbox"
+                checked={failuresErrors}
+                onChange={(e) => setFailuresErrors(e.target.checked)}
+              />
+              <label htmlFor="notif-failures-errors">Failures / errors</label>
+            </div>
           </div>
         </fieldset>
 
         {hasDigestFrequency && (
-          <div className="form-group" style={{ marginTop: "1rem" }}>
+          <div className="form-group" style={{ marginTop: "0.25rem" }}>
             <label htmlFor="notif-digest-frequency">Digest frequency</label>
             <select
               id="notif-digest-frequency"
@@ -443,20 +446,23 @@ function NotificationsTab({ settings, onSettingsSaved }) {
 
         {hasQuietHours && (
           <fieldset style={{ border: "none", padding: 0, margin: "1rem 0 0" }}>
-            <legend style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Quiet Hours</legend>
+            <div className="notif-section-label">Quiet Hours</div>
+            <div className="notif-section-sublabel">Pause notifications during set hours.</div>
 
-            <div className="form-group" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <input
-                id="notif-quiet-hours-enabled"
-                type="checkbox"
-                checked={quietHoursEnabled}
-                onChange={(e) => setQuietHoursEnabled(e.target.checked)}
-              />
-              <label htmlFor="notif-quiet-hours-enabled">Enable quiet hours</label>
+            <div className="notif-category-list">
+              <div className="form-check">
+                <input
+                  id="notif-quiet-hours-enabled"
+                  type="checkbox"
+                  checked={quietHoursEnabled}
+                  onChange={(e) => setQuietHoursEnabled(e.target.checked)}
+                />
+                <label htmlFor="notif-quiet-hours-enabled">Enable quiet hours</label>
+              </div>
             </div>
 
             {quietHoursEnabled && (
-              <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem" }}>
+              <div className="form-row" style={{ maxWidth: "320px" }}>
                 <div className="form-group">
                   <label htmlFor="notif-quiet-start">Start</label>
                   <input
