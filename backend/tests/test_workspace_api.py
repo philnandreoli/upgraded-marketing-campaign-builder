@@ -141,6 +141,13 @@ class TestCreateWorkspace:
 # ---------------------------------------------------------------------------
 
 class TestListWorkspaces:
+    def test_list_workspaces_openapi_exposes_meta_response_schema(self, client):
+        schema = client.get("/openapi.json").json()
+        responses = schema["paths"]["/api/workspaces"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        options = responses.get("anyOf") or responses.get("oneOf") or []
+        option_refs = {item.get("$ref", "") for item in options}
+        assert "#/components/schemas/WorkspaceListResponse" in option_refs
+
     def test_list_returns_only_own_workspaces(self, _isolated_store, creator_client):
         _isolated_store._workspaces["ws-a"] = _make_workspace("ws-a", "WS A", _CREATOR_USER.id)
         _isolated_store._workspace_members[("ws-a", _CREATOR_USER.id)] = "creator"
@@ -235,6 +242,27 @@ class TestListWorkspaces:
         assert r.json() == []
         assert r.headers["X-Total-Count"] == "1"
         assert r.headers["X-Returned-Count"] == "0"
+
+    def test_list_workspaces_meta_pagination_format_is_available(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-a"] = _make_workspace("ws-a", "WS A", _CREATOR_USER.id)
+        _isolated_store._workspaces["ws-b"] = _make_workspace("ws-b", "WS B", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-a", _CREATOR_USER.id)] = "creator"
+        _isolated_store._workspace_members[("ws-b", _CREATOR_USER.id)] = "creator"
+
+        r = creator_client.get("/api/workspaces?pagination_format=meta&limit=1&offset=0")
+        assert r.status_code == 200
+        payload = r.json()
+        assert set(payload.keys()) == {"items", "pagination"}
+        assert len(payload["items"]) == 1
+        assert payload["pagination"] == {
+            "total_count": 2,
+            "offset": 0,
+            "limit": 1,
+            "returned_count": 1,
+            "has_more": True,
+        }
+        assert r.headers["X-Total-Count"] == "2"
+        assert r.headers["X-Pagination-Format"] == "meta-v1"
 
 
 # ---------------------------------------------------------------------------

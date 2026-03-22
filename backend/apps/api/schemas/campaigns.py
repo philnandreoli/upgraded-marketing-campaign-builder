@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.models.campaign import CampaignBrief, ChannelType, SocialMediaPlatform
 from backend.models.user_settings import UITheme
+from backend.apps.api.schemas.common import PaginationMeta
 
 
 # ---------------------------------------------------------------------------
@@ -57,9 +58,14 @@ class CampaignSummary(BaseModel):
     owner_id: Optional[str]
     workspace_id: Optional[str]
     workspace_name: Optional[str]
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
     wizard_step: int = 0
+
+
+class CampaignListResponse(BaseModel):
+    items: list[CampaignSummary]
+    pagination: PaginationMeta
 
 
 class CreateCampaignRequest(CampaignBrief):

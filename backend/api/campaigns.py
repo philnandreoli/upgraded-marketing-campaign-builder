@@ -19,7 +19,7 @@ backend.apps.api.schemas.workflow.
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
@@ -38,7 +38,9 @@ from backend.infrastructure.workflow_executor import get_executor, WorkflowJob
 from backend.apps.api.dependencies import Action, _authorize, get_campaign_for_read, get_campaign_for_write  # noqa: F401
 from backend.apps.api.schemas.campaigns import (  # noqa: F401
     AddMemberRequest,
+    CampaignListResponse,
     CampaignMemberResponse,
+    PaginationMeta,
     CampaignSummary,
     CreateCampaignRequest,
     CreateCampaignResponse,
@@ -279,7 +281,7 @@ async def update_draft_campaign(
     )
 
 
-@router.get("/campaigns", response_model=list[CampaignSummary])
+@router.get("/campaigns", response_model=list[CampaignSummary] | CampaignListResponse)
 async def list_campaigns(
     workspace_id: str,
     response: Response,
@@ -287,7 +289,11 @@ async def list_campaigns(
     include_drafts: bool = Query(default=False, description="When true, include DRAFT campaigns in the response."),
     limit: Optional[int] = Query(default=None, ge=1, description="Optional max number of campaigns to return."),
     offset: int = Query(default=0, ge=0, description="Optional number of campaigns to skip before returning results."),
-) -> list[CampaignSummary]:
+    pagination_format: Literal["legacy", "meta"] = Query(
+        default="legacy",
+        description="Response contract format. Use 'meta' for standardized {items, pagination} envelope.",
+    ),
+) -> list[CampaignSummary] | CampaignListResponse:
     """Return campaigns in the specified workspace visible to the current user.
 
     Draft campaigns are excluded by default.  Pass ``?include_drafts=true`` to
@@ -313,9 +319,11 @@ async def list_campaigns(
     response.headers["X-Offset"] = str(offset)
     response.headers["X-Limit"] = str(limit) if limit is not None else "all"
     response.headers["X-Returned-Count"] = str(returned_count)
-    response.headers["X-Has-More"] = str(offset + returned_count < total_count).lower()
+    has_more = offset + returned_count < total_count
+    response.headers["X-Has-More"] = str(has_more).lower()
+    response.headers["X-Pagination-Format"] = "meta-v1"
 
-    return [
+    items = [
         CampaignSummary(
             id=c.id,
             status=c.status.value,
@@ -324,12 +332,22 @@ async def list_campaigns(
             owner_id=c.owner_id,
             workspace_id=c.workspace_id,
             workspace_name=workspace.name,
-            created_at=c.created_at.isoformat(),
-            updated_at=c.updated_at.isoformat(),
+            created_at=c.created_at,
+            updated_at=c.updated_at,
             wizard_step=c.wizard_step,
         )
         for c in campaigns
     ]
+    pagination_meta = PaginationMeta(
+        total_count=total_count,
+        offset=offset,
+        limit=limit,
+        returned_count=returned_count,
+        has_more=has_more,
+    )
+    if pagination_format == "meta":
+        return CampaignListResponse(items=items, pagination=pagination_meta)
+    return items
 
 
 @router.get("/campaigns/{campaign_id}")
