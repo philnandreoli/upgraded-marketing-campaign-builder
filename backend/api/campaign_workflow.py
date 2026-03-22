@@ -4,8 +4,6 @@ Campaign workflow command routes.
 Endpoints:
   POST   /api/campaigns/{id}/launch           — Launch a draft campaign (triggers agent pipeline)
   POST   /api/campaigns/{id}/clarify          — Submit answers to strategy clarification questions
-  POST   /api/campaigns/{id}/review-clarify   — Legacy endpoint (410 Gone)
-  POST   /api/campaigns/{id}/review           — Legacy endpoint (410 Gone)
   POST   /api/campaigns/{id}/content-approve  — Submit per-piece content approval decisions
   PATCH  /api/campaigns/{id}/content/{piece_index}/decision — Persist a per-piece approval/rejection
   PATCH  /api/campaigns/{id}/content/{piece_index}/notes    — Update human_notes on an approved piece
@@ -24,7 +22,7 @@ logger = logging.getLogger(__name__)
 from fastapi.responses import Response
 
 from backend.models.campaign import Campaign, CampaignStatus
-from backend.models.messages import ClarificationResponse, ContentApprovalResponse, HumanReviewResponse
+from backend.models.messages import ClarificationResponse, ContentApprovalResponse
 from backend.models.user import User
 from backend.infrastructure.auth import get_current_user
 from backend.application.campaign_workflow_service import WorkflowConflictError, get_workflow_service
@@ -85,20 +83,6 @@ async def submit_clarification(
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     return WorkflowActionResponse(message="Clarification submitted", campaign_id=campaign.id)
-
-
-@router.post("/campaigns/{campaign_id}/review-clarify")
-async def submit_review_clarification(
-    campaign_id: str, response: ClarificationResponse
-) -> dict[str, str]:
-    """Legacy endpoint — review clarification is no longer used."""
-    raise HTTPException(status_code=410, detail="Review clarification is no longer supported. Use /content-approve instead.")
-
-
-@router.post("/campaigns/{campaign_id}/review")
-async def submit_review(campaign_id: str, response: HumanReviewResponse) -> dict[str, str]:
-    """Legacy endpoint — whole-campaign review is no longer used."""
-    raise HTTPException(status_code=410, detail="Whole-campaign review is no longer supported. Use /content-approve instead.")
 
 
 @router.post("/campaigns/{campaign_id}/content-approve", response_model=WorkflowActionResponse)
@@ -199,4 +183,3 @@ async def retry_campaign(
     """Retry the current failed stage of a campaign."""
     await get_executor().dispatch(WorkflowJob(campaign_id=campaign.id, action="retry_stage"))
     return WorkflowActionResponse(message="Stage retry initiated", campaign_id=campaign.id)
-
