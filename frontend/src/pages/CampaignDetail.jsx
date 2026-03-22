@@ -9,6 +9,7 @@ import ChannelPlanSection from "../components/ChannelPlanSection.jsx";
 import AnalyticsSection from "../components/AnalyticsSection.jsx";
 import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
+import ImageGallerySection from "../components/ImageGallerySection.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import ProgressIndicator from "../components/ProgressIndicator.jsx";
 import Toast from "../components/Toast.jsx";
@@ -62,7 +63,7 @@ export default function CampaignDetail() {
   );
   const [badgePulse, setBadgePulse] = useState(false);
   const { events, connected, connectionFailed } = useWebSocket(id);
-  const { isViewer, isAdmin, user } = useUser();
+  const { isViewer, isAdmin, user, imageGenerationAvailable } = useUser();
   const prevStatusRef = useRef(null);
 
   // canManage: admins always can; campaign owners can too
@@ -173,6 +174,9 @@ export default function CampaignDetail() {
   const isAtApproval = campaign?.status === "content_approval" || campaign?.status === "approved" || campaign?.status === "rejected" || campaign?.status === "manual_review_required";
   const HIDDEN_AT_APPROVAL = ["content", "content_revision"];
 
+  // Whether the Images tab should be shown
+  const showImagesTab = imageGenerationAvailable && campaign?.brief?.generate_images === true;
+
   // Clickable tabs: completed stages + the currently active stage
   const clickableTabs = useMemo(() => {
     const t = [];
@@ -197,9 +201,13 @@ export default function CampaignDetail() {
           }
         }
       }
+      // Images tab is always clickable when shown
+      if (showImagesTab) {
+        t.push("images");
+      }
     }
     return t;
-  }, [campaign, stageStates, isAtApproval]);
+  }, [campaign, stageStates, isAtApproval, showImagesTab]);
 
   // Derive the active tab: honour explicit user click, otherwise show the latest pipeline tab
   const activeTab = useMemo(() => {
@@ -290,6 +298,14 @@ export default function CampaignDetail() {
             status={campaign.status}
           />
         );
+      case "images":
+        return (
+          <ImageGallerySection
+            workspaceId={effectiveWorkspaceId}
+            campaignId={campaign.id}
+            events={events}
+          />
+        );
       default:
         return (
           <div className="card empty-state">
@@ -316,6 +332,15 @@ export default function CampaignDetail() {
           </button>
         );
       })}
+      {showImagesTab && (
+        <button
+          className={`pipeline-tab completed${activeTab === "images" ? " selected" : ""}`}
+          onClick={() => setUserTab("images")}
+        >
+          <span className="pipeline-tab-icon" aria-hidden="true">🖼️</span>
+          Images
+        </button>
+      )}
     </div>
   );
 
@@ -467,6 +492,15 @@ export default function CampaignDetail() {
                     </button>
                   );
                 })}
+                {showImagesTab && (
+                  <button
+                    className={`sidebar-stage sidebar-stage-completed${activeTab === "images" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
+                    onClick={() => setUserTab("images")}
+                  >
+                    <span className="sidebar-stage-dot" />
+                    <span className="sidebar-stage-label">Images</span>
+                  </button>
+                )}
               </div>
             </div>
 
