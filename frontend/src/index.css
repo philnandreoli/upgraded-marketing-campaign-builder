@@ -1210,6 +1210,29 @@ a:hover { color: var(--color-primary-hover); }
   background: var(--color-primary);
   color: var(--color-bg);
 }
+.toast--success { border-left: 3px solid var(--color-success); }
+.toast--warning { border-left: 3px solid var(--color-warning); }
+.toast--error   { border-left: 3px solid var(--color-danger); }
+.toast--info    { border-left: 3px solid var(--color-primary); }
+.toast--error .toast-stage { color: var(--color-danger); }
+.toast-dismiss {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0.6;
+  margin-left: 0.25rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+.toast-dismiss:hover { opacity: 1; }
+.toast-dismiss:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
 
 /* ------------------------------------------------------------------ */
 /* Notification Center                                                 */
@@ -3042,18 +3065,10 @@ a:hover { color: var(--color-primary-hover); }
   justify-content: flex-end;
 }
 
-/* ── Error Toast (context-provided) ──────────────────────────────────── */
+/* ── Toast (context-provided) ────────────────────────────────────────── */
 
 .toast-container--context {
   bottom: 4.5rem;
-}
-
-.toast--error {
-  border-color: var(--color-danger);
-}
-
-.toast--error .toast-stage {
-  color: var(--color-danger);
 }
 
 /* ── Workspace Detail Page ────────────────────────────────────────────── */

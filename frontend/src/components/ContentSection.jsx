@@ -54,7 +54,7 @@ export default function ContentSection({
   status,
 }) {
   const confirm = useConfirm();
-  const addToast = useToast();
+  const { addToast } = useToast();
   const [editing, setEditing] = useState({});      // { [index]: editedText }
   const [notes, setNotes] = useState({});           // { [index]: noteText }
   const [decisions, setDecisions] = useState({});   // { [index]: "approved" | "rejected" }
@@ -96,7 +96,7 @@ export default function ContentSection({
       await submitContentApproval(workspaceId, campaignId, pieces);
       onApprovalSubmitted?.();
     } catch (err) {
-      addToast({ stage: "Error", message: "Failed to submit content approval: " + err.message });
+      addToast({ type: "error", stage: "Error", message: "Failed to submit content approval: " + err.message });
     } finally {
       setSubmitting(false);
     }
@@ -115,7 +115,7 @@ export default function ContentSection({
       await submitContentApproval(workspaceId, campaignId, [], true);
       onApprovalSubmitted?.();
     } catch (err) {
-      addToast({ stage: "Error", message: "Failed to reject campaign: " + err.message });
+      addToast({ type: "error", stage: "Error", message: "Failed to reject campaign: " + err.message });
     } finally {
       setSubmitting(false);
     }
@@ -126,7 +126,7 @@ export default function ContentSection({
     try {
       await updatePieceNotes(workspaceId, campaignId, pieceIndex, notes[pieceIndex] || "");
     } catch (err) {
-      addToast({ stage: "Error", message: "Failed to save notes: " + err.message });
+      addToast({ type: "error", stage: "Error", message: "Failed to save notes: " + err.message });
     } finally {
       setSavingNotes((prev) => ({ ...prev, [pieceIndex]: false }));
     }
@@ -144,7 +144,7 @@ export default function ContentSection({
       // Mirror the persisted decision in local state so the UI updates immediately
       setDecisions((prev) => ({ ...prev, [pieceIndex]: approved ? "approved" : "rejected" }));
     } catch (err) {
-      addToast({ stage: "Error", message: "Failed to save decision: " + err.message });
+      addToast({ type: "error", stage: "Error", message: "Failed to save decision: " + err.message });
     } finally {
       setSavingDecision((prev) => ({ ...prev, [pieceIndex]: false }));
     }

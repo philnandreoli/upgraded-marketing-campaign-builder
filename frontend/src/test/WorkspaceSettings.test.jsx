@@ -4,7 +4,7 @@
 
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import WorkspaceSettings from '../pages/WorkspaceSettings';
 import { UserProvider } from '../UserContext';
 import { WorkspaceProvider } from '../WorkspaceContext';
@@ -134,6 +134,11 @@ describe('WorkspaceSettings – members', () => {
 });
 
 describe('WorkspaceSettings – danger zone', () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
   it('shows Delete Workspace button', async () => {
     await renderSettings('ws-1', ws, []);
     await waitFor(() => screen.getByRole('button', { name: /delete workspace/i }));
@@ -159,7 +164,49 @@ describe('WorkspaceSettings – danger zone', () => {
     expect(screen.getByText(/will not be deleted/i)).toBeInTheDocument();
   });
 
-  it('calls deleteWorkspace and navigates on confirm', async () => {
+  it('shows undo toast after confirm and calls deleteWorkspace after 5 seconds', async () => {
+    api.deleteWorkspace.mockResolvedValue(undefined);
+
+    await renderSettings('ws-1', ws, []);
+    await waitFor(() => screen.getByRole('button', { name: /delete workspace/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /delete workspace/i }));
+    });
+
+    // Confirm via the modal — enable fake timers BEFORE clicking confirm
+    const dialog = await waitFor(() => screen.getByRole('dialog'));
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: /^delete workspace$/i }));
+    });
+
+    // Undo toast should appear; API should NOT have been called yet
+    expect(screen.getByText('Workspace deleted')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+    expect(api.deleteWorkspace).not.toHaveBeenCalled();
+
+    // Advance past the 5-second grace period and drain async operations
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(api.deleteWorkspace).toHaveBeenCalledWith('ws-1');
+
+    // Allow the navigate to happen after the mocked async deleteWorkspace resolves
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/workspaces');
+
+    vi.clearAllTimers();
+    api.deleteWorkspace.mockClear();
+  }, 10000);
+
+  it('cancels delete when Undo is clicked', async () => {
     api.deleteWorkspace.mockResolvedValue(undefined);
 
     await renderSettings('ws-1', ws, []);
@@ -170,12 +217,26 @@ describe('WorkspaceSettings – danger zone', () => {
 
     // Confirm via the modal
     const dialog = await waitFor(() => screen.getByRole('dialog'));
+    vi.useFakeTimers();
     await act(async () => {
       fireEvent.click(within(dialog).getByRole('button', { name: /^delete workspace$/i }));
     });
 
-    await waitFor(() => expect(api.deleteWorkspace).toHaveBeenCalledWith('ws-1'));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/workspaces'));
+    // Click Undo
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /undo/i }));
+    });
+
+    // Advance past the grace period — API should NOT be called
+    await act(async () => {
+      vi.advanceTimersByTime(6000);
+      await Promise.resolve();
+    });
+
+    expect(api.deleteWorkspace).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    vi.clearAllTimers();
   });
 
   it('does not delete when confirm is cancelled', async () => {

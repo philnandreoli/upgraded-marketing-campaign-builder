@@ -13,6 +13,7 @@ import {
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
 import { useConfirm } from "../ConfirmDialogContext";
+import { useToast } from "../ToastContext";
 
 const WORKSPACE_ROLES = ["creator", "contributor", "viewer"];
 const ROLE_LABELS = { creator: "Creator", contributor: "Contributor", viewer: "Viewer" };
@@ -261,6 +262,7 @@ export default function WorkspaceSettings() {
   const { isAdmin } = useUser();
   const { refreshWorkspaces } = useWorkspace();
   const confirm = useConfirm();
+  const { addToast, dismissToast } = useToast();
 
   const [workspace, setWorkspace] = useState(null);
   const [members, setMembers] = useState([]);
@@ -278,6 +280,14 @@ export default function WorkspaceSettings() {
   // Delete state
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  // Clean up undo timer on unmount
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    };
+  }, []);
 
   const fetchWorkspace = useCallback(() => {
     setLoadingWs(true);
@@ -335,14 +345,33 @@ export default function WorkspaceSettings() {
     if (!confirmed) return;
     setDeleting(true);
     setDeleteError(null);
-    try {
-      await deleteWorkspace(id);
-      refreshWorkspaces();
-      navigate("/workspaces");
-    } catch (err) {
-      setDeleteError(err.message);
-      setDeleting(false);
-    }
+
+    const toastId = addToast({
+      type: "warning",
+      stage: "Workspace deleted",
+      duration: 5500,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          clearTimeout(undoTimerRef.current);
+          undoTimerRef.current = null;
+          dismissToast(toastId);
+          setDeleting(false);
+        },
+      },
+    });
+
+    undoTimerRef.current = setTimeout(async () => {
+      undoTimerRef.current = null;
+      try {
+        await deleteWorkspace(id);
+        refreshWorkspaces();
+        navigate("/workspaces");
+      } catch (err) {
+        setDeleteError(err.message);
+        setDeleting(false);
+      }
+    }, 5000);
   };
 
   if (loadingWs) {

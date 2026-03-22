@@ -38,7 +38,7 @@ function eventIcon(type) {
  * Props:
  *   events        — array of WebSocket event objects from useWebSocket
  *   notifications — array of manually-managed notification items:
- *                   { id, icon, stage, message, action?: { label, onClick } }
+ *                   { id, icon, type, stage, message, action?: { label, onClick } }
  *                   The parent controls adding/removing these; Toast handles
  *                   entry/exit animations when items appear/disappear.
  */
@@ -87,6 +87,24 @@ export default function Toast({ events, notifications = [] }) {
     if (!info) return;
     scheduleAutoDismiss(toastId, info.delay);
   }, [scheduleAutoDismiss]);
+
+  /** Dismiss a toast immediately (event toasts or manual notification toasts). */
+  const handleDismiss = useCallback((toastId) => {
+    // Clear any auto-dismiss timers for event toasts
+    const timers = timersRef.current[toastId];
+    if (timers) {
+      clearTimeout(timers.exitTimer);
+      clearTimeout(timers.removeTimer);
+      delete timersRef.current[toastId];
+      delete remainingRef.current[toastId];
+    }
+    // Trigger exit animation on event toasts
+    setToasts((prev) => prev.map((t) => (t.id === toastId ? { ...t, exiting: true } : t)));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== toastId)), EXIT_MS);
+    // Also handle manual notification toasts
+    setManualToasts((prev) => prev.map((t) => (t.id === toastId ? { ...t, exiting: true } : t)));
+    setTimeout(() => setManualToasts((prev) => prev.filter((t) => t.id !== toastId)), EXIT_MS);
+  }, []);
 
   useEffect(() => {
     if (!events || events.length === 0) return;
@@ -163,7 +181,7 @@ export default function Toast({ events, notifications = [] }) {
       {allToasts.map((t) => (
         <div
           key={t.id}
-          className={`toast${t.exiting ? " toast-exiting" : ""}`}
+          className={`toast${t.type ? ` toast--${t.type}` : ""}${t.exiting ? " toast-exiting" : ""}`}
           role="status"
           onMouseEnter={() => handleMouseEnter(t.id)}
           onMouseLeave={() => handleMouseLeave(t.id)}
@@ -178,6 +196,13 @@ export default function Toast({ events, notifications = [] }) {
               {t.action.label}
             </button>
           )}
+          <button
+            className="toast-dismiss"
+            onClick={() => handleDismiss(t.id)}
+            aria-label="Dismiss notification"
+          >
+            ✕
+          </button>
         </div>
       ))}
     </div>,
