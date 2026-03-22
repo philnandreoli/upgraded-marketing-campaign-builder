@@ -1113,3 +1113,292 @@ describe('Dashboard – Sort dropdown', () => {
     expect(cards[1]).toHaveTextContent('Mango');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests: Pagination — load more
+// ---------------------------------------------------------------------------
+
+const WS_PAGE = { id: 'ws-page', name: 'Page Workspace', is_personal: true, role: 'creator' };
+
+const makeCampaign = (id, product) => ({
+  id,
+  product_or_service: product,
+  goal: 'G',
+  status: 'strategy',
+  owner_id: 'user-1',
+  workspace_id: 'ws-page',
+  workspace_name: 'Page Workspace',
+});
+
+const page1Campaigns = [makeCampaign('p1', 'Product1'), makeCampaign('p2', 'Product2')];
+const page2Campaigns = [makeCampaign('p3', 'Product3')];
+
+/**
+ * Render Dashboard with the first page returning has_more=true and a second
+ * page available via a separate mock resolved value.
+ */
+async function renderDashboardWithPages({ page1 = page1Campaigns, page2 = page2Campaigns, workspaces = [WS_PAGE] } = {}) {
+  api.getMe.mockResolvedValue({
+    id: 'user-1',
+    email: 'test@example.com',
+    display_name: 'Test User',
+    roles: ['campaign_builder'],
+    is_admin: false,
+    can_build: true,
+    is_viewer: false,
+  });
+  api.listWorkspaces.mockResolvedValue(workspaces);
+  api.deleteCampaign.mockResolvedValue(undefined);
+
+  // First call: page 1 (has_more: true). Subsequent call: page 2 (has_more: false).
+  api.listCampaigns
+    .mockResolvedValueOnce({
+      items: page1,
+      pagination: {
+        total_count: page1.length + page2.length,
+        offset: 0,
+        limit: page1.length,
+        returned_count: page1.length,
+        has_more: true,
+      },
+    })
+    .mockResolvedValueOnce({
+      items: page2,
+      pagination: {
+        total_count: page1.length + page2.length,
+        offset: page1.length,
+        limit: page2.length,
+        returned_count: page2.length,
+        has_more: false,
+      },
+    });
+
+  render(
+    <MemoryRouter>
+      <UserProvider>
+        <WorkspaceProvider>
+          <ConfirmDialogProvider>
+            <ToastProvider>
+              <Dashboard events={[]} />
+            </ToastProvider>
+          </ConfirmDialogProvider>
+        </WorkspaceProvider>
+      </UserProvider>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+}
+
+describe('Dashboard – Pagination', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    api.listCampaigns.mockReset();
+    api.getMe.mockReset();
+    api.listWorkspaces.mockReset();
+  });
+
+  it('calls listCampaigns with limit and offset=0 on initial load', async () => {
+    await renderDashboardWithPages();
+    await waitFor(() => screen.getByText('Product1'));
+
+    expect(api.listCampaigns).toHaveBeenCalledWith(
+      'ws-page',
+      expect.objectContaining({ limit: expect.any(Number), offset: 0 }),
+    );
+  });
+
+  it('shows "Load more campaigns" button when has_more is true', async () => {
+    await renderDashboardWithPages();
+    await waitFor(() => screen.getByText('Product1'));
+
+    expect(screen.getByRole('button', { name: /load more campaigns/i })).toBeInTheDocument();
+  });
+
+  it('does not show "Load more campaigns" button when has_more is false', async () => {
+    api.getMe.mockResolvedValue({
+      id: 'user-1',
+      email: 'test@example.com',
+      display_name: 'Test User',
+      roles: ['campaign_builder'],
+      is_admin: false,
+      can_build: true,
+      is_viewer: false,
+    });
+    api.listWorkspaces.mockResolvedValue([WS_PAGE]);
+    api.deleteCampaign.mockResolvedValue(undefined);
+    api.listCampaigns.mockResolvedValue({
+      items: page1Campaigns,
+      pagination: {
+        total_count: page1Campaigns.length,
+        offset: 0,
+        limit: 50,
+        returned_count: page1Campaigns.length,
+        has_more: false,
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <UserProvider>
+          <WorkspaceProvider>
+            <ConfirmDialogProvider>
+              <ToastProvider>
+                <Dashboard events={[]} />
+              </ToastProvider>
+            </ConfirmDialogProvider>
+          </WorkspaceProvider>
+        </UserProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => screen.getByText('Product1'));
+    expect(screen.queryByRole('button', { name: /load more campaigns/i })).not.toBeInTheDocument();
+  });
+
+  it('appends next page campaigns when "Load more" is clicked', async () => {
+    await renderDashboardWithPages();
+    await waitFor(() => screen.getByText('Product1'));
+
+    const loadMoreBtn = screen.getByRole('button', { name: /load more campaigns/i });
+    await act(async () => {
+      fireEvent.click(loadMoreBtn);
+    });
+
+    await waitFor(() => screen.getByText('Product3'));
+    expect(screen.getByText('Product1')).toBeInTheDocument();
+    expect(screen.getByText('Product2')).toBeInTheDocument();
+    expect(screen.getByText('Product3')).toBeInTheDocument();
+  });
+
+  it('calls listCampaigns with the correct next offset when "Load more" is clicked', async () => {
+    await renderDashboardWithPages();
+    await waitFor(() => screen.getByText('Product1'));
+
+    const loadMoreBtn = screen.getByRole('button', { name: /load more campaigns/i });
+    await act(async () => {
+      fireEvent.click(loadMoreBtn);
+    });
+
+    await waitFor(() => screen.getByText('Product3'));
+
+    // Second call should use offset = page1.length (2)
+    expect(api.listCampaigns).toHaveBeenNthCalledWith(
+      2,
+      'ws-page',
+      expect.objectContaining({ offset: page1Campaigns.length }),
+    );
+  });
+
+  it('hides "Load more" button after the last page is loaded', async () => {
+    await renderDashboardWithPages();
+    await waitFor(() => screen.getByText('Product1'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /load more campaigns/i }));
+    });
+
+    await waitFor(() => screen.getByText('Product3'));
+    expect(screen.queryByRole('button', { name: /load more campaigns/i })).not.toBeInTheDocument();
+  });
+
+  it('hides "Load more" button when a filter tab is active', async () => {
+    await renderDashboardWithPages();
+    await waitFor(() => screen.getByText('Product1'));
+
+    // Load more button is visible initially
+    expect(screen.getByRole('button', { name: /load more campaigns/i })).toBeInTheDocument();
+
+    // Activate a filter tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Approved' }));
+
+    // Load more should be hidden because isFiltered = true
+    expect(screen.queryByRole('button', { name: /load more campaigns/i })).not.toBeInTheDocument();
+  });
+
+  it('hides "Load more" button when a search is active', async () => {
+    await renderDashboardWithPages();
+    await waitFor(() => screen.getByText('Product1'));
+
+    // Load more button is visible initially
+    expect(screen.getByRole('button', { name: /load more campaigns/i })).toBeInTheDocument();
+
+    // Activate a search
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByPlaceholderText('Search campaigns...'), {
+      target: { value: 'Product1' },
+    });
+    await act(async () => vi.advanceTimersByTime(300));
+    vi.useRealTimers();
+
+    // Load more should be hidden because isFiltered = true
+    expect(screen.queryByRole('button', { name: /load more campaigns/i })).not.toBeInTheDocument();
+  });
+
+  it('uses pagination.limit as fallback offset increment when returned_count is absent', async () => {
+    api.getMe.mockResolvedValue({
+      id: 'user-1',
+      email: 'test@example.com',
+      display_name: 'Test User',
+      roles: ['campaign_builder'],
+      is_admin: false,
+      can_build: true,
+      is_viewer: false,
+    });
+    api.listWorkspaces.mockResolvedValue([WS_PAGE]);
+    api.deleteCampaign.mockResolvedValue(undefined);
+
+    const firstPageLimit = 2;
+    // First response: no returned_count — Dashboard should fall back to limit
+    api.listCampaigns
+      .mockResolvedValueOnce({
+        items: page1Campaigns,
+        pagination: {
+          total_count: page1Campaigns.length + page2Campaigns.length,
+          offset: 0,
+          limit: firstPageLimit,
+          // returned_count intentionally absent
+          has_more: true,
+        },
+      })
+      .mockResolvedValueOnce({
+        items: page2Campaigns,
+        pagination: {
+          total_count: page1Campaigns.length + page2Campaigns.length,
+          offset: firstPageLimit,
+          limit: firstPageLimit,
+          returned_count: page2Campaigns.length,
+          has_more: false,
+        },
+      });
+
+    render(
+      <MemoryRouter>
+        <UserProvider>
+          <WorkspaceProvider>
+            <ConfirmDialogProvider>
+              <ToastProvider>
+                <Dashboard events={[]} />
+              </ToastProvider>
+            </ConfirmDialogProvider>
+          </WorkspaceProvider>
+        </UserProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => screen.getByText('Product1'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /load more campaigns/i }));
+    });
+
+    await waitFor(() => screen.getByText('Product3'));
+
+    // Second call offset should equal firstPageLimit (the fallback)
+    expect(api.listCampaigns).toHaveBeenNthCalledWith(
+      2,
+      'ws-page',
+      expect.objectContaining({ offset: firstPageLimit }),
+    );
+  });
+});
