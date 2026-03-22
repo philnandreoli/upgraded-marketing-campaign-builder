@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMe, getMeSettings, patchMeSettings, listWorkspaces } from "../api";
 import { useToast } from "../ToastContext";
+import FormSelect from "../components/FormSelect";
 import { useThemeContext } from "../ThemeContext";
 
 const TABS = [
@@ -226,15 +227,13 @@ function PreferencesTab({ settings, onSettingsSaved }) {
       <form onSubmit={handleSave}>
         <div className="form-group">
           <label htmlFor="pref-theme">Theme</label>
-          <select
+          <FormSelect
             id="pref-theme"
+            options={THEME_OPTIONS}
             value={theme}
-            onChange={(e) => { setTheme(e.target.value); setValidationErrors((v) => ({ ...v, theme: undefined })); }}
-          >
-            {THEME_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+            onChange={(val) => { setTheme(val); setValidationErrors((v) => ({ ...v, theme: undefined })); }}
+            ariaLabel="Theme"
+          />
           {validationErrors.theme && (
             <span data-testid="error-theme" style={{ color: "var(--color-danger)", fontSize: "0.75rem" }}>{validationErrors.theme}</span>
           )}
@@ -242,15 +241,13 @@ function PreferencesTab({ settings, onSettingsSaved }) {
 
         <div className="form-group">
           <label htmlFor="pref-locale">Locale</label>
-          <select
+          <FormSelect
             id="pref-locale"
+            options={LOCALE_OPTIONS}
             value={locale}
-            onChange={(e) => { setLocale(e.target.value); setValidationErrors((v) => ({ ...v, locale: undefined })); }}
-          >
-            {LOCALE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+            onChange={(val) => { setLocale(val); setValidationErrors((v) => ({ ...v, locale: undefined })); }}
+            ariaLabel="Locale"
+          />
           {validationErrors.locale && (
             <span data-testid="error-locale" style={{ color: "var(--color-danger)", fontSize: "0.75rem" }}>{validationErrors.locale}</span>
           )}
@@ -258,15 +255,13 @@ function PreferencesTab({ settings, onSettingsSaved }) {
 
         <div className="form-group">
           <label htmlFor="pref-timezone">Timezone</label>
-          <select
+          <FormSelect
             id="pref-timezone"
+            options={TIMEZONE_OPTIONS.map((tz) => ({ value: tz, label: tz }))}
             value={timezone}
-            onChange={(e) => { setTimezone(e.target.value); setValidationErrors((v) => ({ ...v, timezone: undefined })); }}
-          >
-            {TIMEZONE_OPTIONS.map((tz) => (
-              <option key={tz} value={tz}>{tz}</option>
-            ))}
-          </select>
+            onChange={(val) => { setTimezone(val); setValidationErrors((v) => ({ ...v, timezone: undefined })); }}
+            ariaLabel="Timezone"
+          />
           {validationErrors.timezone && (
             <span data-testid="error-timezone" style={{ color: "var(--color-danger)", fontSize: "0.75rem" }}>{validationErrors.timezone}</span>
           )}
@@ -274,16 +269,13 @@ function PreferencesTab({ settings, onSettingsSaved }) {
 
         <div className="form-group">
           <label htmlFor="pref-workspace">Default Workspace</label>
-          <select
+          <FormSelect
             id="pref-workspace"
+            options={[{ value: "", label: "None" }, ...workspaces.map((ws) => ({ value: ws.id, label: ws.name }))]}
             value={defaultWorkspaceId}
-            onChange={(e) => setDefaultWorkspaceId(e.target.value)}
-          >
-            <option value="">None</option>
-            {workspaces.map((ws) => (
-              <option key={ws.id} value={ws.id}>{ws.name}</option>
-            ))}
-          </select>
+            onChange={(val) => setDefaultWorkspaceId(val)}
+            ariaLabel="Default Workspace"
+          />
         </div>
 
         {saveError && (
@@ -437,15 +429,13 @@ function NotificationsTab({ settings, onSettingsSaved }) {
         {hasDigestFrequency && (
           <div className="form-group" style={{ marginTop: "0.25rem" }}>
             <label htmlFor="notif-digest-frequency">Digest frequency</label>
-            <select
+            <FormSelect
               id="notif-digest-frequency"
+              options={DIGEST_FREQUENCY_OPTIONS}
               value={digestFrequency}
-              onChange={(e) => setDigestFrequency(e.target.value)}
-            >
-              {DIGEST_FREQUENCY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              onChange={(val) => setDigestFrequency(val)}
+              ariaLabel="Digest frequency"
+            />
           </div>
         )}
 

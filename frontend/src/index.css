@@ -677,6 +677,94 @@ a:hover { color: var(--color-primary-hover); }
   margin-bottom: 0.75rem;
 }
 
+/* Custom form select — theme-aware dropdown replacing native <select> */
+.form-select-custom {
+  position: relative;
+  width: 100%;
+}
+.form-select-custom__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  text-align: left;
+}
+.form-select-custom__trigger:hover {
+  border-color: var(--color-primary);
+}
+.form-select-custom__trigger--open {
+  border-color: var(--color-primary);
+}
+.form-select-custom__trigger:focus-visible {
+  border-color: var(--color-primary);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.form-select-custom__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.form-select-custom__chevron {
+  transition: transform 0.2s ease;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+.form-select-custom__chevron--open {
+  transform: rotate(180deg);
+}
+.form-select-custom__menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  z-index: 50;
+  max-height: 240px;
+  overflow-y: auto;
+  animation: form-select-enter 0.12s ease-out;
+}
+@keyframes form-select-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.form-select-custom__item {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s;
+}
+.form-select-custom__item:hover {
+  background: var(--color-surface-2);
+}
+.form-select-custom__item--active {
+  color: var(--color-primary);
+  font-weight: 600;
+  background: var(--color-surface-2);
+}
+
 /* Form section grouping */
 .form-section {
   border: 1px solid var(--color-border);
