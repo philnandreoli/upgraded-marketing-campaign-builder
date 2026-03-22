@@ -270,3 +270,33 @@ When `AUTH_ENABLED=true` you must also configure `OIDC_AUTHORITY` and `OIDC_CLIE
 > **Important:** The API **refuses to start** if `APP_ENV` is not `development` and `CORS_ALLOWED_ORIGINS` still contains the wildcard `"*"`.  Always set explicit origins before deploying.
 
 When the React frontend is served by the same nginx reverse-proxy that proxies API traffic (the default production topology), the browser sees a single origin so CORS is not exercised at all.  Restricting allowed origins is most important when the API is accessed directly from a different origin (e.g. a separate staging frontend or a developer machine).
+
+## Backend Logging Policy
+
+All log statements in the campaign API must follow an **allowlist** approach — only non-sensitive metadata may appear in log output.
+
+### What may be logged
+
+| Field | Example |
+|-------|---------|
+| `campaign_id` | UUID of the campaign |
+| `workspace_id` | UUID of the workspace |
+| `actor` | User ID or `"anonymous"` |
+| `status` | Campaign status enum value (e.g. `draft`, `strategy`) |
+| `pieces` | Count of content pieces (integer) |
+| HTTP status codes, error types | `409`, `"ConcurrentUpdateError"` |
+
+### What must never be logged
+
+The following free-text fields on `CampaignBrief` contain sensitive business information and must **never** appear in log output in plaintext:
+
+- `product_or_service`
+- `goal`
+- `additional_context`
+
+### Enforcement
+
+- The helper `backend.core.log_utils.redact_brief()` strips all fields in `SENSITIVE_BRIEF_FIELDS` from a brief dict, replacing each value with `"[REDACTED]"`.
+- The helper `backend.core.log_utils.safe_campaign_context()` builds a metadata-only dict for structured log messages.
+- Use `safe_campaign_context(...)` whenever you need to log context around a campaign operation (see `backend/api/campaigns.py`).
+- Automated tests in `backend/tests/test_log_redaction.py` verify that sensitive text is absent from captured log records during campaign creation.
