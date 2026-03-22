@@ -19,9 +19,12 @@ export const updateCampaignDraft = (workspaceId, campaignId, fields) =>
 export const launchCampaign = (workspaceId, campaignId) =>
   request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/launch`);
 
-export const listCampaigns = (workspaceId, { includeDrafts = false } = {}) => {
-  const params = includeDrafts ? "?include_drafts=true" : "";
-  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns${params}`);
+export const listCampaigns = (workspaceId, { includeDrafts = false, limit = 50, offset = 0 } = {}) => {
+  const params = new URLSearchParams();
+  if (includeDrafts) params.set("include_drafts", "true");
+  params.set("limit", limit);
+  params.set("offset", offset);
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns?${params}`);
 };
 
 export const getCampaign = (workspaceId, id) =>
@@ -117,9 +120,12 @@ export const updateWorkspace = (id, { name, description }) =>
 export const deleteWorkspace = (id) =>
   request("DELETE", `/api/workspaces/${encodeURIComponent(id)}`);
 
-export const listWorkspaceCampaigns = (id, { includeDrafts = false } = {}) => {
-  const params = includeDrafts ? "?include_drafts=true" : "";
-  return request("GET", `/api/workspaces/${encodeURIComponent(id)}/campaigns${params}`);
+export const listWorkspaceCampaigns = (id, { includeDrafts = false, limit = 50, offset = 0 } = {}) => {
+  const params = new URLSearchParams();
+  if (includeDrafts) params.set("include_drafts", "true");
+  params.set("limit", limit);
+  params.set("offset", offset);
+  return request("GET", `/api/workspaces/${encodeURIComponent(id)}/campaigns?${params}`);
 };
 
 // ---------------------------------------------------------------------------

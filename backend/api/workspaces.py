@@ -191,9 +191,8 @@ async def list_workspaces(
             else:
                 role_str = WorkspaceRole.CREATOR.value
             members = await store.list_workspace_members(ws.id)
-            campaigns = await store.list_workspace_campaigns(ws.id)
+            campaigns, campaign_count = await store.list_workspace_campaigns(ws.id)
             member_count = len(members)
-            campaign_count = len(campaigns)
             if ws.owner_id:
                 owner_user = await store.get_user(ws.owner_id)
                 owner_display_name = (

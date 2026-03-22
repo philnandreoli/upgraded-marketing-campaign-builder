@@ -95,20 +95,20 @@ class TestCampaignStoreUnit:
     @pytest.mark.asyncio
     async def test_create_with_owner_adds_membership(self, store, brief):
         c = await store.create(brief, owner_id="user-1")
-        accessible = await store.list_accessible("user-1")
+        accessible, total = await store.list_accessible("user-1")
         assert any(camp.id == c.id for camp in accessible)
 
     @pytest.mark.asyncio
     async def test_create_without_owner_no_membership(self, store, brief):
         c = await store.create(brief)
-        accessible = await store.list_accessible("user-1")
+        accessible, total = await store.list_accessible("user-1")
         assert not any(camp.id == c.id for camp in accessible)
 
     @pytest.mark.asyncio
     async def test_list_accessible_only_returns_members_campaigns(self, store, brief):
         c1 = await store.create(brief, owner_id="user-1")
         c2 = await store.create(brief, owner_id="user-2")
-        accessible = await store.list_accessible("user-1")
+        accessible, total = await store.list_accessible("user-1")
         ids = [c.id for c in accessible]
         assert c1.id in ids
         assert c2.id not in ids
@@ -119,15 +119,16 @@ class TestCampaignStoreUnit:
         store.add_user(User(id="admin-user", roles=[UserRole.ADMIN, UserRole.CAMPAIGN_BUILDER]))
         await store.create(brief, owner_id="user-1")
         await store.create(brief, owner_id="user-2")
-        accessible = await store.list_accessible("admin-user")
+        accessible, total = await store.list_accessible("admin-user")
         assert len(accessible) == 2
+        assert total == 2
 
     @pytest.mark.asyncio
     async def test_add_member_grants_access(self, store, brief):
         from backend.models.user import CampaignMemberRole
         c = await store.create(brief, owner_id="user-1")
         await store.add_member(c.id, "user-2", CampaignMemberRole.EDITOR)
-        accessible = await store.list_accessible("user-2")
+        accessible, total = await store.list_accessible("user-2")
         assert any(camp.id == c.id for camp in accessible)
 
     @pytest.mark.asyncio
@@ -137,7 +138,7 @@ class TestCampaignStoreUnit:
         await store.add_member(c.id, "user-2", CampaignMemberRole.VIEWER)
         removed = await store.remove_member(c.id, "user-2")
         assert removed is True
-        accessible = await store.list_accessible("user-2")
+        accessible, total = await store.list_accessible("user-2")
         assert not any(camp.id == c.id for camp in accessible)
 
     @pytest.mark.asyncio
@@ -152,8 +153,10 @@ class TestCampaignStoreUnit:
         await store.add_member(c.id, "user-2", CampaignMemberRole.VIEWER)
         await store.delete(c.id)
         # After deletion, neither user should see the campaign
-        assert await store.list_accessible("user-1") == []
-        assert await store.list_accessible("user-2") == []
+        accessible_1, _ = await store.list_accessible("user-1")
+        accessible_2, _ = await store.list_accessible("user-2")
+        assert accessible_1 == []
+        assert accessible_2 == []
 
 
 # ---------------------------------------------------------------------------
@@ -246,10 +249,11 @@ class TestWorkspaceUnit:
         ws = await store.create_workspace("WS", owner_id="user-1")
         c1 = await store.create(brief, workspace_id=ws.id)
         c2 = await store.create(brief)  # no workspace
-        campaigns = await store.list_workspace_campaigns(ws.id)
+        campaigns, total = await store.list_workspace_campaigns(ws.id)
         ids = [c.id for c in campaigns]
         assert c1.id in ids
         assert c2.id not in ids
+        assert total == 1
 
     @pytest.mark.asyncio
     async def test_get_personal_workspace(self, store):
@@ -298,7 +302,7 @@ class TestWorkspaceUnit:
         c = await store.create(brief, workspace_id=ws.id)
         # user-2 is not a direct campaign member, but is a workspace member
         await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
-        accessible = await store.list_accessible("user-2")
+        accessible, total = await store.list_accessible("user-2")
         assert any(camp.id == c.id for camp in accessible)
 
     @pytest.mark.asyncio
@@ -309,7 +313,7 @@ class TestWorkspaceUnit:
         c = await store.create(brief, workspace_id=ws.id)
         await store.add_member(c.id, "user-2", CampaignMemberRole.VIEWER)
         await store.add_workspace_member(ws.id, "user-2", WorkspaceRole.VIEWER)
-        accessible = await store.list_accessible("user-2")
+        accessible, total = await store.list_accessible("user-2")
         ids = [camp.id for camp in accessible]
         assert ids.count(c.id) == 1
 
@@ -505,8 +509,9 @@ class TestStoreLayerAuthorization:
     async def test_list_accessible_unknown_user_not_admin(self, store, brief):
         """A user not in the store should not receive admin-level access."""
         await store.create(brief, owner_id="someone-else")
-        accessible = await store.list_accessible("ghost-user")
+        accessible, total = await store.list_accessible("ghost-user")
         assert accessible == []
+        assert total == 0
 
     @pytest.mark.asyncio
     async def test_list_accessible_non_admin_user_filtered(self, store, brief):
@@ -514,8 +519,9 @@ class TestStoreLayerAuthorization:
         store.add_user(User(id="viewer-1", roles=[UserRole.VIEWER]))
         await store.create(brief, owner_id="someone-else")
         # viewer-1 is not a member of any campaign
-        accessible = await store.list_accessible("viewer-1")
+        accessible, total = await store.list_accessible("viewer-1")
         assert accessible == []
+        assert total == 0
 
 
 def _db_available() -> bool:

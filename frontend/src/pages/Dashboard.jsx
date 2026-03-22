@@ -20,14 +20,18 @@ import {
   FILTER_TAB_STORAGE_KEY,
 } from "../constants/statusGroups";
 
+const PAGE_SIZE = 50;
+
 export default function Dashboard({ events }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState({});
   const [deleting, setDeleting] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const pendingDeletesRef = useRef(new Set());
   const undoTimersRef = useRef({});
+  const paginationRef = useRef({});
   const [activeFilter, setActiveFilter] = useState(
     () =>
       searchParams.get("status") ??
@@ -104,18 +108,63 @@ export default function Dashboard({ events }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all campaigns including drafts in one pass
-      const allArrays = await Promise.all(
-        workspaces.map((ws) => listCampaigns(ws.id, { includeDrafts: true }).catch(() => []))
+      // Fetch the first page of campaigns (including drafts) per workspace
+      const results = await Promise.all(
+        workspaces.map((ws) =>
+          listCampaigns(ws.id, { includeDrafts: true, limit: PAGE_SIZE, offset: 0 })
+            .then((res) => ({ wsId: ws.id, items: res.items, pagination: res.pagination }))
+            .catch(() => ({ wsId: ws.id, items: [], pagination: { has_more: false, total_count: 0, offset: 0, limit: PAGE_SIZE } }))
+        )
       );
+      // Update pagination tracking per workspace
+      const newPagination = {};
+      for (const { wsId, pagination } of results) {
+        newPagination[wsId] = {
+          offset: pagination.offset + (pagination.returned_count ?? pagination.limit),
+          hasMore: pagination.has_more,
+          totalCount: pagination.total_count,
+        };
+      }
+      paginationRef.current = newPagination;
       // Filter out campaigns currently in the soft-delete undo window
-      setCampaigns(allArrays.flat().filter((c) => !pendingDeletesRef.current.has(c.id)));
+      const allItems = results.flatMap((r) => r.items);
+      setCampaigns(allItems.filter((c) => !pendingDeletesRef.current.has(c.id)));
     } catch {
       /* silent */
     } finally {
       setLoading(false);
     }
   }, [workspaces]);
+
+  const loadMore = useCallback(async (workspaceId) => {
+    const pg = paginationRef.current[workspaceId];
+    if (!pg || !pg.hasMore) return;
+
+    setLoadingMore((prev) => ({ ...prev, [workspaceId]: true }));
+    try {
+      const res = await listCampaigns(workspaceId, {
+        includeDrafts: true,
+        limit: PAGE_SIZE,
+        offset: pg.offset,
+      });
+      paginationRef.current = {
+        ...paginationRef.current,
+        [workspaceId]: {
+          offset: pg.offset + (res.pagination.returned_count ?? res.pagination.limit),
+          hasMore: res.pagination.has_more,
+          totalCount: res.pagination.total_count,
+        },
+      };
+      setCampaigns((prev) => [
+        ...prev,
+        ...res.items.filter((c) => !pendingDeletesRef.current.has(c.id)),
+      ]);
+    } catch {
+      /* silent */
+    } finally {
+      setLoadingMore((prev) => ({ ...prev, [workspaceId]: false }));
+    }
+  }, []);
 
   useEffect(() => {
     load();
@@ -415,6 +464,9 @@ export default function Dashboard({ events }) {
                 onDelete={handleDelete}
                 allWorkspaces={workspaces}
                 deletingId={deleting}
+                hasMore={!isFiltered && !!paginationRef.current[ws.id]?.hasMore}
+                loadingMore={!!loadingMore[ws.id]}
+                onLoadMore={() => loadMore(ws.id)}
               />
             ))}
             {/* Orphaned campaigns: admin only */}

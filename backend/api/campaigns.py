@@ -19,7 +19,7 @@ backend.apps.api.schemas.workflow.
 
 import logging
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
@@ -281,24 +281,21 @@ async def update_draft_campaign(
     )
 
 
-@router.get("/campaigns", response_model=list[CampaignSummary] | CampaignListResponse)
+@router.get("/campaigns", response_model=CampaignListResponse)
 async def list_campaigns(
     workspace_id: str,
     response: Response,
     user: Optional[User] = Depends(get_current_user),
     include_drafts: bool = Query(default=False, description="When true, include DRAFT campaigns in the response."),
-    limit: Optional[int] = Query(default=None, ge=1, description="Optional max number of campaigns to return."),
-    offset: int = Query(default=0, ge=0, description="Optional number of campaigns to skip before returning results."),
-    pagination_format: Literal["legacy", "meta"] = Query(
-        default="legacy",
-        description="Response contract format. Use 'meta' for standardized {items, pagination} envelope.",
-    ),
-) -> list[CampaignSummary] | CampaignListResponse:
-    """Return campaigns in the specified workspace visible to the current user.
+    limit: int = Query(default=50, ge=1, le=200, description="Max number of campaigns to return (1–200)."),
+    offset: int = Query(default=0, ge=0, description="Number of campaigns to skip before returning results."),
+) -> CampaignListResponse:
+    """Return paginated campaigns in the specified workspace visible to the current user.
 
     Draft campaigns are excluded by default.  Pass ``?include_drafts=true`` to
-    include them (e.g. for the Drafts section of the dashboard). Pagination is
-    optional; if ``limit`` is omitted, all remaining campaigns are returned.
+    include them (e.g. for the Drafts section of the dashboard).
+
+    Returns a paginated envelope with ``items`` and ``pagination`` metadata.
     """
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
@@ -306,22 +303,17 @@ async def list_campaigns(
         raise HTTPException(status_code=404, detail="Workspace not found")
     from backend.api.workspaces import _authorize_workspace, WorkspaceAction
     await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
-    campaigns = await store.list_workspace_campaigns(workspace_id)
+    campaigns, total_count = await store.list_workspace_campaigns(
+        workspace_id, limit=limit, offset=offset, include_drafts=include_drafts,
+    )
 
-    if not include_drafts:
-        campaigns = [c for c in campaigns if c.status != CampaignStatus.DRAFT]
-
-    total_count = len(campaigns)
-    end = offset + limit if limit is not None else None
-    campaigns = campaigns[offset:end]
     returned_count = len(campaigns)
+    has_more = offset + returned_count < total_count
     response.headers["X-Total-Count"] = str(total_count)
     response.headers["X-Offset"] = str(offset)
-    response.headers["X-Limit"] = str(limit) if limit is not None else "all"
+    response.headers["X-Limit"] = str(limit)
     response.headers["X-Returned-Count"] = str(returned_count)
-    has_more = offset + returned_count < total_count
     response.headers["X-Has-More"] = str(has_more).lower()
-    response.headers["X-Pagination-Format"] = "meta-v1"
 
     items = [
         CampaignSummary(
@@ -338,16 +330,16 @@ async def list_campaigns(
         )
         for c in campaigns
     ]
-    pagination_meta = PaginationMeta(
-        total_count=total_count,
-        offset=offset,
-        limit=limit,
-        returned_count=returned_count,
-        has_more=has_more,
+    return CampaignListResponse(
+        items=items,
+        pagination=PaginationMeta(
+            total_count=total_count,
+            offset=offset,
+            limit=limit,
+            returned_count=returned_count,
+            has_more=has_more,
+        ),
     )
-    if pagination_format == "meta":
-        return CampaignListResponse(items=items, pagination=pagination_meta)
-    return items
 
 
 @router.get("/campaigns/{campaign_id}")

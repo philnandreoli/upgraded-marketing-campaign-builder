@@ -2657,6 +2657,12 @@ a:hover { color: var(--color-primary-hover); }
   margin-bottom: 0.5rem;
 }
 
+.workspace-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0 0.5rem;
+}
+
 /* ------------------------------------------------------------------ */
 /* Campaign Detail — Banner Header                                     */
 /* ------------------------------------------------------------------ */

@@ -54,7 +54,16 @@ async function renderDashboard(
   workspaces = [],
 ) {
   api.getMe.mockResolvedValue(makeMeResponse({ isViewer, isAdmin, userId }));
-  api.listCampaigns.mockResolvedValue(campaigns);
+  api.listCampaigns.mockResolvedValue({
+    items: campaigns,
+    pagination: {
+      total_count: campaigns.length,
+      offset: 0,
+      limit: 50,
+      returned_count: campaigns.length,
+      has_more: false,
+    },
+  });
   api.deleteCampaign.mockResolvedValue(undefined);
   api.listWorkspaces.mockResolvedValue(workspaces);
 
@@ -767,7 +776,10 @@ describe('Dashboard – undo delete', () => {
   });
 
   it('restores campaign and removes toast when Undo is clicked', async () => {
-    api.listCampaigns.mockResolvedValue([campaignToDelete]);
+    api.listCampaigns.mockResolvedValue({
+      items: [campaignToDelete],
+      pagination: { total_count: 1, offset: 0, limit: 50, returned_count: 1, has_more: false },
+    });
     await renderDashboard({ isAdmin: false, userId: 'user-1' }, [campaignToDelete], [WS_UNDO]);
     await waitFor(() => screen.getByText('DeleteMe'));
 

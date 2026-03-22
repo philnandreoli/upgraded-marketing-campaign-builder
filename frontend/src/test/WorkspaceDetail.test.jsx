@@ -37,7 +37,16 @@ async function renderDetail(
   api.getMe.mockResolvedValue(makeMeResponse({ isViewer, isAdmin, userId }));
   api.listWorkspaces.mockResolvedValue([workspace]);
   api.getWorkspace.mockResolvedValue(workspace);
-  api.listWorkspaceCampaigns.mockResolvedValue(campaigns);
+  api.listWorkspaceCampaigns.mockResolvedValue({
+    items: campaigns,
+    pagination: {
+      total_count: campaigns.length,
+      offset: 0,
+      limit: 50,
+      returned_count: campaigns.length,
+      has_more: false,
+    },
+  });
   api.listWorkspaceMembers.mockResolvedValue(members);
 
   render(
@@ -168,7 +177,10 @@ describe('WorkspaceDetail – undo delete', () => {
   });
 
   it('restores campaign when Undo is clicked', async () => {
-    api.listWorkspaceCampaigns.mockResolvedValue([campaign]);
+    api.listWorkspaceCampaigns.mockResolvedValue({
+      items: [campaign],
+      pagination: { total_count: 1, offset: 0, limit: 50, returned_count: 1, has_more: false },
+    });
     await renderDetail('ws-1', ws, [campaign]);
     await waitFor(() => screen.getByText('ProductA'));
 

@@ -349,12 +349,18 @@ class TestOpenAPITags:
         assert schema["paths"]["/api/me/settings"]["get"]["tags"] == ["users"]
         assert schema["paths"]["/api/me/settings"]["patch"]["tags"] == ["users"]
 
-    def test_campaigns_list_openapi_exposes_meta_response_schema(self, client):
+    def test_campaigns_list_openapi_exposes_paginated_response_schema(self, client):
         schema = client.get("/openapi.json").json()
         responses = schema["paths"]["/api/workspaces/{workspace_id}/campaigns"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
-        options = responses.get("anyOf") or responses.get("oneOf") or []
-        option_refs = {item.get("$ref", "") for item in options}
-        assert "#/components/schemas/CampaignListResponse" in option_refs
+        # The response is always a CampaignListResponse envelope
+        ref = responses.get("$ref", "")
+        if not ref:
+            # FastAPI may wrap in anyOf/oneOf depending on version
+            options = responses.get("anyOf") or responses.get("oneOf") or []
+            option_refs = {item.get("$ref", "") for item in options}
+            assert "#/components/schemas/CampaignListResponse" in option_refs
+        else:
+            assert "#/components/schemas/CampaignListResponse" in ref
 
 
 # ---- POST /api/campaigns ----
@@ -445,7 +451,9 @@ class TestListCampaigns:
     def test_list_empty(self, client):
         r = client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
         assert r.status_code == 200
-        assert r.json() == []
+        payload = r.json()
+        assert payload["items"] == []
+        assert payload["pagination"]["total_count"] == 0
 
     def test_list_after_create(self, authed_client):
         authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
@@ -457,7 +465,7 @@ class TestListCampaigns:
         # Drafts are excluded from the default listing; use include_drafts=true to see them
         r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true")
         assert r.status_code == 200
-        items = r.json()
+        items = r.json()["items"]
         assert len(items) == 2
         # Verify summary fields
         assert "id" in items[0]
@@ -474,7 +482,7 @@ class TestListCampaigns:
         })
         r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns")
         assert r.status_code == 200
-        assert r.json() == []
+        assert r.json()["items"] == []
 
     def test_list_scoped_to_owner(self, _isolated_store):
         """Each authenticated user only sees their own campaigns."""
@@ -496,23 +504,24 @@ class TestListCampaigns:
 
         with _as_user(_TEST_USER) as c:
             # Campaigns are DRAFT by default; use include_drafts=true to see them
-            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()["items"]
             assert len(items) == 2  # Both campaigns are in the workspace
 
         with _as_user(_OTHER_USER) as c:
-            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()["items"]
             assert len(items) == 2  # Both campaigns are in the workspace
 
-    def test_list_campaigns_pagination_headers_default_mode(self, authed_client):
+    def test_list_campaigns_pagination_headers(self, authed_client):
         authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "A", "goal": "A"})
         authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "B", "goal": "B"})
 
         r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true")
         assert r.status_code == 200
-        assert len(r.json()) == 2
+        payload = r.json()
+        assert len(payload["items"]) == 2
         assert r.headers["X-Total-Count"] == "2"
         assert r.headers["X-Offset"] == "0"
-        assert r.headers["X-Limit"] == "all"
+        assert r.headers["X-Limit"] == "50"
         assert r.headers["X-Returned-Count"] == "2"
         assert r.headers["X-Has-More"] == "false"
 
@@ -523,7 +532,8 @@ class TestListCampaigns:
 
         r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&limit=1&offset=1")
         assert r.status_code == 200
-        assert len(r.json()) == 1
+        payload = r.json()
+        assert len(payload["items"]) == 1
         assert r.headers["X-Total-Count"] == "3"
         assert r.headers["X-Offset"] == "1"
         assert r.headers["X-Limit"] == "1"
@@ -535,7 +545,7 @@ class TestListCampaigns:
 
         r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&offset=10&limit=5")
         assert r.status_code == 200
-        assert r.json() == []
+        assert r.json()["items"] == []
         assert r.headers["X-Total-Count"] == "1"
         assert r.headers["X-Returned-Count"] == "0"
         assert r.headers["X-Has-More"] == "false"
@@ -544,13 +554,17 @@ class TestListCampaigns:
         r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&limit=0")
         assert r.status_code == 422
 
-    def test_list_campaigns_meta_pagination_format_is_available(self, authed_client):
+    def test_list_campaigns_limit_above_max_returns_422(self, authed_client):
+        r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&limit=201")
+        assert r.status_code == 422
+
+    def test_list_campaigns_paginated_envelope(self, authed_client):
         authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "A", "goal": "A"})
         authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "B", "goal": "B"})
 
         r = authed_client.get(
             f"/api/workspaces/{TEST_WS_ID}/campaigns"
-            "?include_drafts=true&limit=1&offset=1&pagination_format=meta"
+            "?include_drafts=true&limit=1&offset=1"
         )
         assert r.status_code == 200
         payload = r.json()
@@ -564,7 +578,6 @@ class TestListCampaigns:
             "has_more": False,
         }
         assert r.headers["X-Total-Count"] == "2"
-        assert r.headers["X-Pagination-Format"] == "meta-v1"
 
     def test_campaign_summary_timestamps_are_iso_datetime(self, authed_client):
         authed_client.post(
@@ -572,7 +585,7 @@ class TestListCampaigns:
             json={"product_or_service": "Time Product", "goal": "Time Goal"},
         )
         r = authed_client.get(
-            f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&pagination_format=meta"
+            f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true"
         )
         assert r.status_code == 200
         item = r.json()["items"][0]

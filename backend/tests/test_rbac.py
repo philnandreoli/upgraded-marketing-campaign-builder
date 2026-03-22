@@ -134,8 +134,7 @@ class TestAdminRoleCapabilities:
         with _as_user(_ADMIN, store) as c:
             r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true")
         assert r.status_code == 200
-        assert len(r.json()) == 2
-
+        assert len(r.json()["items"]) == 2
     def test_admin_can_read_any_campaign(self):
         store = InMemoryCampaignStore()
         campaign = _make_campaign(store, _BUILDER)
@@ -335,7 +334,7 @@ class TestViewerRoleCapabilities:
         # Add _VIEWER as workspace VIEWER member so they can access the list endpoint
         store._workspace_members[(TEST_WS_ID, _VIEWER.id)] = "viewer"
         with _as_user(_VIEWER, store) as c:
-            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()
+            items = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()["items"]
         # Workspace list shows all workspace campaigns to any workspace member
         assert len(items) == 2
 
@@ -515,6 +514,6 @@ class TestEdgeCases:
         campaign = _make_campaign(store, _BUILDER)
 
         with _as_user(_ADMIN, store) as c:
-            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()) == 1
+            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()["items"]) == 1
             c.delete(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}")
-            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()) == 0
+            assert len(c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true").json()["items"]) == 0
