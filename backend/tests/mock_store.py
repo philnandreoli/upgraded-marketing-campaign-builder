@@ -61,17 +61,27 @@ class InMemoryCampaignStore:
         """Return all campaigns whose status is in *statuses*."""
         return [c for c in self._campaigns.values() if c.status in statuses]
 
-    async def list_accessible(self, user_id: str) -> list[Campaign]:
-        """Return campaigns accessible to *user_id*.
+    async def list_accessible(
+        self,
+        user_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Campaign], int]:
+        """Return paginated campaigns accessible to *user_id*.
 
         Admin status is resolved from the ``_users`` store rather than being
         accepted as a caller-supplied flag.  Admins see all campaigns; other
         users see campaigns they are a direct member of *or* campaigns belonging
         to a workspace they are a member of.
+
+        Returns a ``(campaigns, total)`` tuple.
         """
         user = self._users.get(user_id)
         if user is not None and user.is_admin:
-            return list(self._campaigns.values())
+            all_campaigns = list(self._campaigns.values())
+            total = len(all_campaigns)
+            return all_campaigns[offset:offset + limit], total
 
         # Workspaces the user is a member of
         user_workspaces = {
@@ -94,7 +104,8 @@ class InMemoryCampaignStore:
             if campaign.workspace_id and campaign.workspace_id in user_workspaces:
                 result.append(campaign)
                 seen.add(campaign.id)
-        return result
+        total = len(result)
+        return result[offset:offset + limit], total
 
     async def move_campaign(
         self,
@@ -287,8 +298,19 @@ class InMemoryCampaignStore:
             if uid == user_id and ws_id in self._workspaces
         ]
 
-    async def list_workspace_campaigns(self, workspace_id: str) -> list[Campaign]:
-        return [c for c in self._campaigns.values() if c.workspace_id == workspace_id]
+    async def list_workspace_campaigns(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        include_drafts: bool = True,
+    ) -> tuple[list[Campaign], int]:
+        all_campaigns = [c for c in self._campaigns.values() if c.workspace_id == workspace_id]
+        if not include_drafts:
+            all_campaigns = [c for c in all_campaigns if c.status != CampaignStatus.DRAFT]
+        total = len(all_campaigns)
+        return all_campaigns[offset:offset + limit], total
 
     async def get_workspace_summaries(
         self,

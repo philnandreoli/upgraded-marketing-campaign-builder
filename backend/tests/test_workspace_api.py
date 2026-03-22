@@ -397,7 +397,7 @@ class TestListWorkspaceCampaigns:
         # Campaigns are DRAFT by default; use include_drafts=true to see them
         r = creator_client.get("/api/workspaces/ws-1/campaigns?include_drafts=true")
         assert r.status_code == 200
-        items = r.json()
+        items = r.json()["items"]
         assert len(items) == 1
         assert items[0]["id"] == campaign.id
         assert items[0]["product_or_service"] == "Prod"

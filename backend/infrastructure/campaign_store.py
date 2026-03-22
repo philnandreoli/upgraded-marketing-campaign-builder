@@ -168,24 +168,30 @@ class CampaignStore:
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows]
 
-    async def list_accessible(self, user_id: str) -> list[Campaign]:
-        """Return all campaigns accessible to *user_id*.
+    async def list_accessible(
+        self,
+        user_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Campaign], int]:
+        """Return paginated campaigns accessible to *user_id*.
 
         Admins (determined by looking up the user's actual platform role in the
         database) see every campaign.  Other users see campaigns where they
         appear in the campaign_members table (any role) *or* where they are
         a member of the campaign's workspace.
+
+        Returns a ``(campaigns, total)`` tuple.
         """
         async with async_session() as session:
             # Determine admin status from the database — do not trust a caller-supplied flag.
             user_row = await session.get(UserRow, user_id)
             is_admin = user_row is not None and UserRole.ADMIN in roles_from_db(user_row.role)
             if is_admin:
-                result = await session.execute(
-                    select(CampaignRow).order_by(CampaignRow.created_at.desc())
-                )
+                base = select(CampaignRow)
             else:
-                result = await session.execute(
+                base = (
                     select(CampaignRow)
                     .outerjoin(CampaignMemberRow, CampaignRow.id == CampaignMemberRow.campaign_id)
                     .outerjoin(
@@ -199,10 +205,22 @@ class CampaignStore:
                         )
                     )
                     .distinct()
-                    .order_by(CampaignRow.created_at.desc())
                 )
+
+            # Total count
+            count_result = await session.execute(
+                select(func.count()).select_from(base.subquery())
+            )
+            total = count_result.scalar()
+
+            # Paginated rows
+            result = await session.execute(
+                base.order_by(CampaignRow.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
             rows = result.scalars().all()
-            return [Campaign.model_validate_json(r.data) for r in rows]
+            return [Campaign.model_validate_json(r.data) for r in rows], total
 
     async def move_campaign(
         self,
@@ -574,16 +592,42 @@ class CampaignStore:
 
         return result
 
-    async def list_workspace_campaigns(self, workspace_id: str) -> list[Campaign]:
-        """Return all campaigns that belong to *workspace_id*."""
+    async def list_workspace_campaigns(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        include_drafts: bool = True,
+    ) -> tuple[list[Campaign], int]:
+        """Return paginated campaigns that belong to *workspace_id*.
+
+        Returns a ``(campaigns, total)`` tuple where *total* is the count of
+        all matching rows (before applying LIMIT/OFFSET).
+        """
         async with async_session() as session:
+            base = select(CampaignRow).where(
+                CampaignRow.workspace_id == workspace_id
+            )
+            if not include_drafts:
+                base = base.where(
+                    CampaignRow.status != CampaignStatus.DRAFT.value
+                )
+
+            # Total count (no deserialization)
+            count_result = await session.execute(
+                select(func.count()).select_from(base.subquery())
+            )
+            total = count_result.scalar()
+
+            # Paginated rows
             result = await session.execute(
-                select(CampaignRow)
-                .where(CampaignRow.workspace_id == workspace_id)
-                .order_by(CampaignRow.created_at.desc())
+                base.order_by(CampaignRow.created_at.desc())
+                .limit(limit)
+                .offset(offset)
             )
             rows = result.scalars().all()
-            return [Campaign.model_validate_json(r.data) for r in rows]
+            return [Campaign.model_validate_json(r.data) for r in rows], total
 
     async def get_personal_workspace(self, user_id: str) -> Optional[Workspace]:
         """Return the personal workspace for *user_id*, or ``None`` if not found."""
