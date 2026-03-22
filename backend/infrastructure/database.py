@@ -279,7 +279,7 @@ class UserRow(Base):
 
     id = Column(String, primary_key=True)           # OIDC oid/sub
     email = Column(String, nullable=True, index=True)
-    display_name = Column(String, nullable=True)
+    display_name = Column(String, nullable=True, index=True)
     role = Column(String, nullable=False, default="viewer")
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
