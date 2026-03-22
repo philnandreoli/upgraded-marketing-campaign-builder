@@ -2,7 +2,7 @@
  * Tests for UserSettings page — loading, error, success, and tab scaffold.
  */
 
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import UserSettings from '../pages/UserSettings';
@@ -60,7 +60,28 @@ function mockSuccessfulLoad(settingsOverrides = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Ensure localStorage is available for ThemeProvider in test env
+  if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.getItem !== 'function') {
+    const store = {};
+    globalThis.localStorage = {
+      getItem: (k) => store[k] ?? null,
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+      clear: () => { Object.keys(store).forEach((k) => delete store[k]); },
+    };
+  }
 });
+
+/**
+ * Helper: select a value from a FormSelect custom dropdown.
+ * Clicks the trigger button (found via label), then clicks the matching option.
+ */
+async function selectFormOption(labelRegex, optionText) {
+  const trigger = screen.getByLabelText(labelRegex);
+  fireEvent.click(trigger);
+  const listbox = await screen.findByRole('listbox', { name: labelRegex });
+  fireEvent.click(within(listbox).getByText(optionText));
+}
 
 describe('UserSettings – loading state', () => {
   it('shows loading indicator initially', () => {
@@ -233,9 +254,9 @@ describe('UserSettings – Preferences tab', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
 
     await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
-    expect(screen.getByLabelText(/theme/i).value).toBe('dark');
-    expect(screen.getByLabelText(/locale/i).value).toBe('fr-FR');
-    expect(screen.getByLabelText(/timezone/i).value).toBe('Europe/Paris');
+    expect(screen.getByLabelText(/theme/i)).toHaveTextContent('Dark');
+    expect(screen.getByLabelText(/locale/i)).toHaveTextContent('French');
+    expect(screen.getByLabelText(/timezone/i)).toHaveTextContent('Europe/Paris');
   });
 
   it('saves preferences successfully', async () => {
@@ -248,7 +269,7 @@ describe('UserSettings – Preferences tab', () => {
 
     await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/theme/i), { target: { value: 'dark' } });
+    await selectFormOption(/theme/i, 'Dark');
     fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
 
     await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith(
@@ -280,7 +301,7 @@ describe('UserSettings – Preferences tab', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Preferences' }));
 
     await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText(/theme/i), { target: { value: 'dark' } });
+    await selectFormOption(/theme/i, 'Dark');
 
     expect(screen.getByTestId('unsaved-changes')).toBeInTheDocument();
     expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument();
@@ -299,12 +320,11 @@ describe('UserSettings – Preferences tab', () => {
 
     await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
 
-    const wsSelect = screen.getByLabelText(/default workspace/i);
-    await waitFor(() => {
-      const options = Array.from(wsSelect.querySelectorAll('option'));
-      expect(options.map((o) => o.textContent)).toContain('Marketing');
-      expect(options.map((o) => o.textContent)).toContain('Engineering');
-    });
+    const wsTrigger = screen.getByLabelText(/default workspace/i);
+    fireEvent.click(wsTrigger);
+    const listbox = await screen.findByRole('listbox', { name: /default workspace/i });
+    expect(within(listbox).getByText('Marketing')).toBeInTheDocument();
+    expect(within(listbox).getByText('Engineering')).toBeInTheDocument();
   });
 
   it('sends correct patch payload with all preferences', async () => {
@@ -322,9 +342,9 @@ describe('UserSettings – Preferences tab', () => {
 
     await waitFor(() => expect(screen.getByTestId('tab-preferences')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/theme/i), { target: { value: 'light' } });
-    fireEvent.change(screen.getByLabelText(/locale/i), { target: { value: 'de-DE' } });
-    fireEvent.change(screen.getByLabelText(/timezone/i), { target: { value: 'Europe/Berlin' } });
+    await selectFormOption(/theme/i, 'Light');
+    await selectFormOption(/locale/i, 'German');
+    await selectFormOption(/timezone/i, 'Europe/Berlin');
 
     fireEvent.click(screen.getByRole('button', { name: /save preferences/i }));
 
@@ -484,9 +504,9 @@ describe('UserSettings – Notifications tab', () => {
 
     await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
 
-    const select = screen.getByLabelText(/digest frequency/i);
-    expect(select).toBeInTheDocument();
-    expect(select.value).toBe('daily');
+    const trigger = screen.getByLabelText(/digest frequency/i);
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveTextContent('Daily digest');
   });
 
   it('does not show digest frequency when backend omits it', async () => {
@@ -554,7 +574,7 @@ describe('UserSettings – Notifications tab', () => {
 
     await waitFor(() => expect(screen.getByTestId('tab-notifications')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/digest frequency/i), { target: { value: 'weekly' } });
+    await selectFormOption(/digest frequency/i, 'Weekly digest');
     fireEvent.click(screen.getByRole('button', { name: /save notifications/i }));
 
     await waitFor(() => expect(api.patchMeSettings).toHaveBeenCalledWith({
