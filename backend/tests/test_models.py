@@ -21,6 +21,7 @@ from backend.models.campaign import (
     ReviewFeedback,
     SocialMediaPlatform,
     TargetAudience,
+    ImageAsset,
 )
 from backend.models.messages import (
     AgentType, AgentTask, AgentResult, AgentMessage, MessageRole,
@@ -142,6 +143,23 @@ class TestCampaignBrief:
         assert b.start_date is not None
         assert b.end_date is None
 
+    def test_generate_images_defaults_false(self):
+        b = CampaignBrief(product_or_service="Widget", goal="Sell more")
+        assert b.generate_images is False
+
+    def test_generate_images_can_be_true(self):
+        b = CampaignBrief(
+            product_or_service="Widget",
+            goal="Sell more",
+            generate_images=True,
+        )
+        assert b.generate_images is True
+
+    def test_generate_images_missing_in_payload_defaults_false(self):
+        payload = {"product_or_service": "Widget", "goal": "Sell more"}
+        b = CampaignBrief.model_validate(payload)
+        assert b.generate_images is False
+
 
 # ---- Campaign ----
 
@@ -217,6 +235,18 @@ class TestSubModels:
 
         with pytest.raises(ValidationError):
             ReviewFeedback(brand_consistency_score=-1.0)
+
+    def test_image_asset_defaults(self):
+        asset = ImageAsset(
+            campaign_id="c1",
+            content_piece_index=0,
+            prompt="A bright hero image",
+        )
+        assert asset.id is not None
+        assert asset.image_url is None
+        assert asset.storage_path is None
+        assert asset.dimensions == "1024x1024"
+        assert asset.format == "png"
 
 
 # ---- Messages ----

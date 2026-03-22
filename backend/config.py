@@ -108,6 +108,17 @@ class FoundryAgentsSettings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
+class ImageGenerationSettings(BaseSettings):
+    """Image-generation feature settings."""
+
+    enabled: bool = Field(default=False, alias="IMAGE_GENERATION_ENABLED")
+    azure_ai_image_endpoint: str = Field(default="", alias="AZURE_AI_IMAGE_ENDPOINT")
+    azure_storage_account_url: str = Field(default="", alias="AZURE_STORAGE_ACCOUNT_URL")
+    azure_storage_container: str = Field(default="campaign-images", alias="AZURE_STORAGE_CONTAINER")
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
 class AppSettings(BaseSettings):
     """Top-level application settings."""
 
@@ -381,6 +392,7 @@ class Settings(BaseSettings):
     agent: AgentSettings = AgentSettings()
     tracing: TracingSettings = TracingSettings()
     foundry_agents: FoundryAgentsSettings = FoundryAgentsSettings()
+    image_generation: ImageGenerationSettings = ImageGenerationSettings()
     oidc: OIDCSettings = OIDCSettings()
     cors: CORSSettings = CORSSettings()
     service_bus: ServiceBusSettings = ServiceBusSettings()
