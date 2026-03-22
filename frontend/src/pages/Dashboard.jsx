@@ -9,6 +9,7 @@ import WorkspaceSection from "../components/WorkspaceSection";
 import FilterTabs from "../components/FilterTabs";
 import SearchBar from "../components/SearchBar";
 import SavedViews from "../components/SavedViews";
+import SortDropdown from "../components/SortDropdown";
 import Toast from "../components/Toast";
 import useSavedViews from "../hooks/useSavedViews";
 import { applyFilter, matchesSearch, sortCampaigns } from "../lib/campaignFilters";
@@ -103,8 +104,7 @@ export default function Dashboard({ events }) {
     updateSearchParams(filter, search);
   };
 
-  const handleSortChange = (e) => {
-    const value = e.target.value;
+  const handleSortChange = (value) => {
     setSortBy(value);
     localStorage.setItem(SORT_STORAGE_KEY, value);
   };
@@ -421,18 +421,12 @@ export default function Dashboard({ events }) {
         <div className="section-header">
           <h2>Campaigns</h2>
           <div className="section-header__controls">
-            <select
-              className="sort-select"
+            <SortDropdown
+              options={SORT_OPTIONS}
               value={sortBy}
               onChange={handleSortChange}
-              aria-label="Sort campaigns"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              ariaLabel="Sort campaigns"
+            />
             {loading && campaigns.length > 0 && (
               <span className="campaign-list-loading" aria-live="polite">
                 <span className="spinner" />
