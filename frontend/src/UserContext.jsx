@@ -9,6 +9,7 @@ const DEFAULT_VALUE = {
   isAdmin: false,
   canBuild: true,
   isViewer: false,
+  imageGenerationAvailable: false,
 };
 
 export function UserProvider({ children }) {
@@ -30,6 +31,7 @@ export function UserProvider({ children }) {
         isAdmin: userInfo?.is_admin ?? false,
         canBuild: userInfo?.can_build ?? true,
         isViewer: userInfo?.is_viewer ?? false,
+        imageGenerationAvailable: userInfo?.image_generation_available ?? false,
       };
 
   return (

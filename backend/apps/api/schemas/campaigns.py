@@ -113,6 +113,7 @@ class MeResponse(BaseModel):
     is_admin: bool
     can_build: bool
     is_viewer: bool
+    image_generation_available: bool = False
 
 
 _LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$")
