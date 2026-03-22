@@ -59,7 +59,7 @@ from backend.core.exceptions import ConcurrentUpdateError
 from backend.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
-me_router = APIRouter(tags=["campaigns"])
+me_router = APIRouter(tags=["users"])
 router = APIRouter(tags=["campaigns"])
 
 
