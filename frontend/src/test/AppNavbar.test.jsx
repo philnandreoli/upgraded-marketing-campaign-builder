@@ -6,9 +6,15 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect } from 'vitest';
 import AppNavbar from '../components/AppNavbar';
+import { ThemeProvider } from '../ThemeContext';
 
 vi.mock('../NotificationContext', () => ({
   useNotifications: () => ({ notifications: [], unreadCount: 0, markAsRead: vi.fn(), markAllAsRead: vi.fn() }),
+}));
+
+vi.mock('../api', () => ({
+  getMeSettings: vi.fn().mockResolvedValue({ theme: 'dark' }),
+  patchMeSettings: vi.fn().mockResolvedValue({}),
 }));
 
 function renderNavbar(props = {}) {
@@ -21,7 +27,9 @@ function renderNavbar(props = {}) {
   };
   return render(
     <MemoryRouter>
-      <AppNavbar {...defaults} {...props} />
+      <ThemeProvider>
+        <AppNavbar {...defaults} {...props} />
+      </ThemeProvider>
     </MemoryRouter>,
   );
 }

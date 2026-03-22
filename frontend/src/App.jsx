@@ -23,6 +23,7 @@ import { WorkspaceProvider } from "./WorkspaceContext.jsx";
 import { ConfirmDialogProvider } from "./ConfirmDialogContext.jsx";
 import { ToastProvider } from "./ToastContext.jsx";
 import { NotificationProvider, useNotifications } from "./NotificationContext.jsx";
+import { ThemeProvider } from "./ThemeContext.jsx";
 
 /**
  * When VITE_AZURE_CLIENT_ID is set we enforce authentication;
@@ -141,23 +142,7 @@ export default function App() {
   // When auth is not configured, render the app without any gate
   if (!authEnabled) {
     return (
-      <UserProvider>
-        <WorkspaceProvider>
-          <ConfirmDialogProvider>
-            <ToastProvider>
-              <NotificationProvider>
-                <AuthenticatedApp />
-              </NotificationProvider>
-            </ToastProvider>
-          </ConfirmDialogProvider>
-        </WorkspaceProvider>
-      </UserProvider>
-    );
-  }
-
-  return (
-    <>
-      <AuthenticatedTemplate>
+      <ThemeProvider>
         <UserProvider>
           <WorkspaceProvider>
             <ConfirmDialogProvider>
@@ -169,6 +154,26 @@ export default function App() {
             </ConfirmDialogProvider>
           </WorkspaceProvider>
         </UserProvider>
+      </ThemeProvider>
+    );
+  }
+
+  return (
+    <>
+      <AuthenticatedTemplate>
+        <ThemeProvider>
+          <UserProvider>
+            <WorkspaceProvider>
+              <ConfirmDialogProvider>
+                <ToastProvider>
+                  <NotificationProvider>
+                    <AuthenticatedApp />
+                  </NotificationProvider>
+                </ToastProvider>
+              </ConfirmDialogProvider>
+            </WorkspaceProvider>
+          </UserProvider>
+        </ThemeProvider>
       </AuthenticatedTemplate>
       <UnauthenticatedTemplate>
         <LoginPage />

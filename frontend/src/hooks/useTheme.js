@@ -1,24 +1,16 @@
-import { useState, useEffect } from "react";
+import { useThemeContext } from "../ThemeContext.jsx";
 
-const STORAGE_KEY = "theme";
-
-function getInitialTheme() {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark") return stored;
-  // Fall back to OS preference, default dark
-  if (window.matchMedia?.("(prefers-color-scheme: light)").matches) return "light";
-  return "dark";
-}
-
+/**
+ * Thin wrapper around ThemeContext for backward-compatible usage.
+ * Returns { theme, toggleTheme } — the resolved effective theme and a
+ * toggle that cycles between "dark" and "light" (persisted to backend).
+ */
 export default function useTheme() {
-  const [theme, setTheme] = useState(getInitialTheme);
+  const { theme, setTheme } = useThemeContext();
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem(STORAGE_KEY, theme);
-  }, [theme]);
-
-  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  };
 
   return { theme, toggleTheme };
 }
