@@ -462,3 +462,38 @@ class TestRedisSettings:
         settings = get_settings()
         assert isinstance(settings.redis, RedisSettings)
         get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# ImageGenerationSettings (config.py)
+# ---------------------------------------------------------------------------
+
+class TestImageGenerationSettings:
+    def test_defaults(self, monkeypatch):
+        monkeypatch.delenv("IMAGE_GENERATION_ENABLED", raising=False)
+        monkeypatch.delenv("AZURE_AI_IMAGE_ENDPOINT", raising=False)
+        monkeypatch.delenv("AZURE_STORAGE_ACCOUNT_URL", raising=False)
+        monkeypatch.delenv("AZURE_STORAGE_CONTAINER", raising=False)
+        from backend.config import ImageGenerationSettings
+        settings = ImageGenerationSettings()
+        assert settings.enabled is False
+        assert settings.azure_ai_image_endpoint == ""
+        assert settings.azure_storage_account_url == ""
+        assert settings.azure_storage_container == "campaign-images"
+
+    def test_reads_env_vars(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_GENERATION_ENABLED", "true")
+        monkeypatch.setenv("AZURE_AI_IMAGE_ENDPOINT", "https://image.example.com")
+        monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_URL", "https://acct.blob.core.windows.net")
+        monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "my-images")
+        from backend.config import ImageGenerationSettings
+        settings = ImageGenerationSettings()
+        assert settings.enabled is True
+        assert settings.azure_ai_image_endpoint == "https://image.example.com"
+        assert settings.azure_storage_account_url == "https://acct.blob.core.windows.net"
+        assert settings.azure_storage_container == "my-images"
+
+    def test_image_generation_in_aggregate_settings(self):
+        from backend.config import ImageGenerationSettings, Settings
+        settings = Settings()
+        assert isinstance(settings.image_generation, ImageGenerationSettings)

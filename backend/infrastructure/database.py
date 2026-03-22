@@ -272,6 +272,20 @@ class CampaignRow(Base):
     )
 
 
+class ImageAssetRow(Base):
+    __tablename__ = "image_assets"
+
+    id = Column(String, primary_key=True)
+    campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=False, index=True)
+    content_piece_index = Column(Integer, nullable=False)
+    prompt = Column(Text, nullable=False)
+    image_url = Column(Text, nullable=True)
+    storage_path = Column(Text, nullable=True)
+    dimensions = Column(String, nullable=False, default="1024x1024")
+    format = Column(String, nullable=False, default="png")
+    created_at = Column(DateTime, nullable=False)
+
+
 class UserRow(Base):
     """Persisted platform user created JIT on first authentication."""
 

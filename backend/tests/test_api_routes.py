@@ -682,6 +682,21 @@ class TestUpdateDraftCampaign:
         assert detail["brief"]["budget"] == 50000
         assert detail["wizard_step"] == 2
 
+    def test_patch_updates_generate_images_preference(self, authed_client):
+        """PATCH can update the brief image-generation opt-in flag."""
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
+            "product_or_service": "Image Test", "goal": "Test",
+        })
+        cid = r.json()["id"]
+
+        r = authed_client.patch(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}",
+            json={"generate_images": True},
+        )
+        assert r.status_code == 200
+        detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
+        assert detail["brief"]["generate_images"] is True
+
     def test_patch_updates_wizard_step(self, authed_client):
         """PATCH can update just the wizard_step."""
         r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={

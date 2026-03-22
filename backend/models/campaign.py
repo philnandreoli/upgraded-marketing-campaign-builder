@@ -200,6 +200,10 @@ class CampaignBrief(BaseModel):
         default_factory=list,
         description="Specific social-media platforms when social_media channel is selected.",
     )
+    generate_images: bool = Field(
+        default=False,
+        description="Whether the user opted in to AI image generation for this campaign.",
+    )
 
     @model_validator(mode="after")
     def _validate_date_range(self) -> "CampaignBrief":
@@ -207,6 +211,28 @@ class CampaignBrief(BaseModel):
             if self.end_date < self.start_date:
                 raise ValueError("end_date must be on or after start_date")
         return self
+
+
+class ImageAsset(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    campaign_id: str
+    content_piece_index: int = Field(
+        description="Index into CampaignContent.pieces this image belongs to",
+    )
+    prompt: str = Field(
+        description="The DALL-E prompt / creative brief used to generate the image",
+    )
+    image_url: Optional[str] = Field(
+        default=None,
+        description="Public or SAS URL of the stored image",
+    )
+    storage_path: Optional[str] = Field(
+        default=None,
+        description="Azure Blob Storage path",
+    )
+    dimensions: str = Field(default="1024x1024", description="WxH in pixels")
+    format: str = Field(default="png")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Campaign(BaseModel):
