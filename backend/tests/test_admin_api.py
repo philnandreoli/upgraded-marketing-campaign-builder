@@ -455,6 +455,43 @@ class TestDeactivateUser:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/admin/users/{user_id}/reactivate
+# ---------------------------------------------------------------------------
+
+
+class TestReactivateUser:
+    async def test_reactivates_inactive_user(self, admin_client, db_session):
+        client, _ = admin_client
+        db_session.add(_make_user_row("u1", is_active=False))
+        await db_session.commit()
+
+        r = await client.post("/api/admin/users/u1/reactivate")
+        assert r.status_code == 200
+
+        data = r.json()
+        assert data["id"] == "u1"
+        assert data["is_active"] is True
+
+        # Verify in the database
+        user = await db_session.get(UserRow, "u1")
+        await db_session.refresh(user)
+        assert user.is_active is True
+
+    async def test_returns_404_for_unknown_user(self, admin_client):
+        client, _ = admin_client
+        r = await client.post("/api/admin/users/nobody/reactivate")
+        assert r.status_code == 404
+
+    async def test_returns_409_when_user_already_active(self, admin_client, db_session):
+        client, _ = admin_client
+        db_session.add(_make_user_row("u1", is_active=True))
+        await db_session.commit()
+
+        r = await client.post("/api/admin/users/u1/reactivate")
+        assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
 # GET /api/admin/campaigns
 # ---------------------------------------------------------------------------
 

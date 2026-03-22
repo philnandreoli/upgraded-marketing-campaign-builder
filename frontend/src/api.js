@@ -73,6 +73,9 @@ export const updateUserRoles = (userId, roles) =>
 export const deactivateUser = (userId) =>
   request("DELETE", `/api/admin/users/${encodeURIComponent(userId)}`);
 
+export const reactivateUser = (userId) =>
+  request("POST", `/api/admin/users/${encodeURIComponent(userId)}/reactivate`);
+
 export const listAllCampaigns = () => request("GET", "/api/admin/campaigns");
 
 export const searchEntraUsers = (search) =>

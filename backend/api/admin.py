@@ -2,13 +2,14 @@
 Admin REST API routes.
 
 Endpoints:
-  GET    /api/admin/users                — List all users (search by name/email)
-  GET    /api/admin/users/{user_id}      — Get a single user with campaign memberships
-  PATCH  /api/admin/users/{user_id}/role — Change a user's platform role
-  DELETE /api/admin/users/{user_id}      — Deactivate a user (soft delete)
-  GET    /api/admin/campaigns            — List all campaigns (admin view)
-  GET    /api/admin/entra/users          — Search Microsoft Entra ID directory
-  POST   /api/admin/users                — Pre-provision a user from Entra ID
+  GET    /api/admin/users                        — List all users (search by name/email)
+  GET    /api/admin/users/{user_id}              — Get a single user with campaign memberships
+  PATCH  /api/admin/users/{user_id}/role         — Change a user's platform role
+  DELETE /api/admin/users/{user_id}              — Deactivate a user (soft delete)
+  POST   /api/admin/users/{user_id}/reactivate   — Reactivate an inactive user
+  GET    /api/admin/campaigns                    — List all campaigns (admin view)
+  GET    /api/admin/entra/users                  — Search Microsoft Entra ID directory
+  POST   /api/admin/users                        — Pre-provision a user from Entra ID
 """
 
 import asyncio
@@ -257,6 +258,39 @@ async def deactivate_user(
     await db.commit()
 
     return Response(status_code=204)
+
+
+@router.post("/users/{user_id}/reactivate", response_model=UserListResponse)
+@limiter.limit("30/minute")
+async def reactivate_user(
+    request: Request,
+    response: Response,
+    user_id: str,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> UserListResponse:
+    """Reactivate an inactive user: set is_active=True."""
+    row = await db.get(UserRow, user_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if row.is_active:
+        raise HTTPException(status_code=409, detail="User is already active")
+
+    row.is_active = True
+    row.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(row)
+
+    return UserListResponse(
+        id=row.id,
+        email=row.email,
+        display_name=row.display_name,
+        roles=[v.strip() for v in row.role.split(",") if v.strip()],
+        is_active=row.is_active,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 @router.get("/entra/users", response_model=list[EntraUserResult])
