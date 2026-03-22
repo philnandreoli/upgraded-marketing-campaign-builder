@@ -11,6 +11,7 @@ LLM is fully mocked; these tests verify that:
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
 
 from backend.agents.strategy_agent import StrategyAgent
 from backend.agents.content_creator_agent import ContentCreatorAgent
@@ -225,6 +226,48 @@ class TestContentCreatorAgent:
         assert "Selected Channels" not in prompt
         assert "Work anywhere" in prompt
 
+    def test_prompt_includes_image_brief_instructions_when_both_flags_enabled(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "backend.orchestration.content_creator_agent.get_settings",
+            lambda: SimpleNamespace(image_generation=SimpleNamespace(enabled=True)),
+        )
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "brief": {**SAMPLE_CAMPAIGN_DATA["brief"], "generate_images": True},
+        }
+        prompt = agent.build_user_prompt(task, data)
+        assert "IMAGE BRIEF INSTRUCTIONS" in prompt
+
+    def test_prompt_omits_image_brief_instructions_when_platform_disabled(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "backend.orchestration.content_creator_agent.get_settings",
+            lambda: SimpleNamespace(image_generation=SimpleNamespace(enabled=False)),
+        )
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "brief": {**SAMPLE_CAMPAIGN_DATA["brief"], "generate_images": True},
+        }
+        prompt = agent.build_user_prompt(task, data)
+        assert "IMAGE BRIEF INSTRUCTIONS" not in prompt
+
+    def test_prompt_omits_image_brief_instructions_when_user_opt_out(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "backend.orchestration.content_creator_agent.get_settings",
+            lambda: SimpleNamespace(image_generation=SimpleNamespace(enabled=True)),
+        )
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "brief": {**SAMPLE_CAMPAIGN_DATA["brief"], "generate_images": False},
+        }
+        prompt = agent.build_user_prompt(task, data)
+        assert "IMAGE BRIEF INSTRUCTIONS" not in prompt
+
     def test_parse_response(self, mock_llm):
         agent = ContentCreatorAgent(llm_service=mock_llm)
         task = _make_task(AgentType.CONTENT_CREATOR)
@@ -235,6 +278,49 @@ class TestContentCreatorAgent:
         })
         result = agent.parse_response(raw, task)
         assert len(result["pieces"]) == 1
+
+    def test_parse_response_keeps_valid_image_brief(self, mock_llm):
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        raw = json.dumps({
+            "theme": "Unleash",
+            "tone_of_voice": "Bold",
+            "pieces": [
+                {
+                    "content_type": "social_post",
+                    "channel": "social_media",
+                    "content": "Launch day is here.",
+                    "image_brief": {
+                        "prompt": "Product launch celebration with confetti and laptop, modern brand colors",
+                        "creative_brief": "Energetic product launch hero visual",
+                        "suggested_dimensions": "1024x1024",
+                    },
+                },
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        assert result["pieces"][0]["image_brief"]["prompt"].startswith("Product launch")
+
+    def test_parse_response_drops_invalid_image_brief_without_prompt(self, mock_llm):
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        raw = json.dumps({
+            "theme": "Unleash",
+            "tone_of_voice": "Bold",
+            "pieces": [
+                {
+                    "content_type": "social_post",
+                    "channel": "social_media",
+                    "content": "Launch day is here.",
+                    "image_brief": {
+                        "prompt": "   ",
+                        "creative_brief": "ignored because prompt blank",
+                    },
+                },
+            ],
+        })
+        result = agent.parse_response(raw, task)
+        assert result["pieces"][0]["image_brief"] is None
 
     def test_parse_response_drops_blank_pieces(self, mock_llm):
         agent = ContentCreatorAgent(llm_service=mock_llm)
@@ -387,6 +473,61 @@ class TestContentCreatorRevision:
         prompt = agent.build_revision_prompt(task, data)
         assert "Sync Without Limits" in prompt
 
+    def test_revision_prompt_includes_image_brief_instructions_when_both_flags_enabled(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "backend.orchestration.content_creator_agent.get_settings",
+            lambda: SimpleNamespace(image_generation=SimpleNamespace(enabled=True)),
+        )
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "brief": {**SAMPLE_CAMPAIGN_DATA["brief"], "generate_images": True},
+        }
+        prompt = agent.build_revision_prompt(task, data)
+        assert "IMAGE BRIEF INSTRUCTIONS" in prompt
+
+    def test_revision_prompt_omits_image_brief_instructions_when_user_opt_out(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "backend.orchestration.content_creator_agent.get_settings",
+            lambda: SimpleNamespace(image_generation=SimpleNamespace(enabled=True)),
+        )
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "brief": {**SAMPLE_CAMPAIGN_DATA["brief"], "generate_images": False},
+        }
+        prompt = agent.build_revision_prompt(task, data)
+        assert "IMAGE BRIEF INSTRUCTIONS" not in prompt
+
+    def test_build_revision_prompt_includes_existing_image_brief_data(self, mock_llm):
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "content": {
+                "theme": "Old Theme",
+                "tone_of_voice": "Formal",
+                "pieces": [
+                    {
+                        "content_type": "social_post",
+                        "channel": "social_media",
+                        "content": "Old social copy",
+                        "variant": "A",
+                        "image_brief": {
+                            "prompt": "A modern team using cloud tools in a bright office",
+                            "creative_brief": "Show teamwork and productivity",
+                            "suggested_dimensions": "1024x1024",
+                        },
+                    },
+                ],
+            },
+        }
+        prompt = agent.build_revision_prompt(task, data)
+        assert "Image brief:" in prompt
+        assert "A modern team using cloud tools in a bright office" in prompt
+
     def test_build_piece_revision_prompt_includes_piece(self, mock_llm):
         agent = ContentCreatorAgent(llm_service=mock_llm)
         task = _make_task(AgentType.CONTENT_CREATOR)
@@ -412,6 +553,36 @@ class TestContentCreatorRevision:
         prompt = agent.build_piece_revision_prompt(task, data, rejected_pieces)
         assert "Sync Without Limits" in prompt
         assert "Make it punchier" in prompt
+
+    def test_build_piece_revision_prompt_includes_image_brief_when_present(self, mock_llm, monkeypatch):
+        monkeypatch.setattr(
+            "backend.orchestration.content_creator_agent.get_settings",
+            lambda: SimpleNamespace(image_generation=SimpleNamespace(enabled=True)),
+        )
+        agent = ContentCreatorAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.CONTENT_CREATOR)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "brief": {**SAMPLE_CAMPAIGN_DATA["brief"], "generate_images": True},
+        }
+        rejected_pieces = [
+            {
+                "content_type": "social_post",
+                "channel": "social_media",
+                "content": "Old social copy",
+                "variant": "A",
+                "human_notes": "Improve visual concept",
+                "image_brief": {
+                    "prompt": "Office teamwork around dashboard screens, optimistic mood",
+                    "creative_brief": "Show productivity in action",
+                    "suggested_dimensions": "1024x1024",
+                },
+            },
+        ]
+        prompt = agent.build_piece_revision_prompt(task, data, rejected_pieces)
+        assert "Current image brief:" in prompt
+        assert "Office teamwork around dashboard screens, optimistic mood" in prompt
+        assert "IMAGE BRIEF INSTRUCTIONS" in prompt
 
     async def test_revise_returns_agent_result_on_success(self, mock_llm):
         revised_data = {

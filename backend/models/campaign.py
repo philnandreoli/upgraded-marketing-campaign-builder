@@ -86,6 +86,17 @@ class CampaignStrategy(BaseModel):
     constraints: str = Field(default="", description="Budget, timeline, or regulatory constraints")
 
 
+class ImageBrief(BaseModel):
+    """AI-generated image prompt metadata for a content piece."""
+
+    prompt: str = Field(description="DALL-E-optimized image generation prompt")
+    creative_brief: str = Field(
+        default="",
+        description="Human-readable description of the intended visual",
+    )
+    suggested_dimensions: str = Field(default="1024x1024")
+
+
 class ContentPiece(BaseModel):
     """A single piece of campaign content."""
 
@@ -105,6 +116,10 @@ class ContentPiece(BaseModel):
     human_notes: str = Field(
         default="",
         description="Notes from the human reviewer for this piece",
+    )
+    image_brief: Optional[ImageBrief] = Field(
+        default=None,
+        description="AI-generated image creative brief",
     )
 
 

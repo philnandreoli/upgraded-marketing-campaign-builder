@@ -21,6 +21,7 @@ from backend.models.campaign import (
     ReviewFeedback,
     SocialMediaPlatform,
     TargetAudience,
+    ImageBrief,
     ImageAsset,
 )
 from backend.models.messages import (
@@ -211,6 +212,19 @@ class TestSubModels:
         )
         assert cp.variant == "A"
         assert cp.channel == ""
+
+    def test_content_piece_image_brief_optional(self):
+        cp = ContentPiece(
+            content_type="social_post",
+            content="Work smarter with CloudSync.",
+            image_brief=ImageBrief(
+                prompt="Modern office team collaborating around laptops, bright natural light, clean blue brand palette",
+                creative_brief="Hero social visual showing collaborative productivity",
+                suggested_dimensions="1024x1024",
+            ),
+        )
+        assert cp.image_brief is not None
+        assert cp.image_brief.prompt.startswith("Modern office team")
 
     def test_channel_recommendation(self):
         cr = ChannelRecommendation(
