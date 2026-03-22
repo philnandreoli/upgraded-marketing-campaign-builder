@@ -58,6 +58,7 @@ from backend.apps.api.schemas.workflow import (  # noqa: F401
     WorkflowActionResponse,
 )
 from backend.core.exceptions import ConcurrentUpdateError
+from backend.core.log_utils import safe_campaign_context
 from backend.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
@@ -207,10 +208,24 @@ async def create_campaign(
     brief = CampaignBrief(**body.model_dump())
 
     try:
-        logger.info("Creating draft campaign for user %s with brief: %s", user.id if user else "anonymous", brief.model_dump())
+        logger.info(
+            "Creating draft campaign context=%s",
+            safe_campaign_context(
+                workspace_id=workspace_id,
+                actor=user.id if user else "anonymous",
+            ),
+        )
         service = get_workflow_service()
         campaign = await service.create_campaign(brief, user, workspace_id=workspace_id)
-        logger.info("Draft campaign %s created successfully", campaign.id)
+        logger.info(
+            "Draft campaign created context=%s",
+            safe_campaign_context(
+                campaign_id=campaign.id,
+                workspace_id=workspace_id,
+                actor=user.id if user else "anonymous",
+                status=campaign.status.value,
+            ),
+        )
     except Exception as exc:
         logger.exception("Failed to create campaign: %s", exc)
         raise HTTPException(status_code=500, detail="Campaign creation failed. Please try again or contact support.")
