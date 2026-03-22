@@ -28,6 +28,7 @@ from backend.models.user import User, UserRole
 from backend.models.user_settings import UserSettingsPatch
 from backend.models.workspace import WorkspaceRole
 from backend.models.events import CampaignEventLog
+from backend.config import get_settings
 from backend.infrastructure.auth import get_current_user
 from backend.infrastructure.campaign_store import get_campaign_store
 from backend.infrastructure.event_store import get_event_store
@@ -75,6 +76,7 @@ async def get_me(
     user: Optional[User] = Depends(get_current_user),
 ) -> MeResponse:
     """Return the current user's profile and role flags (lightweight, no DB joins)."""
+    image_generation_available = get_settings().image_generation.enabled
     if user is None:
         # Auth disabled — return a default builder profile for local development.
         return MeResponse(
@@ -85,6 +87,7 @@ async def get_me(
             is_admin=False,
             can_build=True,
             is_viewer=False,
+            image_generation_available=image_generation_available,
         )
     return MeResponse(
         id=user.id,
@@ -94,6 +97,7 @@ async def get_me(
         is_admin=user.is_admin,
         can_build=user.can_build,
         is_viewer=user.is_viewer,
+        image_generation_available=image_generation_available,
     )
 
 

@@ -35,7 +35,7 @@ import * as api from '../api';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeMeResponse({ isAdmin = false } = {}) {
+function makeMeResponse({ isAdmin = false, imageGenerationAvailable = false } = {}) {
   return {
     id: 'user-1',
     email: 'test@example.com',
@@ -44,6 +44,7 @@ function makeMeResponse({ isAdmin = false } = {}) {
     is_admin: isAdmin,
     can_build: true,
     is_viewer: false,
+    image_generation_available: imageGenerationAvailable,
   };
 }
 
@@ -52,8 +53,8 @@ const TEAM_WS_CREATOR = { id: 'ws-team', name: 'Team WS', is_personal: false, ro
 const TEAM_WS_VIEWER = { id: 'ws-viewer', name: 'View Only', is_personal: false, role: 'viewer' };
 const TEAM_WS_CONTRIB = { id: 'ws-contrib', name: 'Contrib WS', is_personal: false, role: 'contributor' };
 
-function renderNewCampaign({ initialPath = '/new', isAdmin = false, workspaces = [] } = {}) {
-  api.getMe.mockResolvedValue(makeMeResponse({ isAdmin }));
+function renderNewCampaign({ initialPath = '/new', isAdmin = false, workspaces = [], imageGenerationAvailable = false } = {}) {
+  api.getMe.mockResolvedValue(makeMeResponse({ isAdmin, imageGenerationAvailable }));
   api.listWorkspaces.mockResolvedValue(workspaces);
 
   return render(
@@ -329,5 +330,138 @@ describe('NewCampaign — breadcrumb', () => {
     // The "New Campaign" breadcrumb item should not be a link
     const newCampaignEl = screen.getByText('New Campaign');
     expect(newCampaignEl.tagName).not.toBe('A');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Generate Images toggle tests
+// ---------------------------------------------------------------------------
+
+describe('NewCampaign — Generate Images toggle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.createCampaign.mockResolvedValue({ id: 'camp-1' });
+    api.updateCampaignDraft.mockResolvedValue({ id: 'camp-1', status: 'draft', message: 'Draft updated.' });
+  });
+
+  async function advanceToStep3({ imageGenerationAvailable = false } = {}) {
+    renderNewCampaign({
+      workspaces: [PERSONAL_WS],
+      imageGenerationAvailable,
+    });
+
+    // Step 0 → Step 1
+    await waitFor(() => {
+      expect(screen.getByLabelText(/create in workspace/i)).toHaveTextContent(/My Space/i);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+
+    // Step 1: fill required fields and advance
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/CloudSync/i)).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByPlaceholderText(/CloudSync/i), {
+      target: { value: 'Test Product' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Increase free-trial/i), {
+      target: { value: 'Grow signups' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+
+    // Step 2: skip (wait for the Budget input to appear)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('50000')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Skip/i }));
+
+    // Wait for Step 3
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Pick Your Channels/i })).toBeInTheDocument();
+    });
+  }
+
+  it('shows the Generate AI images toggle when image generation is available', async () => {
+    await advanceToStep3({ imageGenerationAvailable: true });
+    expect(screen.getByLabelText(/Generate AI images/i)).toBeInTheDocument();
+  });
+
+  it('hides the Generate AI images toggle when image generation is not available', async () => {
+    await advanceToStep3({ imageGenerationAvailable: false });
+    expect(screen.queryByLabelText(/Generate AI images/i)).not.toBeInTheDocument();
+  });
+
+  it('defaults the toggle to unchecked (off)', async () => {
+    await advanceToStep3({ imageGenerationAvailable: true });
+    expect(screen.getByLabelText(/Generate AI images/i)).not.toBeChecked();
+  });
+
+  it('shows "AI Images: Enabled ✓" on the review step when toggled on', async () => {
+    await advanceToStep3({ imageGenerationAvailable: true });
+
+    // Toggle on
+    fireEvent.click(screen.getByLabelText(/Generate AI images/i));
+    expect(screen.getByLabelText(/Generate AI images/i)).toBeChecked();
+
+    // Advance through Step 3 → Step 4 → Step 5 (Review)
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Anything else/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Skip/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Review & Launch/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Enabled ✓')).toBeInTheDocument();
+  });
+
+  it('shows "AI Images: Not selected" on the review step when toggle is off', async () => {
+    await advanceToStep3({ imageGenerationAvailable: true });
+
+    // Leave toggle off, advance to review
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Anything else/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Skip/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Review & Launch/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Not selected')).toBeInTheDocument();
+  });
+
+  it('does not show AI Images row in review when feature flag is off', async () => {
+    await advanceToStep3({ imageGenerationAvailable: false });
+
+    // Advance to review
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Anything else/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Skip/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Review & Launch/i })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('AI Images')).not.toBeInTheDocument();
+  });
+
+  it('includes generate_images in the step 3 patch body', async () => {
+    await advanceToStep3({ imageGenerationAvailable: true });
+
+    // Toggle on
+    fireEvent.click(screen.getByLabelText(/Generate AI images/i));
+
+    // Click Next on Step 3 to trigger the PATCH
+    fireEvent.click(screen.getByRole('button', { name: /Next/i }));
+
+    await waitFor(() => {
+      expect(api.updateCampaignDraft).toHaveBeenCalledWith(
+        PERSONAL_WS.id,
+        'camp-1',
+        expect.objectContaining({ generate_images: true })
+      );
+    });
   });
 });

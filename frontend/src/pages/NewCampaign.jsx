@@ -151,7 +151,7 @@ export default function NewCampaign() {
   const { workspaceId: routeWorkspaceId, campaignId: routeCampaignId } = useParams();
   const [searchParams] = useSearchParams();
   const workspaceLabelId = useId();
-  const { isAdmin } = useUser();
+  const { isAdmin, imageGenerationAvailable } = useUser();
   const { workspaces, personalWorkspace } = useWorkspace();
 
   // Wizard step state
@@ -169,6 +169,7 @@ export default function NewCampaign() {
   });
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
+  const [generateImages, setGenerateImages] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(routeWorkspaceId ?? "");
 
   // Draft state
@@ -223,6 +224,7 @@ export default function NewCampaign() {
         });
         setSelectedChannels(b.selected_channels ?? []);
         setSelectedPlatforms(b.social_media_platforms ?? []);
+        setGenerateImages(b.generate_images ?? false);
         setCurrentStep(campaign.wizard_step > 0 ? campaign.wizard_step : 1);
       } catch {
         setError("Failed to load draft campaign.");
@@ -382,6 +384,7 @@ export default function NewCampaign() {
           Object.assign(patchBody, {
             selected_channels: selectedChannels,
             social_media_platforms: selectedChannels.includes("social_media") ? selectedPlatforms : [],
+            generate_images: generateImages,
           });
         } else if (step === 4) {
           Object.assign(patchBody, {
@@ -641,6 +644,26 @@ export default function NewCampaign() {
           </div>
         )}
       </div>
+      {imageGenerationAvailable && (
+        <div className="form-group" style={{ marginTop: "1rem" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={generateImages}
+              onChange={(e) => {
+                const value = e.target.checked;
+                setGenerateImages(value);
+                scheduleAutoSave({ generate_images: value });
+              }}
+            />
+            <span>Generate AI images for this campaign</span>
+          </label>
+          <p style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", marginTop: "0.3rem" }}>
+            When enabled, the AI pipeline will generate images for your campaign content.
+          </p>
+        </div>
+      )}
       {renderNav(() => handleStepNext(3), !(selectedChannels.includes("social_media") && selectedPlatforms.length === 0), true, 3)}
     </div>
   );
@@ -748,6 +771,12 @@ export default function NewCampaign() {
             </>
           ) : (
             <span className="wizard-review-empty">Not specified — agents will decide</span>
+          )}
+          {imageGenerationAvailable && (
+            <div className="wizard-review-field">
+              <span className="wizard-review-field-label">AI Images</span>
+              <span className="wizard-review-field-value">{generateImages ? "Enabled ✓" : "Not selected"}</span>
+            </div>
           )}
         </div>
 
