@@ -12,7 +12,7 @@ export default function ClarificationSection({
   readOnly = false,
 }) {
   const [answers, setAnswers] = useState({});
-  const addToast = useToast();
+  const { addToast } = useToast();
 
   // Merge local draft answers with persisted answers from the backend
   const resolvedAnswer = (id) =>

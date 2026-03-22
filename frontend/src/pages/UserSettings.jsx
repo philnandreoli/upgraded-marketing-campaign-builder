@@ -54,7 +54,7 @@ function ProfileTab({ user, onSettingsSaved }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const addToast = useToast();
+  const { addToast } = useToast();
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -153,7 +153,7 @@ function PreferencesTab({ settings, onSettingsSaved }) {
   const [saveError, setSaveError] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
-  const addToast = useToast();
+  const { addToast } = useToast();
 
   const savedRef = useRef({
     theme: settings?.theme ?? "system",
@@ -322,7 +322,7 @@ function NotificationsTab({ settings, onSettingsSaved }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const addToast = useToast();
+  const { addToast } = useToast();
 
   const hasDigestFrequency = prefs.digest_frequency !== undefined;
   const hasQuietHours = prefs.quiet_hours_enabled !== undefined;
