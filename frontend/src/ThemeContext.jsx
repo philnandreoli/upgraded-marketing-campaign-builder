@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getMeSettings, patchMeSettings } from "./api";
 
 const ThemeContext = createContext(null);
@@ -36,16 +36,22 @@ function getLocalPreference() {
  */
 export function ThemeProvider({ children }) {
   const [preference, setPreference] = useState(() => getLocalPreference() ?? "system");
-  const [theme, setEffective] = useState(() => resolveTheme(getLocalPreference() ?? "system"));
+  // Counter bumped when the OS color-scheme changes so we re-resolve "system".
+  const [osChangeCounter, setOsChangeCounter] = useState(0);
   const backendFetched = useRef(false);
+
+  // Derive the effective theme from preference (+ osChangeCounter to re-resolve on OS change).
+  const theme = useMemo(
+    () => resolveTheme(preference),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [preference, osChangeCounter],
+  );
 
   // ── Apply preference to DOM + localStorage whenever it changes ──────────
   useEffect(() => {
-    const effective = resolveTheme(preference);
-    setEffective(effective);
-    document.documentElement.setAttribute("data-theme", effective);
+    document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(STORAGE_KEY, preference);
-  }, [preference]);
+  }, [preference, theme]);
 
   // ── Listen for OS-level changes when preference is "system" ─────────────
   useEffect(() => {
@@ -53,9 +59,7 @@ export function ThemeProvider({ children }) {
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
     if (!mq) return;
     const handler = () => {
-      const eff = resolveTheme("system");
-      setEffective(eff);
-      document.documentElement.setAttribute("data-theme", eff);
+      setOsChangeCounter((c) => c + 1);
     };
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
