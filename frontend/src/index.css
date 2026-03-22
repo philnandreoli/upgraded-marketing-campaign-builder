@@ -929,6 +929,25 @@ a:hover { color: var(--color-primary-hover); }
 .pipeline-tab.selected { border-bottom: 2px solid var(--color-primary); }
 .pipeline-tab:disabled { cursor: not-allowed; }
 
+/* Pipeline tabs – scrollable on mobile */
+@media (max-width: 768px) {
+  .pipeline-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;          /* Firefox */
+  }
+  .pipeline-tabs::-webkit-scrollbar {
+    display: none;                  /* Chrome / Safari */
+  }
+  .pipeline-tab {
+    flex: 0 0 auto;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.55rem 0.75rem;
+  }
+}
+
 /* Stage error messages */
 .stage-error-card { border: 1px solid rgba(239,68,68,0.3); }
 .stage-error-message {
