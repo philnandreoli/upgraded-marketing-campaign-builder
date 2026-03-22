@@ -4,19 +4,33 @@
 
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { NotificationProvider, useNotifications } from "../NotificationContext";
 import NotificationCenter from "../components/NotificationCenter";
+
+// ---------------------------------------------------------------------------
+// Navigate mock (hoisted so the vi.mock factory can reference it)
+// ---------------------------------------------------------------------------
+
+const navigateMock = vi.fn();
+
+vi.mock("react-router-dom", async (importActual) => {
+  const actual = await importActual();
+  return { ...actual, useNavigate: () => navigateMock };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Helper that renders NotificationCenter inside the provider. */
+/** Helper that renders NotificationCenter inside the provider (with router). */
 function renderNotificationCenter() {
   return render(
-    <NotificationProvider>
-      <NotificationCenter />
-    </NotificationProvider>
+    <MemoryRouter>
+      <NotificationProvider>
+        <NotificationCenter />
+      </NotificationProvider>
+    </MemoryRouter>
   );
 }
 
@@ -35,17 +49,18 @@ function EventPusher({ events }) {
 
 function renderWithEvents(events = []) {
   return render(
-    <NotificationProvider>
-      <EventPusher events={events} />
-      <NotificationCenter />
-    </NotificationProvider>
+    <MemoryRouter>
+      <NotificationProvider>
+        <EventPusher events={events} />
+        <NotificationCenter />
+      </NotificationProvider>
+    </MemoryRouter>
   );
 }
 
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
   vi.clearAllMocks();
+  navigateMock.mockReset();
 });
 
 describe("NotificationCenter", () => {
@@ -303,4 +318,108 @@ describe("NotificationCenter", () => {
     const body = document.querySelector(".notification-item-body");
     expect(body).not.toBeNull();
     expect(body.textContent.trim()).not.toBe("");
-  });});
+  });
+
+  // -----------------------------------------------------------------------
+  // Navigation behaviour
+  // -----------------------------------------------------------------------
+
+  it("navigates to campaign route when clicking a notification with both IDs", () => {
+    const events = [
+      {
+        event: "pipeline_completed",
+        campaign_id: "camp-42",
+        workspace_id: "ws-7",
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    fireEvent.click(screen.getByRole("listitem"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/workspaces/ws-7/campaigns/camp-42");
+  });
+
+  it("closes the dropdown after navigating", () => {
+    const events = [
+      {
+        event: "pipeline_completed",
+        campaign_id: "camp-42",
+        workspace_id: "ws-7",
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    expect(screen.getByRole("region", { name: /notification history/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("listitem"));
+
+    expect(screen.queryByRole("region", { name: /notification history/i })).not.toBeInTheDocument();
+  });
+
+  it("does not navigate when notification is missing workspace_id", () => {
+    const events = [
+      {
+        event: "pipeline_started",
+        campaign_id: "camp-1",
+        // no workspace_id
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    fireEvent.click(screen.getByRole("listitem"));
+
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate when notification is missing campaign_id", () => {
+    const events = [
+      {
+        event: "pipeline_started",
+        workspace_id: "ws-1",
+        // no campaign_id
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    fireEvent.click(screen.getByRole("listitem"));
+
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("marks notification as read even when no navigation occurs", () => {
+    const events = [
+      {
+        event: "pipeline_started",
+        campaign_id: "camp-1",
+        // no workspace_id — no navigation
+        timestamp: new Date().toISOString(),
+      },
+    ];
+    renderWithEvents(events);
+
+    act(() => { fireEvent.click(screen.getByTestId("push-events")); });
+
+    // Open panel — this marks all as read via markAllRead
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+
+    const item = screen.getByRole("listitem");
+    // After opening, unread styling should be gone
+    expect(item.classList.contains("notification-item--unread")).toBe(false);
+  });
+});
