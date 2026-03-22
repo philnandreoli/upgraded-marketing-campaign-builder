@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { listUsers, updateUserRoles, deactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser } from "../api";
+import { listUsers, updateUserRoles, deactivateUser, reactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { useConfirm } from "../ConfirmDialogContext";
@@ -112,6 +112,7 @@ export default function Admin() {
   const [campaignsError, setCampaignsError] = useState(null);
   const [workspacesError, setWorkspacesError] = useState(null);
   const [deactivateError, setDeactivateError] = useState(null);
+  const [reactivateError, setReactivateError] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -196,6 +197,23 @@ export default function Admin() {
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: false } : u)));
     } catch (err) {
       setDeactivateError(err.message);
+    }
+  };
+
+  const handleReactivate = async (userId) => {
+    const confirmed = await confirm({
+      title: "Reactivate user?",
+      message: "Reactivate this user? They will regain access to the platform.",
+      confirmLabel: "Reactivate",
+      destructive: false,
+    });
+    if (!confirmed) return;
+    setReactivateError(null);
+    try {
+      await reactivateUser(userId);
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: true } : u)));
+    } catch (err) {
+      setReactivateError(err.message);
     }
   };
 
@@ -451,6 +469,12 @@ export default function Admin() {
               </p>
             )}
 
+            {reactivateError && (
+              <p style={{ color: "var(--color-danger)", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
+                Reactivate failed: {reactivateError}
+              </p>
+            )}
+
             {loadingUsers ? (
               <div className="loading">
                 <span className="spinner" /> Loading users…
@@ -520,13 +544,21 @@ export default function Admin() {
                           {formatDate(u.created_at)}
                         </td>
                         <td style={{ padding: "0.6rem 0.75rem" }}>
-                          {u.is_active && (
+                          {u.is_active ? (
                             <button
                               className="btn btn-outline"
                               style={{ padding: "0.25rem 0.6rem", fontSize: "0.75rem", borderColor: "var(--color-danger)", color: "var(--color-danger)" }}
                               onClick={() => handleDeactivate(u.id)}
                             >
                               Deactivate
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-outline"
+                              style={{ padding: "0.25rem 0.6rem", fontSize: "0.75rem", borderColor: "var(--color-success)", color: "var(--color-success)" }}
+                              onClick={() => handleReactivate(u.id)}
+                            >
+                              Reactivate
                             </button>
                           )}
                         </td>
