@@ -87,7 +87,7 @@ async def execute_job(job: WorkflowJob) -> None:
     workspace_id: str | None = getattr(campaign, "workspace_id", None)
 
     async def _on_event(event: str, data: dict) -> None:
-        enriched = data if "workspace_id" in data else {**data, "workspace_id": workspace_id}
+        enriched = data if data.get("workspace_id") else {**data, "workspace_id": workspace_id}
         await publisher.publish(event, enriched)
         campaign_id = enriched.get("campaign_id", job.campaign_id)
         stage = enriched.get("stage")
