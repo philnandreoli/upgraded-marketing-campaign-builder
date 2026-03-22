@@ -57,7 +57,16 @@ app = FastAPI(
     title="Marketing Campaign Builder",
     description="AI-powered multi-agent system for building marketing campaigns",
     version="0.1.0",
+    docs_url=None,
+    redoc_url=None,
 )
+
+# ------------------------------------------------------------------
+# Custom-themed API documentation (matches frontend design system)
+# ------------------------------------------------------------------
+from backend.apps.api.docs import register_custom_docs  # noqa: E402
+
+register_custom_docs(app)
 
 # ------------------------------------------------------------------
 # Rate limiting — attach the shared limiter to app state so slowapi
