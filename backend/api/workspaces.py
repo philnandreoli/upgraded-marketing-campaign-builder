@@ -23,6 +23,7 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
+from backend.apps.api.schemas.common import PaginationMeta
 from backend.models.user import User, UserRole
 from backend.models.workspace import Workspace, WorkspaceRole
 from backend.infrastructure.auth import get_current_user
@@ -119,6 +120,11 @@ class WorkspaceSummary(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class WorkspaceListResponse(BaseModel):
+    items: list[WorkspaceSummary]
+    pagination: PaginationMeta
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -143,13 +149,17 @@ async def create_workspace(
     return _workspace_to_response(workspace)
 
 
-@router.get("/workspaces", response_model=list[WorkspaceSummary])
+@router.get("/workspaces", response_model=list[WorkspaceSummary] | WorkspaceListResponse)
 async def list_workspaces(
     response: Response,
     user: Optional[User] = Depends(get_current_user),
     limit: Optional[int] = Query(default=None, ge=1, description="Optional max number of workspaces to return."),
     offset: int = Query(default=0, ge=0, description="Optional number of workspaces to skip before returning results."),
-) -> list[WorkspaceSummary]:
+    pagination_format: Literal["legacy", "meta"] = Query(
+        default="legacy",
+        description="Response contract format. Use 'meta' for standardized {items, pagination} envelope.",
+    ),
+) -> list[WorkspaceSummary] | WorkspaceListResponse:
     """List workspaces the current user belongs to. Admins see all workspaces."""
     store = get_campaign_store()
     if user is not None:
@@ -213,7 +223,20 @@ async def list_workspaces(
     response.headers["X-Offset"] = str(offset)
     response.headers["X-Limit"] = str(limit) if limit is not None else "all"
     response.headers["X-Returned-Count"] = str(returned_count)
-    response.headers["X-Has-More"] = str(offset + returned_count < total_count).lower()
+    has_more = offset + returned_count < total_count
+    response.headers["X-Has-More"] = str(has_more).lower()
+    response.headers["X-Pagination-Format"] = "meta-v1"
+    if pagination_format == "meta":
+        return WorkspaceListResponse(
+            items=paged_result,
+            pagination=PaginationMeta(
+                total_count=total_count,
+                offset=offset,
+                limit=limit,
+                returned_count=returned_count,
+                has_more=has_more,
+            ),
+        )
     return paged_result
 
 

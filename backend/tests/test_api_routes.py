@@ -349,6 +349,13 @@ class TestOpenAPITags:
         assert schema["paths"]["/api/me/settings"]["get"]["tags"] == ["users"]
         assert schema["paths"]["/api/me/settings"]["patch"]["tags"] == ["users"]
 
+    def test_campaigns_list_openapi_exposes_meta_response_schema(self, client):
+        schema = client.get("/openapi.json").json()
+        responses = schema["paths"]["/api/workspaces/{workspace_id}/campaigns"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        options = responses.get("anyOf") or responses.get("oneOf") or []
+        option_refs = {item.get("$ref", "") for item in options}
+        assert "#/components/schemas/CampaignListResponse" in option_refs
+
 
 # ---- POST /api/campaigns ----
 
@@ -536,6 +543,41 @@ class TestListCampaigns:
     def test_list_campaigns_invalid_limit_returns_422(self, authed_client):
         r = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&limit=0")
         assert r.status_code == 422
+
+    def test_list_campaigns_meta_pagination_format_is_available(self, authed_client):
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "A", "goal": "A"})
+        authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={"product_or_service": "B", "goal": "B"})
+
+        r = authed_client.get(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns"
+            "?include_drafts=true&limit=1&offset=1&pagination_format=meta"
+        )
+        assert r.status_code == 200
+        payload = r.json()
+        assert set(payload.keys()) == {"items", "pagination"}
+        assert len(payload["items"]) == 1
+        assert payload["pagination"] == {
+            "total_count": 2,
+            "offset": 1,
+            "limit": 1,
+            "returned_count": 1,
+            "has_more": False,
+        }
+        assert r.headers["X-Total-Count"] == "2"
+        assert r.headers["X-Pagination-Format"] == "meta-v1"
+
+    def test_campaign_summary_timestamps_are_iso_datetime(self, authed_client):
+        authed_client.post(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns",
+            json={"product_or_service": "Time Product", "goal": "Time Goal"},
+        )
+        r = authed_client.get(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns?include_drafts=true&pagination_format=meta"
+        )
+        assert r.status_code == 200
+        item = r.json()["items"][0]
+        assert "T" in item["created_at"]
+        assert "T" in item["updated_at"]
 
 
 # ---- GET /api/campaigns/{id} ----
