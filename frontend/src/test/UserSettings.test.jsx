@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import UserSettings from '../pages/UserSettings';
 import { ToastProvider } from '../ToastContext';
+import { ThemeProvider } from '../ThemeContext';
 
 vi.mock('../api');
 
@@ -39,11 +40,13 @@ function makeSettingsResponse(overrides = {}) {
 function renderSettings() {
   return render(
     <MemoryRouter initialEntries={['/settings']}>
-      <ToastProvider>
-        <Routes>
-          <Route path="/settings" element={<UserSettings />} />
-        </Routes>
-      </ToastProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <Routes>
+            <Route path="/settings" element={<UserSettings />} />
+          </Routes>
+        </ToastProvider>
+      </ThemeProvider>
     </MemoryRouter>,
   );
 }
@@ -87,7 +90,9 @@ describe('UserSettings – error state', () => {
   });
 
   it('retries loading when retry button is clicked', async () => {
+    // ThemeProvider also calls getMeSettings on mount, consuming one mock.
     api.getMe.mockRejectedValueOnce(new Error('Network error'));
+    api.getMeSettings.mockRejectedValueOnce(new Error('Network error'));
     api.getMeSettings.mockRejectedValueOnce(new Error('Network error'));
     api.getMe.mockResolvedValueOnce(makeMeResponse());
     api.getMeSettings.mockResolvedValueOnce(makeSettingsResponse());

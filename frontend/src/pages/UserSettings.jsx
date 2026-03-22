@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getMe, getMeSettings, patchMeSettings, listWorkspaces } from "../api";
 import { useToast } from "../ToastContext";
+import { useThemeContext } from "../ThemeContext";
 
 const TABS = [
   { key: "profile", label: "Profile" },
@@ -154,6 +155,7 @@ function PreferencesTab({ settings, onSettingsSaved }) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
   const { addToast } = useToast();
+  const { setTheme: applyTheme } = useThemeContext();
 
   const savedRef = useRef({
     theme: settings?.theme ?? "system",
@@ -203,6 +205,9 @@ function PreferencesTab({ settings, onSettingsSaved }) {
         timezone: updated.timezone ?? timezone,
         default_workspace_id: updated.default_workspace_id ?? "",
       };
+      // Apply the theme to the UI immediately without a redundant backend call
+      // (the patchMeSettings above already persisted it).
+      applyTheme(updated.theme ?? theme, { persist: false });
       setSaveSuccess(true);
       addToast({ icon: "✅", stage: "Preferences", message: "Preferences saved successfully.", duration: 3000 });
       setTimeout(() => setSaveSuccess(false), 3000);
