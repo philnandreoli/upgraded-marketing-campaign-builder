@@ -183,6 +183,7 @@ async def _provision_user(
         updated_at=now,
     )
     db.add(workspace_row)
+    await db.flush()
 
     member_row = WorkspaceMemberRow(
         workspace_id=workspace_row.id,

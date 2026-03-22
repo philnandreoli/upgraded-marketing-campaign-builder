@@ -106,6 +106,7 @@ class TestDispatch:
         executor = InProcessExecutor()
         mock_coord = _mock_coordinator()
         mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
             patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
@@ -121,6 +122,7 @@ class TestDispatch:
         executor = InProcessExecutor()
         mock_coord = _mock_coordinator()
         mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=MagicMock())
 
         with (
             patch("backend.infrastructure.executors.in_process.CoordinatorAgent", return_value=mock_coord),
