@@ -303,7 +303,6 @@ The API supports two startup behaviours controlled by `API_AUTO_MIGRATE`:
 |--------|------|-------------|
 | `POST` | `.../campaigns/{id}/launch` | Start the agent pipeline |
 | `POST` | `.../campaigns/{id}/clarify` | Submit clarification answers |
-| `POST` | `.../campaigns/{id}/review` | Trigger review stage |
 | `POST` | `.../campaigns/{id}/content-approve` | Approve all content |
 | `PATCH` | `.../campaigns/{id}/content/{idx}/decision` | Per-piece approval decision |
 | `PATCH` | `.../campaigns/{id}/content/{idx}/notes` | Add content notes |

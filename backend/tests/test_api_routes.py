@@ -776,23 +776,6 @@ class TestLaunchCampaign:
 
 
 
-# ---- POST /api/campaigns/{id}/review (deprecated) ----
-
-class TestSubmitReviewDeprecated:
-    def test_review_returns_410(self, authed_client):
-        """Legacy review endpoint should return 410 Gone."""
-        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
-            "product_or_service": "Rev", "goal": "Test",
-        })
-        cid = r.json()["id"]
-        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}/review", json={
-            "campaign_id": cid,
-            "approved": True,
-            "notes": "Looks good",
-        })
-        assert r.status_code == 410
-
-
 # ---- POST /api/campaigns/{id}/content-approve ----
 
 class TestSubmitContentApproval:

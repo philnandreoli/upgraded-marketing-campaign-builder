@@ -119,8 +119,6 @@ Each agent is a Python class that inherits from `BaseAgent` and communicates wit
 | `POST` | `/api/campaigns/{id}/content-approve` | Submit per-piece content approval decisions |
 | `WS` | `/ws/campaigns/{id}` | WebSocket for real-time pipeline events |
 
-> **Deprecated:** `/api/campaigns/{id}/review` and `/api/campaigns/{id}/review-clarify` return `410 Gone`. Use `/content-approve` instead.
-
 ## Rate Limiting
 
 API rate limiting is implemented using [slowapi](https://github.com/laurents/slowapi) (application layer, per remote IP address). Limits are enforced per minute.
