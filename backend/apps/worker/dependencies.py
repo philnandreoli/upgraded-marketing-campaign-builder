@@ -82,16 +82,21 @@ async def execute_job(job: WorkflowJob) -> None:
     )
     event_store = get_event_store()
 
+    store = get_campaign_store()
+    campaign = await store.get(job.campaign_id)
+    workspace_id: str | None = getattr(campaign, "workspace_id", None)
+
     async def _on_event(event: str, data: dict) -> None:
-        await publisher.publish(event, data)
-        campaign_id = data.get("campaign_id", job.campaign_id)
-        stage = data.get("stage")
-        owner_id = data.get("owner_id")
+        enriched = data if "workspace_id" in data else {**data, "workspace_id": workspace_id}
+        await publisher.publish(event, enriched)
+        campaign_id = enriched.get("campaign_id", job.campaign_id)
+        stage = enriched.get("stage")
+        owner_id = enriched.get("owner_id")
         try:
             await event_store.save_event(
                 campaign_id=campaign_id,
                 event_type=event,
-                payload=data,
+                payload=enriched,
                 stage=stage,
                 owner_id=owner_id,
             )
@@ -99,10 +104,8 @@ async def execute_job(job: WorkflowJob) -> None:
             logger.exception("EventStore.save_event failed for event %s", event)
 
     coordinator = CoordinatorAgent(on_event=_on_event)
-    store = get_campaign_store()
 
     if job.action == "start_pipeline":
-        campaign = await store.get(job.campaign_id)
         if campaign is None:
             raise ValueError(
                 f"Campaign {job.campaign_id!r} not found for start_pipeline"

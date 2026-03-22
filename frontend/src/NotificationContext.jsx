@@ -68,7 +68,7 @@ function buildFallbackMessage(kind, stageText) {
  * and tracks which have been read.
  *
  * Provides:
- *   notifications  — array of { id, icon, stage, message, timestamp, read }
+ *   notifications  — array of { id, icon, stage, message, timestamp, campaignId, workspaceId, read }
  *   unreadCount    — number of unread notifications
  *   addEvent       — push a raw WebSocket event into the store
  *   markAllRead    — mark every notification as read
@@ -94,6 +94,8 @@ export function NotificationProvider({ children }) {
       stage: stageText,
       message: explicitMessage || buildFallbackMessage(kind, stageText),
       timestamp: event.timestamp || new Date().toISOString(),
+      campaignId: event.campaign_id ?? null,
+      workspaceId: event.workspace_id ?? null,
       read: false,
     };
 

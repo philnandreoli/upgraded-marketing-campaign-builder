@@ -312,10 +312,18 @@ class TestDispatchRouting:
 
         mock_coord = MagicMock()
         mock_coord.resume_pipeline = AsyncMock()
+        mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=None)
 
-        with patch(
-            "backend.apps.worker.dependencies.CoordinatorAgent",
-            return_value=mock_coord,
+        with (
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                return_value=mock_coord,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
+            ),
         ):
             await execute_job(_make_job("resume_pipeline", "c-2"))
 
@@ -326,10 +334,18 @@ class TestDispatchRouting:
 
         mock_coord = MagicMock()
         mock_coord.retry_current_stage = AsyncMock()
+        mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=None)
 
-        with patch(
-            "backend.apps.worker.dependencies.CoordinatorAgent",
-            return_value=mock_coord,
+        with (
+            patch(
+                "backend.apps.worker.dependencies.CoordinatorAgent",
+                return_value=mock_coord,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
+            ),
         ):
             await execute_job(_make_job("retry_stage", "c-3"))
 
@@ -359,6 +375,8 @@ class TestDispatchRouting:
         from backend.apps.worker.dependencies import execute_job
 
         mock_coord = MagicMock()
+        mock_store = MagicMock()
+        mock_store.get = AsyncMock(return_value=None)
 
         job = WorkflowJob(campaign_id="c-1", action="start_pipeline")
         # Bypass the Literal validator to inject a bad action
@@ -368,6 +386,10 @@ class TestDispatchRouting:
             patch(
                 "backend.apps.worker.dependencies.CoordinatorAgent",
                 return_value=mock_coord,
+            ),
+            patch(
+                "backend.apps.worker.dependencies.get_campaign_store",
+                return_value=mock_store,
             ),
             pytest.raises(ValueError, match="bad_action"),
         ):

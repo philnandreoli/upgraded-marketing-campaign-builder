@@ -24,6 +24,7 @@ class WorkflowEvent(BaseModel):
 
     event_type: str
     campaign_id: str
+    workspace_id: str | None = None
     timestamp: datetime = Field(default_factory=_utcnow)
     payload: dict[str, Any] = Field(default_factory=dict)
     version: str = "1.0"

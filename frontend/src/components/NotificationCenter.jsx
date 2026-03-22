@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useNotifications } from "../NotificationContext.jsx";
 
 /**
@@ -56,6 +57,7 @@ export default function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
   const buttonRef = useRef(null);
+  const navigate = useNavigate();
 
   // Close the dropdown when clicking outside
   useEffect(() => {
@@ -88,6 +90,14 @@ export default function NotificationCenter() {
     const next = !open;
     if (next) markAllRead();
     setOpen(next);
+  };
+
+  const handleItemClick = (n) => {
+    markRead(n.id);
+    if (n.campaignId && n.workspaceId) {
+      setOpen(false);
+      navigate(`/workspaces/${n.workspaceId}/campaigns/${n.campaignId}`);
+    }
   };
 
   return (
@@ -128,7 +138,7 @@ export default function NotificationCenter() {
                 <li
                   key={n.id}
                   className={`notification-item${n.read ? "" : " notification-item--unread"}`}
-                  onClick={() => markRead(n.id)}
+                  onClick={() => handleItemClick(n)}
                 >
                   <span className="notification-item-icon">{n.icon}</span>
                   <div className="notification-item-body">
