@@ -181,6 +181,80 @@ class TestListUsers:
         assert r.status_code == 200
         assert r.json() == []
 
+    async def test_pagination_returns_first_page(self, admin_client, db_session):
+        client, _ = admin_client
+        for i in range(5):
+            db_session.add(_make_user_row(f"u{i}", email=f"user{i}@example.com"))
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users?page=1&page_size=2")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 2
+
+    async def test_pagination_returns_second_page(self, admin_client, db_session):
+        client, _ = admin_client
+        for i in range(5):
+            db_session.add(_make_user_row(f"u{i}", email=f"user{i}@example.com"))
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users?page=2&page_size=2")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 2
+
+    async def test_pagination_last_page_may_have_fewer_results(self, admin_client, db_session):
+        client, _ = admin_client
+        for i in range(5):
+            db_session.add(_make_user_row(f"u{i}", email=f"user{i}@example.com"))
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users?page=3&page_size=2")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+
+    async def test_pagination_beyond_last_page_returns_empty(self, admin_client, db_session):
+        client, _ = admin_client
+        db_session.add(_make_user_row("u1", email="user1@example.com"))
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users?page=99&page_size=10")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    async def test_no_pagination_returns_all_results(self, admin_client, db_session):
+        client, _ = admin_client
+        for i in range(5):
+            db_session.add(_make_user_row(f"u{i}", email=f"user{i}@example.com"))
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users")
+        assert r.status_code == 200
+        assert len(r.json()) == 5
+
+    async def test_pagination_combined_with_search(self, admin_client, db_session):
+        client, _ = admin_client
+        for i in range(4):
+            db_session.add(_make_user_row(f"a{i}", email=f"alice{i}@example.com", display_name=f"Alice {i}"))
+        db_session.add(_make_user_row("b1", email="bob@example.com", display_name="Bob"))
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users?search=alice&page=1&page_size=2")
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 2
+        assert all(
+            "alice" in (item["email"] or "").lower() or "alice" in (item["display_name"] or "").lower()
+            for item in data
+        )
+
+    async def test_page_without_page_size_returns_400(self, admin_client):
+        client, _ = admin_client
+        r = await client.get("/api/admin/users?page=2")
+        assert r.status_code == 400
+        assert "page_size" in r.json()["detail"].lower()
+
     async def test_returns_403_for_non_admin(self, db_engine):
         """Non-admin users cannot access the users list."""
         session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)

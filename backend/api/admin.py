@@ -19,7 +19,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy import delete as sa_delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -90,20 +90,34 @@ async def list_users(
     request: Request,
     response: Response,
     search: Optional[str] = Query(default=None, description="Filter by name or email"),
+    page: int = Query(default=1, ge=1, description="Page number (1-based); requires page_size to take effect"),
+    page_size: Optional[int] = Query(default=None, ge=1, le=200, description="Number of results per page; omit for all results"),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserListResponse]:
-    """List all platform users, optionally filtered by name/email."""
-    result = await db.execute(select(UserRow).order_by(UserRow.created_at.desc()))
-    rows = result.scalars().all()
+    """List all platform users, optionally filtered by name/email with optional pagination."""
+    if page > 1 and page_size is None:
+        raise HTTPException(
+            status_code=400,
+            detail="page_size is required when page is specified.",
+        )
+
+    stmt = select(UserRow).order_by(UserRow.created_at.desc())
 
     if search:
-        term = search.lower()
-        rows = [
-            r for r in rows
-            if (r.email and term in r.email.lower())
-            or (r.display_name and term in r.display_name.lower())
-        ]
+        term = f"%{search}%"
+        stmt = stmt.where(
+            or_(
+                UserRow.email.ilike(term),
+                UserRow.display_name.ilike(term),
+            )
+        )
+
+    if page_size is not None:
+        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
 
     return [
         UserListResponse(
