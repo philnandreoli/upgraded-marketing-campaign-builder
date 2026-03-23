@@ -645,21 +645,19 @@ export default function NewCampaign() {
         )}
       </div>
       {imageGenerationAvailable && (
-        <div className="form-group" style={{ marginTop: "1rem" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={generateImages}
-              onChange={(e) => {
-                const value = e.target.checked;
-                setGenerateImages(value);
-                scheduleAutoSave({ generate_images: value });
-              }}
-            />
-            <span>Generate AI images for this campaign</span>
-          </label>
-          <p style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", marginTop: "0.3rem" }}>
+        <div className="form-check" style={{ marginTop: "1rem" }}>
+          <input
+            type="checkbox"
+            id="generate-images"
+            checked={generateImages}
+            onChange={(e) => {
+              const value = e.target.checked;
+              setGenerateImages(value);
+              scheduleAutoSave({ generate_images: value });
+            }}
+          />
+          <label htmlFor="generate-images">Generate AI images for this campaign</label>
+          <p className="form-check-description">
             When enabled, the AI pipeline will generate images for your campaign content.
           </p>
         </div>
