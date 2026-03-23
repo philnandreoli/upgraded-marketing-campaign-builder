@@ -9,6 +9,7 @@ database is required.
 
 import pytest
 from contextlib import contextmanager
+from datetime import date, time
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -81,6 +82,7 @@ def _isolated_store():
     # Mock get_executor so pipeline dispatch is a no-op in route tests
     with patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store), \
          patch("backend.apps.api.dependencies.get_campaign_store", return_value=fresh_store), \
+         patch("backend.api.campaign_schedule.get_campaign_store", return_value=fresh_store), \
          patch("backend.api.campaign_members.get_campaign_store", return_value=fresh_store), \
          patch("backend.api.campaigns.get_user_settings_store", return_value=fresh_user_settings_store), \
          patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
@@ -1062,6 +1064,132 @@ class TestUpdatePieceNotes:
                 json={"notes": "sneaky"},
             )
             assert r.status_code == 200  # _OTHER_USER is CREATOR in the workspace
+
+
+# ---- PATCH /api/campaigns/{id}/content/{piece_index}/schedule ----
+
+class TestSchedulePiece:
+    def _campaign_with_pieces(self, _isolated_store, *, owner_id=None):
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="SchedCo", goal="Plan"),
+            owner_id=owner_id,
+            workspace_id=TEST_WS_ID,
+            content=CampaignContent(pieces=[
+                ContentPiece(content_type="headline", content="First"),
+                ContentPiece(content_type="social_post", channel="instagram", content="Second"),
+            ]),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        return campaign
+
+    def test_schedule_piece_sets_fields(self, client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store)
+        r = client.patch(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/1/schedule",
+            json={
+                "scheduled_date": "2026-04-01",
+                "scheduled_time": "09:00:00",
+                "platform_target": "instagram",
+            },
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["scheduled_date"] == "2026-04-01"
+        assert data["scheduled_time"] == "09:00:00"
+        assert data["platform_target"] == "instagram"
+        saved = _isolated_store._campaigns[campaign.id]
+        assert saved.content.pieces[1].scheduled_date == date(2026, 4, 1)
+        assert saved.content.pieces[1].scheduled_time == time(9, 0)
+        assert saved.content.pieces[1].platform_target == "instagram"
+
+    def test_schedule_piece_clears_fields(self, client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store)
+        piece = campaign.content.pieces[0]
+        piece.scheduled_date = date(2026, 4, 2)
+        piece.scheduled_time = time(10, 30)
+        piece.platform_target = "linkedin"
+        r = client.patch(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/schedule",
+            json={"scheduled_date": None, "scheduled_time": None, "platform_target": None},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["scheduled_date"] is None
+        assert data["scheduled_time"] is None
+        assert data["platform_target"] is None
+        saved = _isolated_store._campaigns[campaign.id]
+        assert saved.content.pieces[0].scheduled_date is None
+        assert saved.content.pieces[0].scheduled_time is None
+        assert saved.content.pieces[0].platform_target is None
+
+    def test_schedule_piece_out_of_range_returns_400(self, client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store)
+        r = client.patch(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/9/schedule",
+            json={"scheduled_date": "2026-04-01"},
+        )
+        assert r.status_code == 400
+
+    def test_schedule_piece_viewer_returns_403(self, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store, owner_id=_TEST_USER.id)
+        viewer = User(id="viewer-002", email="v2@example.com", display_name="Viewer 2", roles=[UserRole.VIEWER])
+        _isolated_store._workspace_members[(TEST_WS_ID, viewer.id)] = "viewer"
+        with _as_user(viewer) as c:
+            r = c.patch(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/schedule",
+                json={"scheduled_date": "2026-04-01"},
+            )
+            assert r.status_code == 403
+
+    def test_schedule_piece_conflict_returns_409(self, authed_client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store, owner_id=_TEST_USER.id)
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+        with patch.object(
+            _isolated_store,
+            "update",
+            new=AsyncMock(side_effect=ConcurrentUpdateError("schedule conflict")),
+        ):
+            r = authed_client.patch(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/0/schedule",
+                json={"scheduled_date": "2026-04-03"},
+            )
+        assert r.status_code == 409
+
+
+class TestGetCalendar:
+    def test_calendar_groups_by_date_and_unscheduled(self, client, _isolated_store):
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="CalCo", goal="Render"),
+            workspace_id=TEST_WS_ID,
+            content=CampaignContent(pieces=[
+                ContentPiece(content_type="headline", content="One", scheduled_date=date(2026, 4, 2)),
+                ContentPiece(content_type="social_post", content="Two"),
+                ContentPiece(content_type="cta", content="Three", scheduled_date=date(2026, 4, 1)),
+                ContentPiece(content_type="body_copy", content="Four", scheduled_date=date(2026, 4, 2)),
+            ]),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        r = client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/calendar")
+        assert r.status_code == 200
+        data = r.json()
+        assert [g["date"] for g in data["scheduled"]] == ["2026-04-01", "2026-04-02"]
+        assert [p["piece_index"] for p in data["scheduled"][0]["pieces"]] == [2]
+        assert [p["piece_index"] for p in data["scheduled"][1]["pieces"]] == [0, 3]
+        assert [p["piece_index"] for p in data["unscheduled"]] == [1]
+
+    def test_calendar_viewer_can_read(self, _isolated_store):
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="CalCo", goal="Read"),
+            owner_id=_TEST_USER.id,
+            workspace_id=TEST_WS_ID,
+            content=CampaignContent(pieces=[ContentPiece(content_type="headline", content="One")]),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        viewer = User(id="viewer-003", email="v3@example.com", display_name="Viewer 3", roles=[UserRole.VIEWER])
+        _isolated_store._workspace_members[(TEST_WS_ID, viewer.id)] = "viewer"
+        with _as_user(viewer) as c:
+            r = c.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/calendar")
+            assert r.status_code == 200
 
 class TestSubmitClarification:
     def test_clarify_not_found(self, client):

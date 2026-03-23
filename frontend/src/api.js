@@ -53,6 +53,23 @@ export const updatePieceDecision = (workspaceId, campaignId, pieceIndex, { appro
     body: { approved, edited_content: editedContent, notes },
   });
 
+export const schedulePiece = (
+  workspaceId,
+  campaignId,
+  pieceIndex,
+  { scheduledDate = null, scheduledTime = null, platformTarget = null } = {},
+) =>
+  request("PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${pieceIndex}/schedule`, {
+    body: {
+      scheduled_date: scheduledDate,
+      scheduled_time: scheduledTime,
+      platform_target: platformTarget,
+    },
+  });
+
+export const getCalendar = (workspaceId, campaignId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/calendar`);
+
 export const submitClarification = (workspaceId, campaignId, answers) =>
   request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/clarify`, {
     body: { campaign_id: campaignId, answers },
