@@ -38,7 +38,7 @@ class ImageGenerationService:
         self._enabled = cfg.enabled
         self._credential = DefaultAzureCredential()
         self._project_client = AIProjectClient(
-            endpoint=cfg.azure_ai_image_endpoint,
+            endpoint=settings.azure_ai_project.endpoint,
             credential=self._credential,
         )
         self._client = self._project_client.get_openai_client()
@@ -104,4 +104,3 @@ def get_image_generation_service() -> ImageGenerationService:
     if _image_generation_service is None:
         _image_generation_service = ImageGenerationService()
     return _image_generation_service
-

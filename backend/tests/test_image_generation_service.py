@@ -19,10 +19,8 @@ def image_generation_service():
         patch("backend.infrastructure.image_generation_service.AIProjectClient") as mock_project,
     ):
         mock_settings.return_value = MagicMock(
-            image_generation=MagicMock(
-                enabled=True,
-                azure_ai_image_endpoint="https://image.example.com",
-            )
+            image_generation=MagicMock(enabled=True),
+            azure_ai_project=MagicMock(endpoint="https://project.example.com"),
         )
         mock_openai_client = MagicMock()
         mock_project.return_value.get_openai_client.return_value = mock_openai_client
@@ -70,10 +68,8 @@ class TestImageGenerationService:
             patch("backend.infrastructure.image_generation_service.AIProjectClient") as mock_project,
         ):
             mock_settings.return_value = MagicMock(
-                image_generation=MagicMock(
-                    enabled=False,
-                    azure_ai_image_endpoint="https://image.example.com",
-                )
+                image_generation=MagicMock(enabled=False),
+                azure_ai_project=MagicMock(endpoint="https://project.example.com"),
             )
             mock_project.return_value.get_openai_client.return_value = MagicMock()
             service = ImageGenerationService()
