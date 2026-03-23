@@ -29,6 +29,7 @@ from backend.orchestration.content_creator_agent import ContentCreatorAgent
 from backend.orchestration.channel_planner_agent import ChannelPlannerAgent
 from backend.orchestration.analytics_agent import AnalyticsAgent
 from backend.orchestration.review_qa_agent import ReviewQAAgent
+from backend.orchestration.scheduling_agent import SchedulingAgent
 from backend.orchestration.workflow_types import StageDefinition, StageExecutionResult, WorkflowAction
 from backend.models.campaign import (
     AnalyticsPlan,
@@ -41,6 +42,7 @@ from backend.models.campaign import (
     ContentPiece,
     ReviewFeedback,
 )
+from backend.services.schedule_utils import seed_schedule, validate_schedule
 from backend.models.events import (
     ClarificationRequestedEvent,
     ContentApprovalRequestedEvent,
@@ -168,6 +170,7 @@ class CoordinatorAgent:
         self._channel = ChannelPlannerAgent()
         self._analytics = AnalyticsAgent()
         self._review = ReviewQAAgent()
+        self._scheduler = SchedulingAgent()
 
         # Declarative stage registry — ordered list of pipeline stages
         self._stages: list[StageDefinition] = [
@@ -550,8 +553,12 @@ class CoordinatorAgent:
             result_key="channel_plan",
             model_cls=ChannelPlan,
         )
-        action = WorkflowAction.FAIL if "channel_plan" in campaign.stage_errors else WorkflowAction.CONTINUE
-        return StageExecutionResult(action=action, campaign=campaign)
+        if "channel_plan" in campaign.stage_errors:
+            return StageExecutionResult(action=WorkflowAction.FAIL, campaign=campaign)
+
+        # Sub-step: scheduling (runs silently within this stage, no new CampaignStatus)
+        campaign = await self._run_scheduling_substep(campaign, campaign.model_dump(mode="json"))
+        return StageExecutionResult(action=WorkflowAction.CONTINUE, campaign=campaign)
 
     async def _run_analytics_stage(
         self, campaign: Campaign, campaign_data: dict[str, Any]
@@ -594,6 +601,138 @@ class CoordinatorAgent:
         campaign = await self._content_approval_gate(campaign, campaign_data)
         # Terminal stage — COMPLETE signals the loop to stop
         return StageExecutionResult(action=WorkflowAction.COMPLETE, campaign=campaign)
+
+    # ------------------------------------------------------------------
+    # Scheduling sub-step (runs inside _run_channel_stage, no new status)
+    # ------------------------------------------------------------------
+
+    async def _run_scheduling_substep(
+        self,
+        campaign: Campaign,
+        campaign_data: dict[str, Any],
+    ) -> Campaign:
+        """Assign publish dates to content pieces using the SchedulingAgent.
+
+        Only runs when the campaign has both content pieces and a channel plan,
+        and the brief contains ``start_date`` / ``end_date``.
+
+        Flow:
+        1. Attempt ``SchedulingAgent.run()``.
+        2. If the agent succeeds, apply the returned dates to ``campaign.content.pieces``.
+        3. If the agent fails (LLM error, timeout, or validation violations), fall back
+           to ``seed_schedule()`` from the heuristic seeder.
+        4. Log which path was taken for observability.
+
+        Scheduling failures are non-terminal — a missing or invalid schedule
+        should never block the rest of the pipeline.
+        """
+        brief = campaign_data.get("brief", {})
+        start_date_str: str | None = brief.get("start_date")
+        end_date_str: str | None = brief.get("end_date")
+
+        # Skip when dates are absent or content/channel plan are not ready
+        if not start_date_str or not end_date_str:
+            logger.info(
+                "Scheduling sub-step skipped for campaign %s: no start_date/end_date in brief",
+                campaign.id,
+            )
+            return campaign
+
+        if campaign.content is None or not campaign.content.pieces:
+            logger.info(
+                "Scheduling sub-step skipped for campaign %s: no content pieces",
+                campaign.id,
+            )
+            return campaign
+
+        if campaign.channel_plan is None:
+            logger.info(
+                "Scheduling sub-step skipped for campaign %s: no channel plan",
+                campaign.id,
+            )
+            return campaign
+
+        from datetime import date as _date
+        start_date = _date.fromisoformat(start_date_str)
+        end_date = _date.fromisoformat(end_date_str)
+        pieces = campaign.content.pieces
+        channel_plan = campaign.channel_plan
+
+        # --- Attempt LLM scheduling ---
+        used_agent = False
+        try:
+            task = AgentTask(
+                task_id=str(uuid.uuid4()),
+                agent_type=AgentType.SCHEDULER,
+                campaign_id=campaign.id,
+                instruction="",
+                context={
+                    "start_date": start_date_str,
+                    "end_date": end_date_str,
+                    "pieces_count": len(pieces),
+                },
+            )
+            result = await self._scheduler.run(task, campaign_data)
+
+            if not result.success:
+                raise RuntimeError(result.error or "SchedulingAgent returned failure")
+
+            schedule: list[dict] = result.output.get("schedule", [])
+
+            # Apply dates from agent output to the content pieces
+            updated_pieces = [p.model_copy() for p in pieces]
+            for entry in schedule:
+                idx = int(entry["piece_index"])
+                if 0 <= idx < len(updated_pieces):
+                    from datetime import date as _d, time as _t
+                    updated_pieces[idx] = updated_pieces[idx].model_copy(update={
+                        "scheduled_date": _d.fromisoformat(entry["scheduled_date"]),
+                        "scheduled_time": (
+                            _t.fromisoformat(entry["scheduled_time"])
+                            if entry.get("scheduled_time") else None
+                        ),
+                        "platform_target": (
+                            entry.get("platform_target")
+                            or updated_pieces[idx].platform_target
+                        ),
+                    })
+
+            campaign.content = campaign.content.model_copy(update={"pieces": updated_pieces})
+            used_agent = True
+            logger.info(
+                "Scheduling sub-step for campaign %s completed via LLM agent (%d pieces scheduled)",
+                campaign.id,
+                len(schedule),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "Scheduling agent failed for campaign %s (%s) — falling back to heuristic seeder",
+                campaign.id,
+                exc,
+            )
+
+        # --- Fallback: heuristic seed_schedule ---
+        if not used_agent:
+            try:
+                seeded = seed_schedule(pieces, channel_plan, start_date, end_date)
+                campaign.content = campaign.content.model_copy(update={"pieces": seeded})
+                logger.info(
+                    "Scheduling sub-step for campaign %s completed via heuristic fallback "
+                    "(%d pieces scheduled)",
+                    campaign.id,
+                    len(seeded),
+                )
+            except Exception as exc:
+                # Even the heuristic failing should not block the pipeline
+                logger.warning(
+                    "Heuristic seed_schedule also failed for campaign %s: %s",
+                    campaign.id,
+                    exc,
+                )
+
+        await self._store.update(campaign)
+        return campaign
 
     async def submit_clarification(self, response: ClarificationResponse) -> None:
         """Called by the API layer when the user answers clarifying questions.

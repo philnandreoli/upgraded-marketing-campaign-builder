@@ -47,6 +47,7 @@ _AGENT_NAMES: dict[AgentType, str] = {
     AgentType.CHANNEL_PLANNER: "MarketingChannelAgent",
     AgentType.ANALYTICS: "MarketingAnalyticsAgent",
     AgentType.REVIEW_QA: "MarketingReviewAgent",
+    AgentType.SCHEDULER: "MarketingSchedulingAgent",
 }
 
 # Cache of registered agent metadata: AgentType → {"name": ..., "version": ...}
@@ -64,6 +65,7 @@ def _get_agent_instructions(agent_type: AgentType) -> str:
     from backend.orchestration.channel_planner_agent import ChannelPlannerAgent
     from backend.orchestration.analytics_agent import AnalyticsAgent
     from backend.orchestration.review_qa_agent import ReviewQAAgent
+    from backend.orchestration.scheduling_agent import SchedulingAgent
 
     _cls_map = {
         AgentType.STRATEGY: StrategyAgent,
@@ -71,6 +73,7 @@ def _get_agent_instructions(agent_type: AgentType) -> str:
         AgentType.CHANNEL_PLANNER: ChannelPlannerAgent,
         AgentType.ANALYTICS: AnalyticsAgent,
         AgentType.REVIEW_QA: ReviewQAAgent,
+        AgentType.SCHEDULER: SchedulingAgent,
     }
 
     cls = _cls_map[agent_type]
