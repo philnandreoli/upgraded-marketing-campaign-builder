@@ -39,7 +39,8 @@ export default function ImageGallerySection({ workspaceId, campaignId, events })
   }, [workspaceId, campaignId]);
 
   useEffect(() => {
-    load();
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
   // Refresh when new image-related WebSocket events arrive
@@ -48,7 +49,9 @@ export default function ImageGallerySection({ workspaceId, campaignId, events })
     const hasImageEvent = events.some(
       (e) => e.type === "image_generated" || e.type === "asset_created"
     );
-    if (hasImageEvent) load();
+    if (!hasImageEvent) return;
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
   }, [events, load]);
 
   if (error) {
