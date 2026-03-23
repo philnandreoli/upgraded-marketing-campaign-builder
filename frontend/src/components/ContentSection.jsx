@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { submitContentApproval, updatePieceNotes, updatePieceDecision } from "../api";
+import { submitContentApproval, updatePieceNotes, updatePieceDecision, generateImageAsset } from "../api";
 import { useConfirm } from "../ConfirmDialogContext";
 import { useToast } from "../ToastContext";
 
@@ -52,6 +52,11 @@ export default function ContentSection({
   workspaceId,
   onApprovalSubmitted,
   status,
+  imageAssets = [],
+  imageGenerationEnabled = false,
+  isViewer = false,
+  onImageGenerated,
+  onViewGallery,
 }) {
   const confirm = useConfirm();
   const { addToast } = useToast();
@@ -61,6 +66,8 @@ export default function ContentSection({
   const [submitting, setSubmitting] = useState(false);
   const [savingNotes, setSavingNotes] = useState({});    // { [index]: boolean }
   const [savingDecision, setSavingDecision] = useState({}); // { [index]: boolean }
+  const [generatingImages, setGeneratingImages] = useState({}); // { [index]: boolean }
+  const [imageErrors, setImageErrors] = useState({});           // { [index]: string | null }
 
   const visiblePieces = data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
@@ -147,6 +154,19 @@ export default function ContentSection({
       addToast({ type: "error", stage: "Error", message: "Failed to save decision: " + err.message });
     } finally {
       setSavingDecision((prev) => ({ ...prev, [pieceIndex]: false }));
+    }
+  };
+
+  const handleGenerateImage = async (pieceIndex) => {
+    setGeneratingImages((prev) => ({ ...prev, [pieceIndex]: true }));
+    setImageErrors((prev) => ({ ...prev, [pieceIndex]: null }));
+    try {
+      await generateImageAsset(workspaceId, campaignId, pieceIndex);
+      onImageGenerated?.();
+    } catch (err) {
+      setImageErrors((prev) => ({ ...prev, [pieceIndex]: err.message }));
+    } finally {
+      setGeneratingImages((prev) => ({ ...prev, [pieceIndex]: false }));
     }
   };
 
@@ -372,6 +392,66 @@ export default function ContentSection({
                       </div>
                     </div>
                   )}
+
+                  {/* Image generation controls — only when feature is enabled for this campaign */}
+                  {imageGenerationEnabled && (() => {
+                    const pieceImages = imageAssets.filter((a) => a.content_piece_index === i);
+                    const hasPieceImage = pieceImages.length > 0;
+                    const latestImage = hasPieceImage ? pieceImages[pieceImages.length - 1] : null;
+                    return (
+                      <div style={{ marginTop: "0.75rem" }}>
+                        {piece.image_brief && (
+                          <details style={{ marginBottom: "0.5rem", fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                            <summary style={{ cursor: "pointer" }}>🎨 Image Brief</summary>
+                            <p style={{ marginTop: "0.25rem", paddingLeft: "0.75rem" }}>
+                              {piece.image_brief?.prompt || (typeof piece.image_brief === "string" ? piece.image_brief : null)}
+                            </p>
+                          </details>
+                        )}
+                        {hasPieceImage ? (
+                          <div className="piece-image-preview" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            <img
+                              src={latestImage.url || latestImage.image_url}
+                              alt={latestImage.prompt ? latestImage.prompt.slice(0, 80) : "Generated image"}
+                              style={{
+                                width: "100%",
+                                maxWidth: "200px",
+                                borderRadius: "var(--radius)",
+                                border: "1px solid var(--color-border)",
+                              }}
+                            />
+                            {onViewGallery && (
+                              <button
+                                className="btn btn-sm btn-outline"
+                                onClick={onViewGallery}
+                                style={{ alignSelf: "flex-start" }}
+                              >
+                                🖼️ View in Gallery
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            disabled={isViewer || !!generatingImages[i]}
+                            onClick={() => handleGenerateImage(i)}
+                            aria-label={`Generate image for piece ${i + 1}`}
+                          >
+                            {generatingImages[i] ? (
+                              <><span className="spinner" aria-hidden="true" /> Generating…</>
+                            ) : (
+                              <>🖼️ Generate Image</>
+                            )}
+                          </button>
+                        )}
+                        {imageErrors[i] && (
+                          <p style={{ fontSize: "0.75rem", color: "var(--color-danger)", marginTop: "0.25rem" }}>
+                            ⚠️ {imageErrors[i]}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             });

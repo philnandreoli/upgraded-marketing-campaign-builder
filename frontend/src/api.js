@@ -61,6 +61,11 @@ export const submitClarification = (workspaceId, campaignId, answers) =>
 export const listImageAssets = (workspaceId, campaignId) =>
   request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/assets`);
 
+export const generateImageAsset = (workspaceId, campaignId, contentPieceIndex, promptOverride = null) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/assets/generate`, {
+    body: { content_piece_index: contentPieceIndex, prompt_override: promptOverride },
+  });
+
 // ---------------------------------------------------------------------------
 // Admin API
 // ---------------------------------------------------------------------------
