@@ -58,6 +58,9 @@ export const submitClarification = (workspaceId, campaignId, answers) =>
     body: { campaign_id: campaignId, answers },
   });
 
+export const listImageAssets = (workspaceId, campaignId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/assets`);
+
 // ---------------------------------------------------------------------------
 // Admin API
 // ---------------------------------------------------------------------------
