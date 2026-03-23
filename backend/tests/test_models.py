@@ -2,6 +2,7 @@
 Tests for data models — CampaignBrief, Campaign, and status transitions.
 """
 
+from datetime import date, time
 import pytest
 from pydantic import ValidationError
 
@@ -339,6 +340,37 @@ class TestContentPieceApprovalFields:
         assert data["approval_status"] == "rejected"
         cp2 = ContentPiece.model_validate(data)
         assert cp2.approval_status == ContentApprovalStatus.REJECTED
+
+    def test_content_piece_scheduling_fields_roundtrip_populated(self):
+        cp = ContentPiece(
+            content_type="social_post",
+            content="Post content",
+            scheduled_date=date(2026, 4, 10),
+            scheduled_time=time(14, 30),
+            platform_target="linkedin",
+        )
+        data = cp.model_dump(mode="json")
+        assert data["scheduled_date"] == "2026-04-10"
+        assert data["scheduled_time"] == "14:30:00"
+        assert data["platform_target"] == "linkedin"
+        cp2 = ContentPiece.model_validate(data)
+        assert cp2.scheduled_date == date(2026, 4, 10)
+        assert cp2.scheduled_time == time(14, 30)
+        assert cp2.platform_target == "linkedin"
+
+    def test_content_piece_scheduling_fields_roundtrip_empty(self):
+        cp = ContentPiece(
+            content_type="social_post",
+            content="Post content",
+        )
+        data = cp.model_dump(mode="json")
+        assert data["scheduled_date"] is None
+        assert data["scheduled_time"] is None
+        assert data["platform_target"] is None
+        cp2 = ContentPiece.model_validate(data)
+        assert cp2.scheduled_date is None
+        assert cp2.scheduled_time is None
+        assert cp2.platform_target is None
 
 
 class TestCampaignOriginalContent:
