@@ -18,6 +18,17 @@ class SchedulePieceRequest(BaseModel):
     platform_target: Optional[str] = None
 
 
+class PieceSchedule(BaseModel):
+    piece_index: int
+    scheduled_date: Optional[date] = None
+    scheduled_time: Optional[time] = None
+    platform_target: Optional[str] = None
+
+
+class BulkScheduleRequest(BaseModel):
+    schedules: list[PieceSchedule]
+
+
 class CalendarPiece(BaseModel):
     piece_index: int
     piece: ContentPiece

@@ -1156,6 +1156,101 @@ class TestSchedulePiece:
         assert r.status_code == 409
 
 
+class TestBulkSchedule:
+    def _campaign_with_pieces(self, _isolated_store, *, owner_id=None):
+        campaign = Campaign(
+            brief=CampaignBrief(product_or_service="BulkCo", goal="Plan"),
+            owner_id=owner_id,
+            workspace_id=TEST_WS_ID,
+            content=CampaignContent(pieces=[
+                ContentPiece(content_type="headline", content="First"),
+                ContentPiece(content_type="social_post", channel="instagram", content="Second"),
+                ContentPiece(content_type="cta", content="Third"),
+            ]),
+        )
+        _isolated_store._campaigns[campaign.id] = campaign
+        return campaign
+
+    def test_bulk_schedule_happy_path(self, client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store)
+        r = client.post(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/bulk-schedule",
+            json={
+                "schedules": [
+                    {"piece_index": 0, "scheduled_date": "2026-04-01", "scheduled_time": "09:00:00", "platform_target": "email"},
+                    {"piece_index": 2, "scheduled_date": "2026-04-03", "platform_target": "instagram"},
+                ]
+            },
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert "scheduled" in data
+        assert "unscheduled" in data
+        dates = [g["date"] for g in data["scheduled"]]
+        assert "2026-04-01" in dates
+        assert "2026-04-03" in dates
+        unscheduled_indices = [p["piece_index"] for p in data["unscheduled"]]
+        assert 1 in unscheduled_indices
+        saved = _isolated_store._campaigns[campaign.id]
+        assert saved.content.pieces[0].scheduled_date == date(2026, 4, 1)
+        assert saved.content.pieces[0].scheduled_time == time(9, 0)
+        assert saved.content.pieces[0].platform_target == "email"
+        assert saved.content.pieces[2].scheduled_date == date(2026, 4, 3)
+        assert saved.content.pieces[2].platform_target == "instagram"
+
+    def test_bulk_schedule_empty_payload(self, client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store)
+        r = client.post(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/bulk-schedule",
+            json={"schedules": []},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["scheduled"] == []
+        assert len(data["unscheduled"]) == 3
+
+    def test_bulk_schedule_partial_invalid_returns_400_no_update(self, client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store)
+        r = client.post(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/bulk-schedule",
+            json={
+                "schedules": [
+                    {"piece_index": 0, "scheduled_date": "2026-04-01"},
+                    {"piece_index": 99, "scheduled_date": "2026-04-02"},
+                ]
+            },
+        )
+        assert r.status_code == 400
+        # No partial updates applied
+        saved = _isolated_store._campaigns[campaign.id]
+        assert saved.content.pieces[0].scheduled_date is None
+
+    def test_bulk_schedule_viewer_returns_403(self, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store, owner_id=_TEST_USER.id)
+        viewer = User(id="viewer-004", email="v4@example.com", display_name="Viewer 4", roles=[UserRole.VIEWER])
+        _isolated_store._workspace_members[(TEST_WS_ID, viewer.id)] = "viewer"
+        with _as_user(viewer) as c:
+            r = c.post(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/bulk-schedule",
+                json={"schedules": [{"piece_index": 0, "scheduled_date": "2026-04-01"}]},
+            )
+            assert r.status_code == 403
+
+    def test_bulk_schedule_conflict_returns_409(self, authed_client, _isolated_store):
+        campaign = self._campaign_with_pieces(_isolated_store, owner_id=_TEST_USER.id)
+        _isolated_store._members[(campaign.id, _TEST_USER.id)] = "owner"
+        with patch.object(
+            _isolated_store,
+            "update",
+            new=AsyncMock(side_effect=ConcurrentUpdateError("bulk conflict")),
+        ):
+            r = authed_client.post(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/content/bulk-schedule",
+                json={"schedules": [{"piece_index": 0, "scheduled_date": "2026-04-01"}]},
+            )
+        assert r.status_code == 409
+
+
 class TestGetCalendar:
     def test_calendar_groups_by_date_and_unscheduled(self, client, _isolated_store):
         campaign = Campaign(
