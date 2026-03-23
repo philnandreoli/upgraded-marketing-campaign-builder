@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getCampaign, listImageAssets } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
@@ -221,21 +221,31 @@ export default function CampaignDetail() {
           }
         }
       }
-      // Images tab is always clickable when shown
-      if (showImagesTab) {
-        t.push("images");
-      }
     }
     return t;
-  }, [campaign, stageStates, isAtApproval, showImagesTab]);
+  }, [campaign, stageStates, isAtApproval]);
+
+  // All selectable tabs: pipeline stages + images (if enabled)
+  const allTabs = useMemo(() => {
+    if (!showImagesTab) return clickableTabs;
+    // Insert "images" before content_approval so it appears in the right position
+    const idx = clickableTabs.indexOf("content_approval");
+    if (idx !== -1) {
+      const copy = [...clickableTabs];
+      copy.splice(idx, 0, "images");
+      return copy;
+    }
+    return [...clickableTabs, "images"];
+  }, [clickableTabs, showImagesTab]);
 
   // Derive the active tab: honour explicit user click, otherwise show the latest pipeline tab
   const activeTab = useMemo(() => {
-    if (clickableTabs.length === 0) return null;
-    if (userTab && clickableTabs.includes(userTab)) return userTab;
-    // Auto-select the last pipeline tab
-    return clickableTabs[clickableTabs.length - 1];
-  }, [clickableTabs, userTab]);
+    if (allTabs.length === 0) return null;
+    if (userTab && allTabs.includes(userTab)) return userTab;
+    // Auto-select the last *pipeline* tab (not images)
+    const pipelineTabs = allTabs.filter(t => t !== "images");
+    return pipelineTabs[pipelineTabs.length - 1] ?? allTabs[0];
+  }, [allTabs, userTab]);
 
   if (error) {
     return <div className="card" style={{ color: "var(--color-danger)" }}>Error: {error}</div>;
@@ -354,34 +364,49 @@ export default function CampaignDetail() {
     }
   };
 
-  const renderPipelineTabs = () => (
-    <div className="pipeline-tabs">
-      {PIPELINE_STAGES.filter((stage) => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(stage.key))).map((stage) => {
-        const state = stageStates[stage.key] || "pending";
-        const isClickable = clickableTabs.includes(stage.key);
-        return (
+  const renderPipelineTabs = () => {
+    const stages = PIPELINE_STAGES.filter((stage) => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(stage.key)));
+    const imagesBeforeKey = "content_approval";
+    return (
+      <div className="pipeline-tabs">
+        {stages.map((stage) => {
+          const state = stageStates[stage.key] || "pending";
+          const isClickable = clickableTabs.includes(stage.key);
+          return (
+            <React.Fragment key={stage.key}>
+              {stage.key === imagesBeforeKey && allTabs.includes("images") && (
+                <button
+                  className={`pipeline-tab completed${activeTab === "images" ? " selected" : ""}`}
+                  onClick={() => setUserTab("images")}
+                >
+                  <span className="pipeline-tab-icon" aria-hidden="true">🖼️</span>
+                  Images
+                </button>
+              )}
+              <button
+                className={`pipeline-tab ${state}${activeTab === stage.key ? " selected" : ""}${state === "active" && isPipelineRunning ? " running" : ""}`}
+                disabled={!isClickable}
+                onClick={() => isClickable && setUserTab(stage.key)}
+              >
+                <span className="pipeline-tab-icon" aria-hidden="true">{getTabIcon(state, isPipelineRunning)}</span>
+                {stage.label}
+              </button>
+            </React.Fragment>
+          );
+        })}
+        {/* If content_approval is hidden (not in filtered stages), show Images at the end */}
+        {allTabs.includes("images") && !stages.some(s => s.key === imagesBeforeKey) && (
           <button
-            key={stage.key}
-            className={`pipeline-tab ${state}${activeTab === stage.key ? " selected" : ""}${state === "active" && isPipelineRunning ? " running" : ""}`}
-            disabled={!isClickable}
-            onClick={() => isClickable && setUserTab(stage.key)}
+            className={`pipeline-tab completed${activeTab === "images" ? " selected" : ""}`}
+            onClick={() => setUserTab("images")}
           >
-            <span className="pipeline-tab-icon" aria-hidden="true">{getTabIcon(state, isPipelineRunning)}</span>
-            {stage.label}
+            <span className="pipeline-tab-icon" aria-hidden="true">🖼️</span>
+            Images
           </button>
-        );
-      })}
-      {showImagesTab && (
-        <button
-          className={`pipeline-tab completed${activeTab === "images" ? " selected" : ""}`}
-          onClick={() => setUserTab("images")}
-        >
-          <span className="pipeline-tab-icon" aria-hidden="true">🖼️</span>
-          Images
-        </button>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -520,18 +545,29 @@ export default function CampaignDetail() {
                   const state = stageStates[stage.key] || "pending";
                   const isClickable = clickableTabs.includes(stage.key);
                   return (
-                    <button
-                      key={stage.key}
-                      className={`sidebar-stage sidebar-stage-${state}${activeTab === stage.key ? " sidebar-stage-selected" : ""}${isClickable ? " sidebar-stage-clickable" : ""}`}
-                      disabled={!isClickable}
-                      onClick={() => setUserTab(stage.key)}
-                    >
-                      <span className="sidebar-stage-dot" />
-                      <span className="sidebar-stage-label">{stage.label}</span>
-                    </button>
+                    <React.Fragment key={stage.key}>
+                      {stage.key === "content_approval" && allTabs.includes("images") && (
+                        <button
+                          className={`sidebar-stage sidebar-stage-completed${activeTab === "images" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
+                          onClick={() => setUserTab("images")}
+                        >
+                          <span className="sidebar-stage-dot" />
+                          <span className="sidebar-stage-label">Images</span>
+                        </button>
+                      )}
+                      <button
+                        className={`sidebar-stage sidebar-stage-${state}${activeTab === stage.key ? " sidebar-stage-selected" : ""}${isClickable ? " sidebar-stage-clickable" : ""}`}
+                        disabled={!isClickable}
+                        onClick={() => setUserTab(stage.key)}
+                      >
+                        <span className="sidebar-stage-dot" />
+                        <span className="sidebar-stage-label">{stage.label}</span>
+                      </button>
+                    </React.Fragment>
                   );
                 })}
-                {showImagesTab && (
+                {/* If content_approval didn't render, show Images at the end */}
+                {allTabs.includes("images") && !PIPELINE_STAGES.filter(s => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(s.key))).some(s => s.key === "content_approval") && (
                   <button
                     className={`sidebar-stage sidebar-stage-completed${activeTab === "images" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
                     onClick={() => setUserTab("images")}
