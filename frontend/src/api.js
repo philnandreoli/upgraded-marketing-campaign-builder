@@ -70,6 +70,11 @@ export const schedulePiece = (
 export const getCalendar = (workspaceId, campaignId) =>
   request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/calendar`);
 
+export const bulkSchedule = (workspaceId, campaignId, schedules) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/bulk-schedule`, {
+    body: { schedules },
+  });
+
 export const submitClarification = (workspaceId, campaignId, answers) =>
   request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/clarify`, {
     body: { campaign_id: campaignId, answers },
