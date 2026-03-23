@@ -656,10 +656,16 @@ export default function NewCampaign() {
               scheduleAutoSave({ generate_images: value });
             }}
           />
-          <label htmlFor="generate-images">Generate AI images for this campaign</label>
-          <p className="form-check-description">
-            When enabled, the AI pipeline will generate images for your campaign content.
-          </p>
+          <label htmlFor="generate-images">
+            Generate AI images for this campaign
+            <span
+              className="info-hint"
+              title="When enabled, the AI pipeline will generate images for your campaign content."
+              aria-label="More info about AI image generation"
+            >
+              ℹ
+            </span>
+          </label>
         </div>
       )}
       {renderNav(() => handleStepNext(3), !(selectedChannels.includes("social_media") && selectedPlatforms.length === 0), true, 3)}
