@@ -412,7 +412,7 @@ export default function ContentSection({
                           <div className="piece-image-preview" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                             <img
                               src={latestImage.url || latestImage.image_url}
-                              alt={latestImage.prompt ? latestImage.prompt.slice(0, 80) : "Generated image"}
+                              alt={latestImage.prompt || `Generated image for ${piece.content_type || "content"} piece ${i + 1}`}
                               style={{
                                 width: "100%",
                                 maxWidth: "200px",
@@ -435,7 +435,7 @@ export default function ContentSection({
                             className="btn btn-sm btn-outline"
                             disabled={isViewer || !!generatingImages[i]}
                             onClick={() => handleGenerateImage(i)}
-                            aria-label={`Generate image for piece ${i + 1}`}
+                            aria-label={generatingImages[i] ? `Generating image for piece ${i + 1}` : `Generate image for piece ${i + 1}`}
                           >
                             {generatingImages[i] ? (
                               <><span className="spinner" aria-hidden="true" /> Generating…</>
