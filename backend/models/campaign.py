@@ -5,7 +5,7 @@ Campaign data models — represent the marketing campaign lifecycle.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import Enum
 from typing import Optional
 
@@ -121,6 +121,9 @@ class ContentPiece(BaseModel):
         default=None,
         description="AI-generated image creative brief",
     )
+    scheduled_date: Optional[date] = Field(default=None, description="Scheduled publish date")
+    scheduled_time: Optional[time] = Field(default=None, description="Scheduled publish time")
+    platform_target: Optional[str] = Field(default=None, description="Target platform for this piece")
 
 
 class CampaignContent(BaseModel):
