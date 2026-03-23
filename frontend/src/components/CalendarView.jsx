@@ -39,7 +39,7 @@ const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const CAL_VIEW_MODE_KEY = "cal_view_mode";
 
@@ -96,7 +96,7 @@ function getWeekStart(date) {
 
 // Format a date as "Mon D" or "Mon D, YYYY" if year differs from reference
 function formatWeekDay(date, refYear) {
-  const label = `${MONTH_SHORT[date.getMonth()]} ${date.getDate()}`;
+  const label = `${MONTH_ABBR[date.getMonth()]} ${date.getDate()}`;
   return date.getFullYear() !== refYear ? `${label}, ${date.getFullYear()}` : label;
 }
 
@@ -107,6 +107,12 @@ function parseTimeFraction(timeStr) {
   const h = parseInt(parts[0], 10);
   const min = parseInt(parts[1] || "0", 10);
   return h + min / 60;
+}
+
+// Format an integer hour (24h) as a readable label, e.g. 12 → "12 PM", 9 → "9 AM", 14 → "2 PM"
+function formatHour(h) {
+  if (h === 12) return "12 PM";
+  return h < 12 ? `${h} AM` : `${h - 12} PM`;
 }
 
 function ContentPieceCard({ calPiece }) {
@@ -192,7 +198,7 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
               className="cal-week-hour-label"
               style={{ top: `${(h - HOUR_START) * slotHeight}px`, height: `${slotHeight}px` }}
             >
-              {h === 12 ? "12 PM" : h < 12 ? `${h} AM` : `${h - 12} PM`}
+              {formatHour(h)}
             </div>
           ))}
         </div>

@@ -12,6 +12,11 @@ import * as api from '../api';
 const WORKSPACE_ID = 'ws-1';
 const CAMPAIGN_ID = 'camp-1';
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 function makeCalendarResponse(overrides = {}) {
   return {
     scheduled: [],
@@ -81,11 +86,7 @@ describe('CalendarView – month view navigation', () => {
   it('shows month name in header', async () => {
     await renderCalendar();
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
-    const currentMonth = months[new Date().getMonth()];
+    const currentMonth = MONTH_NAMES[new Date().getMonth()];
     expect(screen.getByText(new RegExp(currentMonth))).toBeInTheDocument();
   });
 
@@ -94,12 +95,8 @@ describe('CalendarView – month view navigation', () => {
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
     const now = new Date();
     const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
     fireEvent.click(screen.getByRole('button', { name: /previous month/i }));
-    expect(screen.getByText(new RegExp(months[prevMonth.getMonth()]))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(MONTH_NAMES[prevMonth.getMonth()]))).toBeInTheDocument();
   });
 
   it('navigates to next month', async () => {
@@ -107,12 +104,8 @@ describe('CalendarView – month view navigation', () => {
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
     const now = new Date();
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
     fireEvent.click(screen.getByRole('button', { name: /next month/i }));
-    expect(screen.getByText(new RegExp(months[nextMonth.getMonth()]))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(MONTH_NAMES[nextMonth.getMonth()]))).toBeInTheDocument();
   });
 });
 
@@ -135,25 +128,33 @@ describe('CalendarView – weekly view', () => {
   it('shows week range in nav label', async () => {
     await renderCalendar();
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
-    // Week range label uses "–" separator
-    expect(screen.getByText(/–/)).toBeInTheDocument();
+    // Week range label: "Mmm D – Mmm D" (month abbreviation, day number, en dash separator)
+    const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthPattern = monthAbbrs.join('|');
+    expect(screen.getByText(new RegExp(`(${monthPattern}) \\d+ – (${monthPattern}) \\d+`))).toBeInTheDocument();
   });
 
   it('navigates to previous week', async () => {
     await renderCalendar();
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
-    const before = screen.getByText(/–/).textContent;
+    const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthPattern = monthAbbrs.join('|');
+    const rangeRegex = new RegExp(`(${monthPattern}) \\d+ – (${monthPattern}) \\d+`);
+    const before = screen.getByText(rangeRegex).textContent;
     fireEvent.click(screen.getByRole('button', { name: /previous week/i }));
-    const after = screen.getByText(/–/).textContent;
+    const after = screen.getByText(rangeRegex).textContent;
     expect(after).not.toBe(before);
   });
 
   it('navigates to next week', async () => {
     await renderCalendar();
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
-    const before = screen.getByText(/–/).textContent;
+    const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthPattern = monthAbbrs.join('|');
+    const rangeRegex = new RegExp(`(${monthPattern}) \\d+ – (${monthPattern}) \\d+`);
+    const before = screen.getByText(rangeRegex).textContent;
     fireEvent.click(screen.getByRole('button', { name: /next week/i }));
-    const after = screen.getByText(/–/).textContent;
+    const after = screen.getByText(rangeRegex).textContent;
     expect(after).not.toBe(before);
   });
 
