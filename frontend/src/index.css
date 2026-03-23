@@ -4153,3 +4153,89 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 }
+
+/* ImageAssetCard – action buttons row */
+.image-asset-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+/* Compact card (inline content-section preview) */
+.image-asset-card--compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.image-asset-compact-thumb {
+  width: 100%;
+  max-width: 200px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  display: block;
+}
+
+/* Regenerate modal backdrop + dialog */
+.image-asset-regen-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: tab-fade-in 0.15s ease-out;
+}
+.image-asset-regen-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+.image-asset-regen-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin: 0;
+}
+.image-asset-regen-hint {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.image-asset-regen-textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.image-asset-regen-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+.image-asset-regen-error {
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  margin: 0;
+}
+.image-asset-regen-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

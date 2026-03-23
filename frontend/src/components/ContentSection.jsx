@@ -2,6 +2,7 @@ import { useState } from "react";
 import { submitContentApproval, updatePieceNotes, updatePieceDecision, generateImageAsset } from "../api";
 import { useConfirm } from "../ConfirmDialogContext";
 import { useToast } from "../ToastContext";
+import ImageAssetCard from "./ImageAssetCard";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -410,15 +411,13 @@ export default function ContentSection({
                         )}
                         {hasPieceImage ? (
                           <div className="piece-image-preview" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                            <img
-                              src={latestImage.url || latestImage.image_url}
-                              alt={latestImage.prompt || `Generated image for ${piece.content_type || "content"} piece ${i + 1}`}
-                              style={{
-                                width: "100%",
-                                maxWidth: "200px",
-                                borderRadius: "var(--radius)",
-                                border: "1px solid var(--color-border)",
-                              }}
+                            <ImageAssetCard
+                              asset={latestImage}
+                              workspaceId={workspaceId}
+                              campaignId={campaignId}
+                              canEdit={!isViewer}
+                              compact
+                              onRegenerated={onImageGenerated}
                             />
                             {onViewGallery && (
                               <button
