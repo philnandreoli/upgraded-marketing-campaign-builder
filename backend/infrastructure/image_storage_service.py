@@ -49,6 +49,18 @@ class ImageStorageService:
             content_type=f"image/{fmt_normalized}",
         )
 
+        image_url = await self._generate_sas_url(storage_path)
+        return storage_path, image_url
+
+    async def generate_sas_url(self, storage_path: str) -> str:
+        """Generate a fresh time-limited SAS URL for an existing blob."""
+        return await self._generate_sas_url(storage_path)
+
+    async def _generate_sas_url(self, storage_path: str) -> str:
+        """Internal helper: create a SAS-signed URL for *storage_path*."""
+        container_client = self._blob_service_client.get_container_client(self._container)
+        blob_client = container_client.get_blob_client(storage_path)
+
         starts_on = datetime.now(UTC)
         expires_on = starts_on + timedelta(minutes=self._SAS_TTL_MINUTES)
         user_delegation_key = await self._blob_service_client.get_user_delegation_key(
@@ -70,7 +82,7 @@ class ImageStorageService:
             start=starts_on,
         )
         image_url = f"{blob_client.url}?{sas_token}"
-        return storage_path, image_url
+        return image_url
 
     async def close(self) -> None:
         """Release underlying clients and credential."""
