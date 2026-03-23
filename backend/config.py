@@ -112,6 +112,8 @@ class ImageGenerationSettings(BaseSettings):
     """Image-generation feature settings."""
 
     enabled: bool = Field(default=False, alias="IMAGE_GENERATION_ENABLED")
+    model: str = Field(default="gpt-image-1.5", alias="IMAGE_GENERATION_MODEL")
+    endpoint: str = Field(default="", alias="IMAGE_GENERATION_ENDPOINT")
     azure_storage_account_url: str = Field(default="", alias="AZURE_STORAGE_ACCOUNT_URL")
     azure_storage_container: str = Field(default="campaign-images", alias="AZURE_STORAGE_CONTAINER")
 

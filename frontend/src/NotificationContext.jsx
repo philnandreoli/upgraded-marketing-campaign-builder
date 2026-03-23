@@ -36,6 +36,7 @@ function eventIcon(kind) {
     case "pipeline_started":           return "🚀";
     case "clarification_requested":    return "❓";
     case "content_approval_requested": return "👀";
+    case "image_generated":             return "🖼️";
     default:                           return "🔔";
   }
 }
@@ -55,6 +56,7 @@ function buildFallbackMessage(kind, stageText) {
     case "clarification_completed":    return "Clarification completed";
     case "content_approval_requested": return "Content approval requested";
     case "content_approval_completed": return "Content approval completed";
+    case "image_generated":             return "Image generated";
     case "wait_timeout":               return "Pipeline timed out waiting for input";
     default:
       return kind

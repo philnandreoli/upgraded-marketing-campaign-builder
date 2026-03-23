@@ -15,17 +15,34 @@ from backend.services.image_storage_service import ImageStorageService
 def image_generation_service():
     with (
         patch("backend.infrastructure.image_generation_service.get_settings") as mock_settings,
-        patch("backend.infrastructure.image_generation_service.DefaultAzureCredential"),
-        patch("backend.infrastructure.image_generation_service.AIProjectClient") as mock_project,
+        patch("backend.infrastructure.image_generation_service.DefaultAzureCredential") as mock_cred,
     ):
         mock_settings.return_value = MagicMock(
-            image_generation=MagicMock(enabled=True),
-            azure_ai_project=MagicMock(endpoint="https://project.example.com"),
+            image_generation=MagicMock(
+                enabled=True,
+                model="gpt-image-1.5",
+                endpoint="https://test.openai.azure.com/openai/v1/",
+            ),
         )
-        mock_openai_client = MagicMock()
-        mock_project.return_value.get_openai_client.return_value = mock_openai_client
+        mock_cred_instance = MagicMock()
+        mock_cred_instance.get_token = AsyncMock(return_value=MagicMock(token="fake-token"))
+        mock_cred.return_value = mock_cred_instance
         service = ImageGenerationService()
+        # Attach a mock client that tests can configure
+        service._mock_openai_client = MagicMock()
+        service._mock_openai_client.close = AsyncMock()
     return service
+
+
+def _patch_get_client(service, mock_response=None, side_effect=None):
+    """Helper to patch _get_client to return a mock OpenAI client."""
+    mock_client = service._mock_openai_client
+    if side_effect:
+        mock_client.images.generate = AsyncMock(side_effect=side_effect)
+    elif mock_response:
+        mock_client.images.generate = AsyncMock(return_value=mock_response)
+    service._get_client = AsyncMock(return_value=mock_client)
+    return mock_client
 
 
 class TestImageGenerationService:
@@ -35,13 +52,13 @@ class TestImageGenerationService:
         mock_image = MagicMock()
         mock_image.b64_json = base64.b64encode(expected).decode("ascii")
         mock_response = MagicMock(data=[mock_image])
-        image_generation_service._client.images.generate = AsyncMock(return_value=mock_response)
+        mock_client = _patch_get_client(image_generation_service, mock_response=mock_response)
 
         result = await image_generation_service.generate("A lighthouse at sunset")
 
         assert result == expected
-        kwargs = image_generation_service._client.images.generate.call_args[1]
-        assert kwargs["model"] == "gpt-image-1"
+        kwargs = mock_client.images.generate.call_args[1]
+        assert kwargs["model"] == "gpt-image-1.5"
         assert kwargs["size"] == "1024x1024"
 
     @pytest.mark.asyncio
@@ -49,29 +66,31 @@ class TestImageGenerationService:
         mock_image = MagicMock()
         mock_image.b64_json = base64.b64encode(b"x").decode("ascii")
         mock_response = MagicMock(data=[mock_image])
-        image_generation_service._client.images.generate = AsyncMock(return_value=mock_response)
+        mock_client = _patch_get_client(image_generation_service, mock_response=mock_response)
 
         prompt = "\x00Hello\x1f " + ("A" * (ImageGenerationService.MAX_PROMPT_LENGTH + 20))
-        await image_generation_service.generate(prompt, dimensions="512x512")
+        await image_generation_service.generate(prompt, dimensions="1536x1024")
 
-        kwargs = image_generation_service._client.images.generate.call_args[1]
+        kwargs = mock_client.images.generate.call_args[1]
         assert "\x00" not in kwargs["prompt"]
         assert "\x1f" not in kwargs["prompt"]
         assert len(kwargs["prompt"]) == ImageGenerationService.MAX_PROMPT_LENGTH
-        assert kwargs["size"] == "512x512"
+        assert kwargs["size"] == "1536x1024"
 
     @pytest.mark.asyncio
     async def test_generate_raises_when_disabled(self):
         with (
             patch("backend.infrastructure.image_generation_service.get_settings") as mock_settings,
-            patch("backend.infrastructure.image_generation_service.DefaultAzureCredential"),
-            patch("backend.infrastructure.image_generation_service.AIProjectClient") as mock_project,
+            patch("backend.infrastructure.image_generation_service.DefaultAzureCredential") as mock_cred,
         ):
             mock_settings.return_value = MagicMock(
-                image_generation=MagicMock(enabled=False),
-                azure_ai_project=MagicMock(endpoint="https://project.example.com"),
+                image_generation=MagicMock(
+                    enabled=False,
+                    model="gpt-image-1.5",
+                    endpoint="https://test.openai.azure.com/openai/v1/",
+                ),
             )
-            mock_project.return_value.get_openai_client.return_value = MagicMock()
+            mock_cred.return_value = MagicMock()
             service = ImageGenerationService()
 
         with pytest.raises(RuntimeError, match="Image generation is disabled"):
@@ -82,23 +101,25 @@ class TestImageGenerationService:
         mock_image = MagicMock()
         mock_image.b64_json = base64.b64encode(b"ok").decode("ascii")
         mock_response = MagicMock(data=[mock_image])
-        image_generation_service._client.images.generate = AsyncMock(
-            side_effect=[Exception("transient"), mock_response]
+        mock_client = _patch_get_client(
+            image_generation_service,
+            side_effect=[Exception("transient"), mock_response],
         )
 
         result = await image_generation_service.generate("test")
         assert result == b"ok"
-        assert image_generation_service._client.images.generate.call_count == 2
+        assert mock_client.images.generate.call_count == 2
 
     @pytest.mark.asyncio
     async def test_generate_raises_after_max_retries(self, image_generation_service):
-        image_generation_service._client.images.generate = AsyncMock(
-            side_effect=Exception("permanent")
+        mock_client = _patch_get_client(
+            image_generation_service,
+            side_effect=Exception("permanent"),
         )
 
         with pytest.raises(Exception, match="permanent"):
             await image_generation_service.generate("test")
-        assert image_generation_service._client.images.generate.call_count == 3
+        assert mock_client.images.generate.call_count == 3
 
     @pytest.mark.asyncio
     async def test_generate_rejects_empty_prompt_after_sanitization(self, image_generation_service):

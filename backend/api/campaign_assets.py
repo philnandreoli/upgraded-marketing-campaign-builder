@@ -111,15 +111,29 @@ async def generate_asset(
     )
 
     gen_service = get_image_generation_service()
-    image_bytes = await gen_service.generate(prompt, dimensions)
+    try:
+        image_bytes = await gen_service.generate(prompt, dimensions)
+    except Exception:
+        logger.exception("Image generation failed for campaign %s, piece %d", campaign.id, idx)
+        raise HTTPException(
+            status_code=502,
+            detail="Image generation service returned an error. Check server logs for details.",
+        )
 
     storage_service = get_image_storage_service()
-    storage_path, image_url = await storage_service.upload(
-        campaign_id=campaign.id,
-        asset_id=asset.id,
-        image_bytes=image_bytes,
-        fmt=asset.format,
-    )
+    try:
+        storage_path, image_url = await storage_service.upload(
+            campaign_id=campaign.id,
+            asset_id=asset.id,
+            image_bytes=image_bytes,
+            fmt=asset.format,
+        )
+    except Exception:
+        logger.exception("Image storage upload failed for campaign %s, asset %s", campaign.id, asset.id)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to upload generated image to storage. Check server logs for details.",
+        )
 
     asset.storage_path = storage_path
     asset.image_url = image_url

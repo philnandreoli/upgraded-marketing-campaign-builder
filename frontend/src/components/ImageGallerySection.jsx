@@ -33,7 +33,7 @@ export default function ImageGallerySection({ workspaceId, campaignId, events, i
   const load = useCallback(async () => {
     try {
       const data = await listImageAssets(workspaceId, campaignId);
-      setAssets(data?.assets ?? []);
+      setAssets(data?.items ?? []);
     } catch (err) {
       setError(err.message);
     }
@@ -150,7 +150,7 @@ export default function ImageGallerySection({ workspaceId, campaignId, events, i
               ✕
             </button>
             <img
-              src={lightbox.url}
+              src={lightbox.image_url || lightbox.url}
               alt={lightbox.prompt ? truncatePrompt(lightbox.prompt, 80) : "Generated image"}
               className="image-gallery-lightbox-img"
             />
