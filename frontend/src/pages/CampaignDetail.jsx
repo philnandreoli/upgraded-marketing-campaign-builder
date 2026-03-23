@@ -375,6 +375,7 @@ export default function CampaignDetail() {
           <CalendarView
             workspaceId={effectiveWorkspaceId}
             campaignId={campaign.id}
+            isViewer={isViewer}
           />
         );
       default:
