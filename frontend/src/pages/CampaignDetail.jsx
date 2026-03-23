@@ -184,7 +184,7 @@ export default function CampaignDetail() {
     if (!effectiveWorkspaceId || !campaign?.id || !imageGenerationEnabled) return;
     try {
       const data = await listImageAssets(effectiveWorkspaceId, campaign.id);
-      setImageAssets(data?.assets ?? []);
+      setImageAssets(data?.items ?? []);
     } catch {
       // silently ignore — gallery section handles errors independently
     }

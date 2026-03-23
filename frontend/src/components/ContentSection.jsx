@@ -2,6 +2,7 @@ import { useState } from "react";
 import { submitContentApproval, updatePieceNotes, updatePieceDecision, generateImageAsset } from "../api";
 import { useConfirm } from "../ConfirmDialogContext";
 import { useToast } from "../ToastContext";
+import { useNotifications } from "../NotificationContext";
 import ImageAssetCard from "./ImageAssetCard";
 
 const PLATFORM_LABELS = {
@@ -61,6 +62,7 @@ export default function ContentSection({
 }) {
   const confirm = useConfirm();
   const { addToast } = useToast();
+  const { addEvent } = useNotifications();
   const [editing, setEditing] = useState({});      // { [index]: editedText }
   const [notes, setNotes] = useState({});           // { [index]: noteText }
   const [decisions, setDecisions] = useState({});   // { [index]: "approved" | "rejected" }
@@ -164,8 +166,20 @@ export default function ContentSection({
     try {
       await generateImageAsset(workspaceId, campaignId, pieceIndex);
       onImageGenerated?.();
+      addToast({ type: "success", stage: "Image Generated", message: `Image for content piece ${pieceIndex + 1} generated successfully.` });
+      addEvent({
+        type: "image_generated",
+        stage: "image_generation",
+        message: `Image for content piece ${pieceIndex + 1} generated successfully.`,
+        campaign_id: campaignId,
+        workspace_id: workspaceId,
+        timestamp: new Date().toISOString(),
+      });
     } catch (err) {
-      setImageErrors((prev) => ({ ...prev, [pieceIndex]: err.message }));
+      const detail = err.body?.detail ?? err.detail ?? err.message;
+      const status = err.status ?? "unknown";
+      console.error(`[ImageGeneration] Failed for piece ${pieceIndex}: HTTP ${status} — ${detail}`, err.body ?? err);
+      setImageErrors((prev) => ({ ...prev, [pieceIndex]: `HTTP ${status}: ${detail}` }));
     } finally {
       setGeneratingImages((prev) => ({ ...prev, [pieceIndex]: false }));
     }
