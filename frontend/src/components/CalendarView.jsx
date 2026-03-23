@@ -204,7 +204,7 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
         </div>
 
         {/* Day columns */}
-        {dayData.map(({ iso, timed }, colIdx) => {
+        {dayData.map(({ iso, timed }) => {
           const isToday = iso === todayISO;
           return (
             <div key={iso} className={`cal-week-day-col${isToday ? " cal-week-day-col--today" : ""}`}>
@@ -221,7 +221,7 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
                 const timeFrac = parseTimeFraction(cp.piece.scheduled_time);
                 if (timeFrac === null) return null;
                 const topFrac = timeFrac - HOUR_START;
-                const clampedTop = Math.max(0, Math.min(topFrac, HOURS.length - 0.5));
+                const clampedTop = Math.max(0, Math.min(topFrac, HOUR_END - HOUR_START));
                 return (
                   <div
                     key={cp.piece_index}
@@ -248,9 +248,10 @@ export default function CalendarView({ workspaceId, campaignId }) {
   const [calData, setCalData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [calViewMode, setCalViewMode] = useState(
-    () => localStorage.getItem(CAL_VIEW_MODE_KEY) || "month"
-  );
+  const [calViewMode, setCalViewMode] = useState(() => {
+    const stored = localStorage.getItem(CAL_VIEW_MODE_KEY);
+    return stored === "week" || stored === "month" ? stored : "month";
+  });
 
   const handleCalViewMode = (mode) => {
     setCalViewMode(mode);

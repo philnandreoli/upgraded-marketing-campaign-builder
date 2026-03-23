@@ -4620,7 +4620,7 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   overflow: hidden;
 }
 
-.cal-week-day-col:first-of-type { border-left: none; }
+.cal-week-timed-gutter-col + .cal-week-day-col { border-left: none; }
 
 .cal-week-day-col--today {
   background: rgba(13, 148, 136, 0.04);
