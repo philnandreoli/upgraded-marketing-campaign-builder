@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getCampaign } from "../api";
+import { getCampaign, listImageAssets } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import usePolling from "../hooks/usePolling";
 import StrategySection from "../components/StrategySection.jsx";
@@ -62,6 +62,7 @@ export default function CampaignDetail() {
     () => localStorage.getItem(VIEW_MODE_KEY) || "focus"
   );
   const [badgePulse, setBadgePulse] = useState(false);
+  const [imageAssets, setImageAssets] = useState([]);
   const { events, connected, connectionFailed } = useWebSocket(id);
   const { isViewer, isAdmin, user, imageGenerationAvailable } = useUser();
   const prevStatusRef = useRef(null);
@@ -174,8 +175,27 @@ export default function CampaignDetail() {
   const isAtApproval = campaign?.status === "content_approval" || campaign?.status === "approved" || campaign?.status === "rejected" || campaign?.status === "manual_review_required";
   const HIDDEN_AT_APPROVAL = ["content", "content_revision"];
 
-  // Whether the Images tab should be shown
+  // Whether the Images tab should be shown / image generation is enabled
   const showImagesTab = imageGenerationAvailable && campaign?.brief?.generate_images === true;
+  const imageGenerationEnabled = showImagesTab;
+
+  // Fetch image assets when image generation is enabled for this campaign
+  const loadImageAssets = useCallback(async () => {
+    if (!effectiveWorkspaceId || !campaign?.id || !imageGenerationEnabled) return;
+    try {
+      const data = await listImageAssets(effectiveWorkspaceId, campaign.id);
+      setImageAssets(data?.assets ?? []);
+    } catch {
+      // silently ignore — gallery section handles errors independently
+    }
+  }, [effectiveWorkspaceId, campaign?.id, imageGenerationEnabled]);
+
+  useEffect(() => {
+    if (!imageGenerationEnabled) return;
+    loadImageAssets();
+  }, [loadImageAssets, imageGenerationEnabled]);
+
+  const handleViewGallery = useCallback(() => setUserTab("images"), []);
 
   // Clickable tabs: completed stages + the currently active stage
   const clickableTabs = useMemo(() => {
@@ -261,6 +281,13 @@ export default function CampaignDetail() {
             error={errors.content}
             socialPlatforms={campaign.brief?.social_media_platforms || []}
             status={campaign.status}
+            campaignId={campaign.id}
+            workspaceId={effectiveWorkspaceId}
+            imageAssets={imageAssets}
+            imageGenerationEnabled={imageGenerationEnabled}
+            isViewer={isViewer}
+            onImageGenerated={loadImageAssets}
+            onViewGallery={showImagesTab ? handleViewGallery : undefined}
           />
         );
       case "channel_plan":
@@ -283,6 +310,13 @@ export default function CampaignDetail() {
             error={errors.content_revision}
             socialPlatforms={campaign.brief?.social_media_platforms || []}
             status={campaign.status}
+            campaignId={campaign.id}
+            workspaceId={effectiveWorkspaceId}
+            imageAssets={imageAssets}
+            imageGenerationEnabled={imageGenerationEnabled}
+            isViewer={isViewer}
+            onImageGenerated={loadImageAssets}
+            onViewGallery={showImagesTab ? handleViewGallery : undefined}
           />
         );
       case "content_approval":
@@ -296,6 +330,11 @@ export default function CampaignDetail() {
             workspaceId={effectiveWorkspaceId}
             onApprovalSubmitted={load}
             status={campaign.status}
+            imageAssets={imageAssets}
+            imageGenerationEnabled={imageGenerationEnabled}
+            isViewer={isViewer}
+            onImageGenerated={loadImageAssets}
+            onViewGallery={showImagesTab ? handleViewGallery : undefined}
           />
         );
       case "images":
