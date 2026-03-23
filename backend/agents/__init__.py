@@ -17,6 +17,7 @@ from backend.orchestration.content_creator_agent import ContentCreatorAgent
 from backend.orchestration.channel_planner_agent import ChannelPlannerAgent
 from backend.orchestration.analytics_agent import AnalyticsAgent
 from backend.orchestration.review_qa_agent import ReviewQAAgent
+from backend.orchestration.scheduling_agent import SchedulingAgent
 from backend.orchestration.coordinator_agent import CoordinatorAgent
 
 __all__ = [
@@ -26,5 +27,6 @@ __all__ = [
     "ChannelPlannerAgent",
     "AnalyticsAgent",
     "ReviewQAAgent",
+    "SchedulingAgent",
     "CoordinatorAgent",
 ]

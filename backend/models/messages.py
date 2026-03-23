@@ -30,6 +30,7 @@ class AgentType(str, Enum):
     CHANNEL_PLANNER = "channel_planner"
     ANALYTICS = "analytics"
     REVIEW_QA = "review_qa"
+    SCHEDULER = "scheduler"
 
 
 class AgentMessage(BaseModel):

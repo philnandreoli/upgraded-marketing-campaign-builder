@@ -90,6 +90,12 @@ CONTENT_REVISION_RESPONSE = json.dumps({
     ],
 })
 
+# Scheduling agent response — assigns dates within the campaign date range
+SCHEDULING_RESPONSE = json.dumps([
+    {"piece_index": 0, "scheduled_date": "2026-04-07", "scheduled_time": "09:00", "platform_target": None, "rationale": "Email launch Tuesday"},
+    {"piece_index": 1, "scheduled_date": "2026-04-14", "scheduled_time": "10:00", "platform_target": None, "rationale": "CTA follow-up"},
+])
+
 # Clarification pass — no follow-up questions needed
 CLARIFICATION_RESPONSE = json.dumps({
     "needs_clarification": False,
@@ -111,14 +117,15 @@ def _stage_responses():
     """Return a side_effect list matching the pipeline stage order.
 
     The first call is the clarification pass (Strategy Agent), followed
-    by the pipeline stages: Strategy, Content, Channel, Analytics, Review,
-    then the automatic Content Revision.
+    by the pipeline stages: Strategy, Content, Channel, Scheduling (sub-step),
+    Analytics, Review, then the automatic Content Revision.
     """
     return [
         CLARIFICATION_RESPONSE,
         STRATEGY_RESPONSE,
         CONTENT_RESPONSE,
         CHANNEL_RESPONSE,
+        SCHEDULING_RESPONSE,
         ANALYTICS_RESPONSE,
         REVIEW_RESPONSE,
         CONTENT_REVISION_RESPONSE,
@@ -643,6 +650,7 @@ class TestClarificationResumeSkipLLM:
             STRATEGY_RESPONSE,
             CONTENT_RESPONSE,
             CHANNEL_RESPONSE,
+            SCHEDULING_RESPONSE,
             ANALYTICS_RESPONSE,
             REVIEW_RESPONSE,
             CONTENT_REVISION_RESPONSE,
@@ -683,8 +691,8 @@ class TestClarificationResumeSkipLLM:
         updated = await store.get(campaign.id)
         assert updated.clarification_questions == [{"id": "q1", "question": "Target?"}]
 
-        # Only 6 LLM calls (no gather_clarifications)
-        assert mock_llm.chat_json.call_count == 6
+        # Only 7 LLM calls (no gather_clarifications)
+        assert mock_llm.chat_json.call_count == 7
 
     @pytest.mark.asyncio
     async def test_branch_b_questions_present_no_answers_re_emits_requested(
@@ -702,6 +710,7 @@ class TestClarificationResumeSkipLLM:
             STRATEGY_RESPONSE,
             CONTENT_RESPONSE,
             CHANNEL_RESPONSE,
+            SCHEDULING_RESPONSE,
             ANALYTICS_RESPONSE,
             REVIEW_RESPONSE,
             CONTENT_REVISION_RESPONSE,
@@ -754,8 +763,8 @@ class TestClarificationResumeSkipLLM:
         updated = await store.get(campaign.id)
         assert updated.clarification_questions == [{"id": "q1", "question": "Target?"}]
 
-        # 6 LLM calls (no gather_clarifications)
-        assert mock_llm.chat_json.call_count == 6
+        # 7 LLM calls (no gather_clarifications)
+        assert mock_llm.chat_json.call_count == 7
 
     @pytest.mark.asyncio
     async def test_branch_c_no_questions_calls_llm_fresh(
@@ -771,6 +780,7 @@ class TestClarificationResumeSkipLLM:
             STRATEGY_RESPONSE,
             CONTENT_RESPONSE,
             CHANNEL_RESPONSE,
+            SCHEDULING_RESPONSE,
             ANALYTICS_RESPONSE,
             REVIEW_RESPONSE,
             CONTENT_REVISION_RESPONSE,
@@ -805,8 +815,8 @@ class TestClarificationResumeSkipLLM:
         assert "clarification_started" in event_names
         assert "clarification_skipped" in event_names
 
-        # 7 LLM calls: 1 gather_clarifications + 6 pipeline stages
-        assert mock_llm.chat_json.call_count == 7
+        # 8 LLM calls: 1 gather_clarifications + 7 pipeline stages
+        assert mock_llm.chat_json.call_count == 8
 
 
 class TestTransitionValidation:
@@ -1202,6 +1212,7 @@ class TestCoordinatorCheckpoints:
                 STRATEGY_RESPONSE,
                 CONTENT_RESPONSE,
                 CHANNEL_RESPONSE,
+                SCHEDULING_RESPONSE,
                 ANALYTICS_RESPONSE,
                 REVIEW_RESPONSE,
                 CONTENT_REVISION_RESPONSE,
@@ -1560,6 +1571,7 @@ class TestCoordinatorResume:
             original_side_effect = [
                 CONTENT_RESPONSE,
                 CHANNEL_RESPONSE,
+                SCHEDULING_RESPONSE,
                 ANALYTICS_RESPONSE,
                 REVIEW_RESPONSE,
                 CONTENT_REVISION_RESPONSE,
@@ -1608,9 +1620,9 @@ class TestCoordinatorResume:
         assert result.analytics_plan is not None
         assert result.review is not None
 
-        # Strategy LLM call must not have been made — only 5 calls (content,
-        # channel, analytics, review, content_revision)
-        assert mock_llm.chat_json.call_count == 5
+        # Strategy LLM call must not have been made — only 6 calls (content,
+        # channel, scheduling, analytics, review, content_revision)
+        assert mock_llm.chat_json.call_count == 6
 
     @pytest.mark.asyncio
     async def test_resume_clarification_with_existing_answers(
@@ -1648,11 +1660,12 @@ class TestCoordinatorResume:
             mock_llm = MagicMock()
             # No gather_clarifications call — Branch A skips the LLM because
             # both clarification_questions and clarification_answers exist.
-            # Only the 6 pipeline stages hit the LLM.
+            # Only the 7 pipeline stages hit the LLM (including scheduling sub-step).
             mock_llm.chat_json = AsyncMock(side_effect=[
                 STRATEGY_RESPONSE,
                 CONTENT_RESPONSE,
                 CHANNEL_RESPONSE,
+                SCHEDULING_RESPONSE,
                 ANALYTICS_RESPONSE,
                 REVIEW_RESPONSE,
                 CONTENT_REVISION_RESPONSE,
@@ -1690,8 +1703,8 @@ class TestCoordinatorResume:
         assert result.analytics_plan is not None
         assert result.review is not None
 
-        # gather_clarifications must NOT have been called (6 calls, not 7)
-        assert mock_llm.chat_json.call_count == 6
+        # gather_clarifications must NOT have been called (7 calls, not 8)
+        assert mock_llm.chat_json.call_count == 7
 
     @pytest.mark.asyncio
     async def test_resume_with_no_checkpoint_starts_fresh(self, store, brief, mock_on_event):
