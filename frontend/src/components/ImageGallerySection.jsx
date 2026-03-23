@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { listImageAssets } from "../api";
+import ImageAssetCard from "./ImageAssetCard";
 
 function formatTimestamp(iso) {
   if (!iso) return "";
@@ -24,7 +25,7 @@ function truncatePrompt(prompt, maxLen = 120) {
   return prompt.length > maxLen ? prompt.slice(0, maxLen) + "…" : prompt;
 }
 
-export default function ImageGallerySection({ workspaceId, campaignId, events }) {
+export default function ImageGallerySection({ workspaceId, campaignId, events, isViewer = false }) {
   const [assets, setAssets] = useState(null);
   const [error, setError] = useState(null);
   const [lightbox, setLightbox] = useState(null);
@@ -116,35 +117,15 @@ export default function ImageGallerySection({ workspaceId, campaignId, events })
             <h3 className="image-gallery-group-header">{label}</h3>
             <div className="image-gallery-grid">
               {groupAssets.map((asset) => (
-                <div key={asset.id} className="image-gallery-card">
-                  <button
-                    className="image-gallery-thumb-btn"
-                    onClick={() => setLightbox(asset)}
-                    aria-label={`View full image: ${asset.prompt ? truncatePrompt(asset.prompt, 60) : "generated image"}`}
-                  >
-                    <img
-                      src={asset.url}
-                      alt={asset.prompt ? truncatePrompt(asset.prompt, 80) : "Generated image"}
-                      className="image-gallery-thumb"
-                      loading="lazy"
-                    />
-                  </button>
-                  <div className="image-gallery-card-meta">
-                    {asset.prompt && (
-                      <p className="image-gallery-prompt" title={asset.prompt}>
-                        {truncatePrompt(asset.prompt)}
-                      </p>
-                    )}
-                    <div className="image-gallery-card-details">
-                      {asset.dimensions && (
-                        <span className="image-gallery-badge">{formatDimensions(asset.dimensions)}</span>
-                      )}
-                      {asset.created_at && (
-                        <span className="image-gallery-timestamp">{formatTimestamp(asset.created_at)}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <ImageAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  workspaceId={workspaceId}
+                  campaignId={campaignId}
+                  canEdit={!isViewer}
+                  onOpenLightbox={setLightbox}
+                  onRegenerated={load}
+                />
               ))}
             </div>
           </div>
