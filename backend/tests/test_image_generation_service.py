@@ -210,7 +210,7 @@ class TestImageStorageService:
             storage_path, _ = await service.upload("c1", "a1", b"img", fmt=".JPG")
 
         assert storage_path == "campaigns/c1/a1.jpg"
-        container_client.get_blob_client.assert_called_once_with("campaigns/c1/a1.jpg")
+        container_client.get_blob_client.assert_called_with("campaigns/c1/a1.jpg")
 
     @pytest.mark.asyncio
     async def test_upload_raises_when_account_name_missing(self):

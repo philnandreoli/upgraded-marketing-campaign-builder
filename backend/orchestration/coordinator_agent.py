@@ -973,6 +973,10 @@ class CoordinatorAgent:
                     "Content approval wait timed out for campaign %s — escalating to MANUAL_REVIEW_REQUIRED",
                     campaign.id,
                 )
+                # Re-read in case piece decisions bumped the version while waiting.
+                refreshed = await self._store.get(campaign.id)
+                if refreshed is not None:
+                    campaign = refreshed
                 self._transition(campaign, CampaignStatus.MANUAL_REVIEW_REQUIRED)
                 await self._store.update(campaign)
                 await self._emit("wait_timeout", {
@@ -983,6 +987,12 @@ class CoordinatorAgent:
                 return campaign
 
             await self._save_checkpoint(campaign, "content_approval")
+
+            # Re-read from DB — individual piece decisions made via the API
+            # while the coordinator was waiting will have bumped the version.
+            refreshed = await self._store.get(campaign.id)
+            if refreshed is not None:
+                campaign = refreshed
 
             # Handle campaign-level rejection
             if human_response.reject_campaign:

@@ -168,4 +168,19 @@ async def list_assets(
     if content_piece_index is not None:
         assets = [a for a in assets if a.content_piece_index == content_piece_index]
 
+    # Refresh SAS URLs so they are always valid when returned to the client.
+    storage_service = None
+    for asset in assets:
+        if asset.storage_path:
+            try:
+                if storage_service is None:
+                    storage_service = get_image_storage_service()
+                asset.image_url = await storage_service.generate_sas_url(asset.storage_path)
+            except Exception:
+                logger.warning(
+                    "Failed to refresh SAS URL for asset %s — returning stale URL",
+                    asset.id,
+                    exc_info=True,
+                )
+
     return ImageAssetListResponse(items=[_asset_to_response(a) for a in assets])
