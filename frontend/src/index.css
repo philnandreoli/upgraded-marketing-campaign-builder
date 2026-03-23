@@ -654,6 +654,27 @@ a:hover { color: var(--color-primary-hover); }
   margin-top: -0.25rem;
   margin-bottom: 0.25rem;
 }
+.info-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 0.35rem;
+  font-size: 0.65rem;
+  font-style: normal;
+  color: var(--color-text-muted);
+  border: 1.5px solid var(--color-border);
+  border-radius: 50%;
+  cursor: help;
+  vertical-align: middle;
+  transition: color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.info-hint:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
 
 /* Notification categories list */
 .notif-category-list {
