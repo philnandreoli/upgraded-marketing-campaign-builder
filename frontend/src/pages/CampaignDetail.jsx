@@ -10,6 +10,7 @@ import AnalyticsSection from "../components/AnalyticsSection.jsx";
 import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
 import ImageGallerySection from "../components/ImageGallerySection.jsx";
+import CalendarView from "../components/CalendarView.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import ProgressIndicator from "../components/ProgressIndicator.jsx";
 import Toast from "../components/Toast.jsx";
@@ -179,6 +180,9 @@ export default function CampaignDetail() {
   const showImagesTab = imageGenerationAvailable && campaign?.brief?.generate_images === true;
   const imageGenerationEnabled = showImagesTab;
 
+  // Whether the Calendar tab should be shown (campaign has content pieces)
+  const showCalendarTab = (campaign?.content?.pieces?.length ?? 0) > 0;
+
   // Fetch image assets when image generation is enabled for this campaign
   const loadImageAssets = useCallback(async () => {
     if (!effectiveWorkspaceId || !campaign?.id || !imageGenerationEnabled) return;
@@ -225,25 +229,36 @@ export default function CampaignDetail() {
     return t;
   }, [campaign, stageStates, isAtApproval]);
 
-  // All selectable tabs: pipeline stages + images (if enabled)
+  // All selectable tabs: pipeline stages + images (if enabled) + calendar (if has content)
   const allTabs = useMemo(() => {
-    if (!showImagesTab) return clickableTabs;
-    // Insert "images" before content_approval so it appears in the right position
-    const idx = clickableTabs.indexOf("content_approval");
-    if (idx !== -1) {
-      const copy = [...clickableTabs];
-      copy.splice(idx, 0, "images");
-      return copy;
+    let tabs = [...clickableTabs];
+    if (showImagesTab) {
+      // Insert "images" before content_approval so it appears in the right position
+      const idx = tabs.indexOf("content_approval");
+      if (idx !== -1) {
+        tabs.splice(idx, 0, "images");
+      } else {
+        tabs.push("images");
+      }
     }
-    return [...clickableTabs, "images"];
-  }, [clickableTabs, showImagesTab]);
+    if (showCalendarTab) {
+      // Insert "calendar" after "channel_plan" if present, else at the end
+      const idx = tabs.indexOf("channel_plan");
+      if (idx !== -1) {
+        tabs.splice(idx + 1, 0, "calendar");
+      } else {
+        tabs.push("calendar");
+      }
+    }
+    return tabs;
+  }, [clickableTabs, showImagesTab, showCalendarTab]);
 
   // Derive the active tab: honour explicit user click, otherwise show the latest pipeline tab
   const activeTab = useMemo(() => {
     if (allTabs.length === 0) return null;
     if (userTab && allTabs.includes(userTab)) return userTab;
-    // Auto-select the last *pipeline* tab (not images)
-    const pipelineTabs = allTabs.filter(t => t !== "images");
+    // Auto-select the last *pipeline* tab (not images or calendar)
+    const pipelineTabs = allTabs.filter(t => t !== "images" && t !== "calendar");
     return pipelineTabs[pipelineTabs.length - 1] ?? allTabs[0];
   }, [allTabs, userTab]);
 
@@ -355,6 +370,13 @@ export default function CampaignDetail() {
             events={events}
           />
         );
+      case "calendar":
+        return (
+          <CalendarView
+            workspaceId={effectiveWorkspaceId}
+            campaignId={campaign.id}
+          />
+        );
       default:
         return (
           <div className="card empty-state">
@@ -367,6 +389,7 @@ export default function CampaignDetail() {
   const renderPipelineTabs = () => {
     const stages = PIPELINE_STAGES.filter((stage) => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(stage.key)));
     const imagesBeforeKey = "content_approval";
+    const calendarAfterKey = "channel_plan";
     return (
       <div className="pipeline-tabs">
         {stages.map((stage) => {
@@ -391,6 +414,15 @@ export default function CampaignDetail() {
                 <span className="pipeline-tab-icon" aria-hidden="true">{getTabIcon(state, isPipelineRunning)}</span>
                 {stage.label}
               </button>
+              {stage.key === calendarAfterKey && allTabs.includes("calendar") && (
+                <button
+                  className={`pipeline-tab completed${activeTab === "calendar" ? " selected" : ""}`}
+                  onClick={() => setUserTab("calendar")}
+                >
+                  <span className="pipeline-tab-icon" aria-hidden="true">📅</span>
+                  Calendar
+                </button>
+              )}
             </React.Fragment>
           );
         })}
@@ -402,6 +434,16 @@ export default function CampaignDetail() {
           >
             <span className="pipeline-tab-icon" aria-hidden="true">🖼️</span>
             Images
+          </button>
+        )}
+        {/* If channel_plan is hidden (not in filtered stages), show Calendar at the end */}
+        {allTabs.includes("calendar") && !stages.some(s => s.key === calendarAfterKey) && (
+          <button
+            className={`pipeline-tab completed${activeTab === "calendar" ? " selected" : ""}`}
+            onClick={() => setUserTab("calendar")}
+          >
+            <span className="pipeline-tab-icon" aria-hidden="true">📅</span>
+            Calendar
           </button>
         )}
       </div>
@@ -563,6 +605,15 @@ export default function CampaignDetail() {
                         <span className="sidebar-stage-dot" />
                         <span className="sidebar-stage-label">{stage.label}</span>
                       </button>
+                      {stage.key === "channel_plan" && allTabs.includes("calendar") && (
+                        <button
+                          className={`sidebar-stage sidebar-stage-completed${activeTab === "calendar" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
+                          onClick={() => setUserTab("calendar")}
+                        >
+                          <span className="sidebar-stage-dot" />
+                          <span className="sidebar-stage-label">Calendar</span>
+                        </button>
+                      )}
                     </React.Fragment>
                   );
                 })}
@@ -574,6 +625,16 @@ export default function CampaignDetail() {
                   >
                     <span className="sidebar-stage-dot" />
                     <span className="sidebar-stage-label">Images</span>
+                  </button>
+                )}
+                {/* If channel_plan didn't render, show Calendar at the end */}
+                {allTabs.includes("calendar") && !PIPELINE_STAGES.filter(s => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(s.key))).some(s => s.key === "channel_plan") && (
+                  <button
+                    className={`sidebar-stage sidebar-stage-completed${activeTab === "calendar" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
+                    onClick={() => setUserTab("calendar")}
+                  >
+                    <span className="sidebar-stage-dot" />
+                    <span className="sidebar-stage-label">Calendar</span>
                   </button>
                 )}
               </div>
