@@ -4818,3 +4818,66 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
     width: 100%;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Drag-and-drop styles                                                 */
+/* ------------------------------------------------------------------ */
+
+/* Draggable cards show a grab cursor */
+.cal-piece-card--draggable {
+  cursor: grab;
+}
+
+.cal-piece-card--draggable:active {
+  cursor: grabbing;
+}
+
+/* Source card becomes semi-transparent while being dragged */
+.cal-piece-card--dragging {
+  opacity: 0.4;
+}
+
+/* Drop target highlight on month-view day cells */
+.cal-day--drag-over {
+  background: rgba(13, 148, 136, 0.14) !important;
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* Drop target highlight on weekly view all-day cells */
+.cal-week-allday-cell--drag-over {
+  background: rgba(13, 148, 136, 0.14);
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* Drop target highlight on weekly view day columns */
+.cal-week-day-col--drag-over {
+  background: rgba(13, 148, 136, 0.08) !important;
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* Draggable unscheduled card shows grab cursor */
+.cal-unscheduled-card--draggable {
+  cursor: grab;
+}
+
+.cal-unscheduled-card--draggable:active {
+  cursor: grabbing;
+}
+
+/* Source unscheduled card becomes semi-transparent while being dragged */
+.cal-unscheduled-card--dragging {
+  opacity: 0.4;
+}
+
+/* Animate a piece card entering its new position */
+@keyframes cal-piece-drop-in {
+  from { opacity: 0.5; transform: scale(0.96); }
+  to   { opacity: 1;   transform: scale(1); }
+}
+
+.cal-piece-card {
+  animation: none;
+}

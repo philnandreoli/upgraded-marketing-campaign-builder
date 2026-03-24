@@ -9,6 +9,11 @@ import CalendarView from '../components/CalendarView';
 vi.mock('../api');
 import * as api from '../api';
 
+const mockAddToast = vi.hoisted(() => vi.fn());
+vi.mock('../ToastContext', () => ({
+  useToast: () => ({ addToast: mockAddToast, dismissToast: vi.fn() }),
+}));
+
 const WORKSPACE_ID = 'ws-1';
 const CAMPAIGN_ID = 'camp-1';
 
@@ -382,6 +387,265 @@ describe('CalendarView – unscheduled sidebar', () => {
       fireEvent.click(dayBtn);
       await waitFor(() => expect(api.schedulePiece).toHaveBeenCalled());
       await waitFor(() => expect(api.getCalendar).toHaveBeenCalledTimes(2));
+    }
+  });
+});
+
+describe('CalendarView – drag-and-drop', () => {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const d = String(today.getDate()).padStart(2, '0');
+  const todayISO = `${y}-${m}-${d}`;
+
+  // Pick a future date in the same month (or next month) to use as drop target
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + 3);
+  const ty = targetDate.getFullYear();
+  const tm = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const td = String(targetDate.getDate()).padStart(2, '0');
+  const targetISO = `${ty}-${tm}-${td}`;
+
+  const makeScheduledPiece = () => ({
+    piece_index: 5,
+    piece: {
+      content: 'Draggable email piece',
+      content_type: 'headline',
+      channel: 'email',
+      scheduled_date: todayISO,
+      scheduled_time: null,
+    },
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    // Use resetAllMocks to also wipe any leftover mockResolvedValueOnce queues
+    // from previous tests (vi.clearAllMocks only clears call records, not impl queues)
+    vi.resetAllMocks();
+  });
+
+  it('content cards are draggable for non-viewer users', async () => {
+    const calResponse = makeCalendarResponse({
+      scheduled: [{ date: todayISO, pieces: [makeScheduledPiece()] }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={false} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const card = screen.getByText(/Draggable email piece/).closest('.cal-piece-card');
+    expect(card).not.toBeNull();
+    expect(card.getAttribute('draggable')).toBe('true');
+  });
+
+  it('content cards are NOT draggable for viewers (RBAC)', async () => {
+    const calResponse = makeCalendarResponse({
+      scheduled: [{ date: todayISO, pieces: [makeScheduledPiece()] }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={true} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const card = screen.getByText(/Draggable email piece/).closest('.cal-piece-card');
+    expect(card).not.toBeNull();
+    // draggable should be false/absent for viewer
+    expect(card.getAttribute('draggable')).not.toBe('true');
+  });
+
+  it('unscheduled sidebar cards are draggable for non-viewer users', async () => {
+    const calResponse = makeCalendarResponse({
+      unscheduled: [{
+        piece_index: 7,
+        piece: { content: 'Sidebar draggable piece', content_type: 'body_copy', channel: 'email', scheduled_date: null },
+      }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={false} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const card = screen.getByText(/Sidebar draggable piece/).closest('.cal-unscheduled-card');
+    expect(card).not.toBeNull();
+    expect(card.getAttribute('draggable')).toBe('true');
+  });
+
+  it('unscheduled sidebar cards are NOT draggable for viewers', async () => {
+    const calResponse = makeCalendarResponse({
+      unscheduled: [{
+        piece_index: 7,
+        piece: { content: 'Sidebar viewer piece', content_type: 'body_copy', channel: 'email', scheduled_date: null },
+      }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={true} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const card = screen.getByText(/Sidebar viewer piece/).closest('.cal-unscheduled-card');
+    expect(card).not.toBeNull();
+    expect(card.getAttribute('draggable')).not.toBe('true');
+  });
+
+  it('dragging a scheduled piece and dropping onto a new date calls schedulePiece', async () => {
+    vi.spyOn(api, 'schedulePiece').mockResolvedValue({});
+    const calResponse = makeCalendarResponse({
+      scheduled: [{ date: todayISO, pieces: [makeScheduledPiece()] }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={false} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    // Find the draggable card
+    const card = screen.getByText(/Draggable email piece/).closest('.cal-piece-card');
+
+    // Simulate dragStart on the piece card
+    fireEvent.dragStart(card);
+
+    // Find the target day cell using the date number text
+    const targetDayNumber = String(targetDate.getDate());
+    const dayNumbers = screen.getAllByText(targetDayNumber);
+    // Filter to find only calendar day numbers (inside .cal-day-number)
+    const calDayNumber = dayNumbers.find((el) => el.classList.contains('cal-day-number'));
+    if (calDayNumber) {
+      const dayCell = calDayNumber.closest('.cal-day');
+      expect(dayCell).not.toBeNull();
+
+      fireEvent.dragOver(dayCell);
+      fireEvent.drop(dayCell);
+
+      await waitFor(() => expect(api.schedulePiece).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        CAMPAIGN_ID,
+        5,
+        expect.objectContaining({ scheduledDate: targetISO }),
+      ));
+    }
+  });
+
+  it('shows success toast after successful drop', async () => {
+    vi.spyOn(api, 'schedulePiece').mockResolvedValue({});
+    const calResponse = makeCalendarResponse({
+      scheduled: [{ date: todayISO, pieces: [makeScheduledPiece()] }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={false} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const card = screen.getByText(/Draggable email piece/).closest('.cal-piece-card');
+    fireEvent.dragStart(card);
+
+    const targetDayNumber = String(targetDate.getDate());
+    const dayNumbers = screen.getAllByText(targetDayNumber);
+    const calDayNumber = dayNumbers.find((el) => el.classList.contains('cal-day-number'));
+    if (calDayNumber) {
+      const dayCell = calDayNumber.closest('.cal-day');
+      fireEvent.dragOver(dayCell);
+      fireEvent.drop(dayCell);
+
+      await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'success' }),
+      ));
+    }
+  });
+
+  it('rolls back optimistic update and shows error toast on API failure', async () => {
+    vi.spyOn(api, 'schedulePiece').mockRejectedValue(new Error('Server error'));
+    const calResponse = makeCalendarResponse({
+      scheduled: [{ date: todayISO, pieces: [makeScheduledPiece()] }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={false} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    // Card should be visible before drag
+    expect(screen.getByText(/Draggable email piece/)).toBeInTheDocument();
+
+    const card = screen.getByText(/Draggable email piece/).closest('.cal-piece-card');
+    fireEvent.dragStart(card);
+
+    const targetDayNumber = String(targetDate.getDate());
+    const dayNumbers = screen.getAllByText(targetDayNumber);
+    const calDayNumber = dayNumbers.find((el) => el.classList.contains('cal-day-number'));
+    if (calDayNumber) {
+      const dayCell = calDayNumber.closest('.cal-day');
+      fireEvent.dragOver(dayCell);
+      fireEvent.drop(dayCell);
+
+      // Error toast should be shown after API failure
+      await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'error' }),
+      ));
+
+      // Card should be restored to its original position
+      await waitFor(() => expect(screen.getByText(/Draggable email piece/)).toBeInTheDocument());
+    }
+  });
+
+  it('dragging unscheduled piece to calendar calls schedulePiece', async () => {
+    vi.spyOn(api, 'schedulePiece').mockResolvedValue({});
+    const calResponse = makeCalendarResponse({
+      unscheduled: [{
+        piece_index: 9,
+        piece: { content: 'Unscheduled piece to drag', content_type: 'cta', channel: 'social_media', scheduled_date: null },
+      }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={false} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const card = screen.getByText(/Unscheduled piece to drag/).closest('.cal-unscheduled-card');
+    fireEvent.dragStart(card);
+
+    const targetDayNumber = String(targetDate.getDate());
+    const dayNumbers = screen.getAllByText(targetDayNumber);
+    const calDayNumber = dayNumbers.find((el) => el.classList.contains('cal-day-number'));
+    if (calDayNumber) {
+      const dayCell = calDayNumber.closest('.cal-day');
+      fireEvent.dragOver(dayCell);
+      fireEvent.drop(dayCell);
+
+      await waitFor(() => expect(api.schedulePiece).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        CAMPAIGN_ID,
+        9,
+        expect.objectContaining({ scheduledDate: targetISO }),
+      ));
+    }
+  });
+
+  it('drop target day cell gets drag-over highlight class on dragOver', async () => {
+    const calResponse = makeCalendarResponse({
+      scheduled: [{ date: todayISO, pieces: [makeScheduledPiece()] }],
+    });
+    await renderCalendar(calResponse, { isViewer: false });
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const targetDayNumber = String(targetDate.getDate());
+    const dayNumbers = screen.getAllByText(targetDayNumber);
+    const calDayNumber = dayNumbers.find((el) => el.classList.contains('cal-day-number'));
+    if (calDayNumber) {
+      const dayCell = calDayNumber.closest('.cal-day');
+      fireEvent.dragOver(dayCell);
+      await waitFor(() => {
+        expect(dayCell.classList.contains('cal-day--drag-over')).toBe(true);
+      });
+    }
+  });
+
+  it('drag-over highlight is cleared after dragLeave', async () => {
+    const calResponse = makeCalendarResponse({
+      scheduled: [{ date: todayISO, pieces: [makeScheduledPiece()] }],
+    });
+    api.getCalendar.mockResolvedValue(calResponse);
+    render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} isViewer={false} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const targetDayNumber = String(targetDate.getDate());
+    const dayNumbers = screen.getAllByText(targetDayNumber);
+    const calDayNumber = dayNumbers.find((el) => el.classList.contains('cal-day-number'));
+    if (calDayNumber) {
+      const dayCell = calDayNumber.closest('.cal-day');
+      fireEvent.dragOver(dayCell);
+      // dragLeave with relatedTarget outside the cell clears the highlight
+      fireEvent.dragLeave(dayCell, { relatedTarget: document.body });
+      expect(dayCell.classList.contains('cal-day--drag-over')).toBe(false);
     }
   });
 });
