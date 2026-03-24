@@ -419,8 +419,8 @@ describe('CalendarView – drag-and-drop', () => {
 
   beforeEach(() => {
     localStorage.clear();
-    // Use resetAllMocks to also wipe any leftover mockResolvedValueOnce queues
-    // from previous tests (vi.clearAllMocks only clears call records, not impl queues)
+    // Use resetAllMocks to also clear queued mockResolvedValueOnce return values
+    // left over from previous tests (clearAllMocks only wipes call records)
     vi.resetAllMocks();
   });
 
@@ -540,7 +540,7 @@ describe('CalendarView – drag-and-drop', () => {
       fireEvent.drop(dayCell);
 
       await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'success' }),
+        expect.objectContaining({ type: 'success', stage: 'Scheduled', message: 'Content piece rescheduled.' }),
       ));
     }
   });
@@ -570,7 +570,7 @@ describe('CalendarView – drag-and-drop', () => {
 
       // Error toast should be shown after API failure
       await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'error' }),
+        expect.objectContaining({ type: 'error', stage: 'Error', message: 'Failed to reschedule. Please try again.' }),
       ));
 
       // Card should be restored to its original position
