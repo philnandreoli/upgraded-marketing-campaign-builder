@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCalendar, schedulePiece } from "../api";
 import { useToast } from "../ToastContext";
 import DatePicker from "./DatePicker";
@@ -386,17 +386,28 @@ function UnscheduledSidebar({ unscheduled, isViewer, onSchedule, collapsed, onTo
   );
 }
 
-export default function CalendarView({ workspaceId, campaignId, isViewer = false }) {
+export default function CalendarView({ workspaceId, campaignId, isViewer = false, startDate }) {
   const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(today));
+
+  // Anchor the initial view to the campaign start date (or today if in the past/absent)
+  const initialDate = useMemo(() => {
+    const now = new Date();
+    if (startDate) {
+      const sd = new Date(startDate + "T00:00:00");
+      return sd >= now ? sd : now;
+    }
+    return now;
+  }, [startDate]);
+
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(initialDate));
   const [calData, setCalData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [calViewMode, setCalViewMode] = useState(() => {
     const stored = localStorage.getItem(CAL_VIEW_MODE_KEY);
-    return stored === "week" || stored === "month" ? stored : "month";
+    return stored === "week" || stored === "month" ? stored : "week";
   });
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {

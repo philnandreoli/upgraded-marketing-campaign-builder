@@ -379,6 +379,8 @@ export default function CampaignDetail() {
             workspaceId={effectiveWorkspaceId}
             campaignId={campaign.id}
             isViewer={isViewer}
+            startDate={campaign.brief?.start_date}
+            endDate={campaign.brief?.end_date}
           />
         );
       default:

@@ -42,23 +42,31 @@ describe('CalendarView – view toggle', () => {
     vi.clearAllMocks();
   });
 
-  it('defaults to month view', async () => {
+  it('defaults to week view', async () => {
     await renderCalendar();
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
     // View toggle buttons should exist
     expect(screen.getByRole('button', { name: 'Month' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Week' })).toBeInTheDocument();
-    // Month view renders weekday headers in grid
-    expect(screen.getAllByText('Sun').length).toBeGreaterThanOrEqual(1);
-    // All Day section should NOT be visible in month mode
+    // Week view shows the All Day row
+    expect(screen.getByText('All Day')).toBeInTheDocument();
+  });
+
+  it('switches to month view when Month button is clicked', async () => {
+    await renderCalendar();
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }));
+    // Month view should NOT show "All Day" section
     expect(screen.queryByText('All Day')).not.toBeInTheDocument();
   });
 
   it('switches to week view when Week button is clicked', async () => {
+    localStorage.setItem('cal_view_mode', 'month');
     await renderCalendar();
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /week/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
     // Weekly view should show "All Day" section
     expect(screen.getByText('All Day')).toBeInTheDocument();
   });
@@ -67,11 +75,11 @@ describe('CalendarView – view toggle', () => {
     await renderCalendar();
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: /week/i }));
-    expect(localStorage.getItem('cal_view_mode')).toBe('week');
-
-    fireEvent.click(screen.getByRole('button', { name: /month/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Month' }));
     expect(localStorage.getItem('cal_view_mode')).toBe('month');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    expect(localStorage.getItem('cal_view_mode')).toBe('week');
   });
 
   it('restores week view from localStorage on mount', async () => {
@@ -85,6 +93,7 @@ describe('CalendarView – view toggle', () => {
 describe('CalendarView – month view navigation', () => {
   beforeEach(() => {
     localStorage.clear();
+    localStorage.setItem('cal_view_mode', 'month');
     vi.clearAllMocks();
   });
 
@@ -224,6 +233,69 @@ describe('CalendarView – weekly view', () => {
     await renderCalendar(calResponse);
     await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
     expect(screen.getByText(/Timed piece at 9am/)).toBeInTheDocument();
+  });
+});
+
+describe('CalendarView – startDate prop', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('initializes week view to the campaign start date when it is in the future', async () => {
+    // Use a date far in the future so it is always > today
+    const futureDate = new Date();
+    futureDate.setFullYear(futureDate.getFullYear() + 2);
+    futureDate.setDate(8); // mid-month so the week label contains the month
+    const y = futureDate.getFullYear();
+    const m = String(futureDate.getMonth() + 1).padStart(2, '0');
+    const startDate = `${y}-${m}-08`;
+
+    // Use month view so the header shows "Month Year", making year assertion reliable
+    localStorage.setItem('cal_view_mode', 'month');
+    await renderCalendar(makeCalendarResponse(), { startDate });
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    // Month header shows "MonthName Year" — verify the future year is displayed
+    expect(screen.getByText(new RegExp(String(y)))).toBeInTheDocument();
+  });
+
+  it('falls back to today when startDate is in the past', async () => {
+    const pastDate = '2000-01-01';
+    // Use month view to see the year in the header
+    localStorage.setItem('cal_view_mode', 'month');
+    await renderCalendar(makeCalendarResponse(), { startDate: pastDate });
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    // Should show the current year (today), not 2000
+    expect(screen.queryByText(/2000/)).not.toBeInTheDocument();
+    expect(screen.getByText(new RegExp(String(new Date().getFullYear())))).toBeInTheDocument();
+  });
+
+  it('initializes month view to the campaign start month when startDate is in the future', async () => {
+    localStorage.setItem('cal_view_mode', 'month');
+    const futureDate = new Date();
+    futureDate.setFullYear(futureDate.getFullYear() + 2);
+    const y = futureDate.getFullYear();
+    const m = String(futureDate.getMonth() + 1).padStart(2, '0');
+    const startDate = `${y}-${m}-01`;
+
+    await renderCalendar(makeCalendarResponse(), { startDate });
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    const monthAbbrs = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    const expectedMonth = monthAbbrs[futureDate.getMonth()];
+    expect(screen.getByText(new RegExp(expectedMonth))).toBeInTheDocument();
+  });
+
+  it('uses today when no startDate is provided', async () => {
+    localStorage.setItem('cal_view_mode', 'month');
+    await renderCalendar(makeCalendarResponse(), {});
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    // Month header shows "MonthName Year" — verify current year
+    expect(screen.getByText(new RegExp(String(new Date().getFullYear())))).toBeInTheDocument();
   });
 });
 
