@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCalendar, schedulePiece } from "../api";
+import { useToast } from "../ToastContext";
 import DatePicker from "./DatePicker";
 
 // Channel type to CSS color variable mapping
@@ -117,14 +118,17 @@ function formatHour(h) {
   return h < 12 ? `${h} AM` : `${h - 12} PM`;
 }
 
-function ContentPieceCard({ calPiece }) {
+function ContentPieceCard({ calPiece, isDraggable = false, isDragging = false, onDragStart, onDragEnd }) {
   const { piece } = calPiece;
   const colors = getChannelColor(piece.channel);
   return (
     <div
-      className="cal-piece-card"
+      className={`cal-piece-card${isDragging ? " cal-piece-card--dragging" : ""}${isDraggable ? " cal-piece-card--draggable" : ""}`}
       style={{ background: colors.bg, color: colors.text }}
       title={piece.content}
+      draggable={isDraggable}
+      onDragStart={isDraggable ? onDragStart : undefined}
+      onDragEnd={isDraggable ? onDragEnd : undefined}
     >
       <span className="cal-piece-icon" aria-hidden="true">
         {getContentIcon(piece.content_type)}
@@ -140,7 +144,7 @@ function ContentPieceCard({ calPiece }) {
 }
 
 // Weekly view sub-component
-function WeeklyView({ weekStart, piecesByDate, todayISO }) {
+function WeeklyView({ weekStart, piecesByDate, todayISO, isViewer, draggingIndex, dragOverDate, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }) {
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
     d.setDate(weekStart.getDate() + i);
@@ -182,9 +186,22 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
       <div className="cal-week-allday-row">
         <div className="cal-week-time-gutter cal-week-allday-label">All Day</div>
         {dayData.map(({ iso, allDay }) => (
-          <div key={iso} className="cal-week-allday-cell">
+          <div
+            key={iso}
+            className={`cal-week-allday-cell${dragOverDate === iso ? " cal-week-allday-cell--drag-over" : ""}`}
+            onDragOver={!isViewer ? (e) => onDragOver(e, iso) : undefined}
+            onDragLeave={!isViewer ? onDragLeave : undefined}
+            onDrop={!isViewer ? (e) => onDrop(e, iso) : undefined}
+          >
             {allDay.map((cp) => (
-              <ContentPieceCard key={cp.piece_index} calPiece={cp} />
+              <ContentPieceCard
+                key={cp.piece_index}
+                calPiece={cp}
+                isDraggable={!isViewer}
+                isDragging={draggingIndex === cp.piece_index}
+                onDragStart={(e) => onDragStart(e, cp.piece_index, iso)}
+                onDragEnd={onDragEnd}
+              />
             ))}
           </div>
         ))}
@@ -209,7 +226,13 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
         {dayData.map(({ iso, timed }) => {
           const isToday = iso === todayISO;
           return (
-            <div key={iso} className={`cal-week-day-col${isToday ? " cal-week-day-col--today" : ""}`}>
+            <div
+              key={iso}
+              className={`cal-week-day-col${isToday ? " cal-week-day-col--today" : ""}${dragOverDate === iso ? " cal-week-day-col--drag-over" : ""}`}
+              onDragOver={!isViewer ? (e) => onDragOver(e, iso) : undefined}
+              onDragLeave={!isViewer ? onDragLeave : undefined}
+              onDrop={!isViewer ? (e) => onDrop(e, iso) : undefined}
+            >
               {/* Hour background rows */}
               {HOURS.map((h) => (
                 <div
@@ -230,7 +253,13 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
                     className="cal-week-timed-piece"
                     style={{ top: `${clampedTop * slotHeight}px` }}
                   >
-                    <ContentPieceCard calPiece={cp} />
+                    <ContentPieceCard
+                      calPiece={cp}
+                      isDraggable={!isViewer}
+                      isDragging={draggingIndex === cp.piece_index}
+                      onDragStart={(e) => onDragStart(e, cp.piece_index, iso)}
+                      onDragEnd={onDragEnd}
+                    />
                   </div>
                 );
               })}
@@ -242,7 +271,7 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
   );
 }
 
-function UnscheduledSidebar({ unscheduled, isViewer, onSchedule, collapsed, onToggle }) {
+function UnscheduledSidebar({ unscheduled, isViewer, onSchedule, collapsed, onToggle, draggingIndex, onDragStart, onDragEnd }) {
   const [schedulingPieceIndex, setSchedulingPieceIndex] = useState(null);
   const [scheduleError, setScheduleError] = useState(null);
 
@@ -297,7 +326,13 @@ function UnscheduledSidebar({ unscheduled, isViewer, onSchedule, collapsed, onTo
               const colors = getChannelColor(piece.channel);
               const isScheduling = schedulingPieceIndex === piece_index;
               return (
-                <div key={piece_index} className="cal-unscheduled-card">
+                <div
+                  key={piece_index}
+                  className={`cal-unscheduled-card${draggingIndex === piece_index ? " cal-unscheduled-card--dragging" : ""}${!isViewer ? " cal-unscheduled-card--draggable" : ""}`}
+                  draggable={!isViewer}
+                  onDragStart={!isViewer ? (e) => onDragStart(e, piece_index, null) : undefined}
+                  onDragEnd={!isViewer ? onDragEnd : undefined}
+                >
                   <div className="cal-unscheduled-card-meta">
                     <span className="cal-piece-icon" aria-hidden="true">
                       {getContentIcon(piece.content_type)}
@@ -368,6 +403,13 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
     return localStorage.getItem(CAL_SIDEBAR_COLLAPSED_KEY) === "true";
   });
 
+  // Drag-and-drop state
+  const dragRef = useRef(null); // { pieceIndex: number, fromDate: string|null }
+  const [dragOverDate, setDragOverDate] = useState(null);
+  const [draggingIndex, setDraggingIndex] = useState(null);
+
+  const { addToast } = useToast();
+
   const handleCalViewMode = (mode) => {
     setCalViewMode(mode);
     localStorage.setItem(CAL_VIEW_MODE_KEY, mode);
@@ -399,6 +441,91 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
     await schedulePiece(workspaceId, campaignId, pieceIndex, { scheduledDate: dateStr });
     load();
   }, [workspaceId, campaignId, load]);
+
+  // ── Drag-and-drop handlers ──────────────────────────────────────────────
+  const handleDragStart = useCallback((e, pieceIndex, fromDate) => {
+    dragRef.current = { pieceIndex, fromDate };
+    setDraggingIndex(pieceIndex);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingIndex(null);
+    setDragOverDate(null);
+  }, []);
+
+  const handleDragOver = useCallback((e, isoDate) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    setDragOverDate(isoDate);
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setDragOverDate(null);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e, isoDate) => {
+    e.preventDefault();
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    const { pieceIndex, fromDate } = drag;
+    dragRef.current = null;
+    setDraggingIndex(null);
+    setDragOverDate(null);
+
+    // No-op: dropping on the same date
+    if (fromDate === isoDate) return;
+
+    // Find the piece being moved and compute the optimistic state
+    let movingPiece = null;
+    const optimisticScheduled = (calData?.scheduled || []).reduce((acc, group) => {
+      if (group.date === fromDate) {
+        const filtered = group.pieces.filter((cp) => {
+          if (cp.piece_index === pieceIndex) { movingPiece = cp; return false; }
+          return true;
+        });
+        if (filtered.length > 0) acc.push({ ...group, pieces: filtered });
+      } else {
+        acc.push(group);
+      }
+      return acc;
+    }, []);
+
+    let optimisticUnscheduled = calData?.unscheduled || [];
+    if (!movingPiece) {
+      optimisticUnscheduled = optimisticUnscheduled.filter((cp) => {
+        if (cp.piece_index === pieceIndex) { movingPiece = cp; return false; }
+        return true;
+      });
+    }
+
+    if (!movingPiece) return;
+
+    const movedPiece = { ...movingPiece, piece: { ...movingPiece.piece, scheduled_date: isoDate } };
+    const targetGroup = optimisticScheduled.find((g) => g.date === isoDate);
+    if (targetGroup) {
+      const idx = optimisticScheduled.indexOf(targetGroup);
+      optimisticScheduled[idx] = { ...targetGroup, pieces: [...targetGroup.pieces, movedPiece] };
+    } else {
+      optimisticScheduled.push({ date: isoDate, pieces: [movedPiece] });
+      optimisticScheduled.sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    const snapshot = calData;
+    setCalData({ ...calData, scheduled: optimisticScheduled, unscheduled: optimisticUnscheduled });
+
+    try {
+      await schedulePiece(workspaceId, campaignId, pieceIndex, { scheduledDate: isoDate });
+      addToast({ type: "success", stage: "Scheduled", message: "Content piece rescheduled." });
+    } catch {
+      setCalData(snapshot);
+      addToast({ type: "error", stage: "Error", message: "Failed to reschedule. Please try again." });
+    }
+  }, [calData, workspaceId, campaignId, addToast]);
+  // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const t = setTimeout(load, 0);
@@ -531,14 +658,24 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
                     return (
                       <div
                         key={iso}
-                        className={`cal-day${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}`}
+                        className={`cal-day${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}${dragOverDate === iso ? " cal-day--drag-over" : ""}`}
+                        onDragOver={!isViewer ? (e) => handleDragOver(e, iso) : undefined}
+                        onDragLeave={!isViewer ? handleDragLeave : undefined}
+                        onDrop={!isViewer ? (e) => handleDrop(e, iso) : undefined}
                       >
                         <span className={`cal-day-number${isToday ? " cal-day-number--today" : ""}`}>
                           {date.getDate()}
                         </span>
                         <div className="cal-day-pieces">
                           {pieces.map((cp) => (
-                            <ContentPieceCard key={cp.piece_index} calPiece={cp} />
+                            <ContentPieceCard
+                              key={cp.piece_index}
+                              calPiece={cp}
+                              isDraggable={!isViewer}
+                              isDragging={draggingIndex === cp.piece_index}
+                              onDragStart={(e) => handleDragStart(e, cp.piece_index, iso)}
+                              onDragEnd={handleDragEnd}
+                            />
                           ))}
                         </div>
                       </div>
@@ -547,7 +684,19 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
                 </div>
               </div>
             ) : (
-              <WeeklyView weekStart={weekStart} piecesByDate={piecesByDate} todayISO={todayISO} />
+              <WeeklyView
+                weekStart={weekStart}
+                piecesByDate={piecesByDate}
+                todayISO={todayISO}
+                isViewer={isViewer}
+                draggingIndex={draggingIndex}
+                dragOverDate={dragOverDate}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              />
             )}
           </div>
 
@@ -557,6 +706,9 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
             onSchedule={handleSchedulePiece}
             collapsed={sidebarCollapsed}
             onToggle={handleSidebarToggle}
+            draggingIndex={draggingIndex}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
           />
         </div>
       )}
