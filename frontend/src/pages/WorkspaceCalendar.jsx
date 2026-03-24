@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getWorkspaceCalendar } from "../api";
 
-// \u2500\u2500\u2500 Shared constants \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Shared constants ─────────────────────────────────────────────────────────
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -23,17 +23,17 @@ const CHANNEL_COLORS = {
 };
 
 const CONTENT_TYPE_ICONS = {
-  headline:      "\u270D\uFE0F",
-  body_copy:     "\uD83D\uDCC4",
-  cta:           "\uD83C\uDFAF",
-  social_post:   "\uD83D\uDCF1",
-  email_subject: "\u2709\uFE0F",
-  image:         "\uD83D\uDDBC\uFE0F",
+  headline:      "✍️",
+  body_copy:     "📄",
+  cta:           "🎯",
+  social_post:   "📱",
+  email_subject: "✉️",
+  image:         "🖼️",
 };
 
 const MONTH_DAY_MAX_VISIBLE = 3;
 
-// \u2500\u2500\u2500 Utility helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Utility helpers ──────────────────────────────────────────────────────────
 
 function toISODate(date) {
   const y = date.getFullYear();
@@ -61,15 +61,16 @@ function getChannelColor(channel) {
 }
 
 function getContentIcon(contentType) {
-  return CONTENT_TYPE_ICONS[contentType] || "\uD83D\uDCCB";
+  return CONTENT_TYPE_ICONS[contentType] || "📋";
 }
 
 function truncate(str, max = 50) {
   if (!str) return "";
-  return str.length > max ? str.slice(0, max) + "\u2026" : str;
+  return str.length > max ? str.slice(0, max) + "…" : str;
 }
 
-// \u2500\u2500\u2500 WorkspacePieceCard (compact single-line pill) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n
+// ─── WorkspacePieceCard (compact single-line pill) ────────────────────────────
+
 function WorkspacePieceCard({ wsPiece }) {
   const { piece, campaign_name } = wsPiece;
   const colors = getChannelColor(piece.channel);
@@ -92,7 +93,7 @@ function WorkspacePieceCard({ wsPiece }) {
   );
 }
 
-// \u2500\u2500\u2500 Month day cell with +N more overflow \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Month day cell with +N more overflow ─────────────────────────────────────
 
 function WsMonthDayCell({ date, pieces, isToday }) {
   const [expanded, setExpanded] = useState(false);
@@ -134,7 +135,8 @@ function WsMonthDayCell({ date, pieces, isToday }) {
   );
 }
 
-// \u2500\u2500\u2500 WorkspaceCalendar page \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n
+// ─── WorkspaceCalendar page ───────────────────────────────────────────────────
+
 export default function WorkspaceCalendar() {
   const { id: workspaceId } = useParams();
   const today = new Date();
@@ -181,7 +183,7 @@ export default function WorkspaceCalendar() {
     }
   };
 
-  // Build date \u2192 pieces map from the API response
+  // Build date → pieces map from the API response
   const piecesByDate = {};
   if (calData?.scheduled) {
     for (const group of calData.scheduled) {
@@ -195,16 +197,16 @@ export default function WorkspaceCalendar() {
   if (error) {
     return (
       <div className="card stage-error-card">
-        <h2>\uD83D\uDCC5 Workspace Calendar</h2>
+        <h2>📅 Workspace Calendar</h2>
         <div className="stage-error-message">
-          <span className="stage-error-icon">\u26A0\uFE0F</span>
+          <span className="stage-error-icon">⚠️</span>
           <div>
             <p><strong>Failed to load calendar</strong></p>
             <p className="stage-error-detail">{error}</p>
           </div>
         </div>
         <Link to={`/workspaces/${workspaceId}`} className="btn btn-outline" style={{ marginTop: "0.75rem" }}>
-          \u2190 Back to Workspace
+          ← Back to Workspace
         </Link>
       </div>
     );
@@ -214,24 +216,24 @@ export default function WorkspaceCalendar() {
     <div>
       <div style={{ marginBottom: "0.75rem" }}>
         <Link to={`/workspaces/${workspaceId}`} className="btn btn-outline">
-          \u2190 Back to Workspace
+          ← Back to Workspace
         </Link>
       </div>
 
       <div className="card cal-wrapper">
         <div className="cal-header">
-          <h2>\uD83D\uDCC5 Workspace Calendar</h2>
+          <h2>📅 Workspace Calendar</h2>
           <div className="cal-header-controls">
             <div className="cal-nav">
-              <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">\u2039</button>
+              <button className="cal-nav-btn" onClick={prevMonth} aria-label="Previous month">‹</button>
               <span className="cal-month-label">{MONTH_NAMES[viewMonth]} {viewYear}</span>
-              <button className="cal-nav-btn" onClick={nextMonth} aria-label="Next month">\u203A</button>
+              <button className="cal-nav-btn" onClick={nextMonth} aria-label="Next month">›</button>
             </div>
           </div>
         </div>
 
         {loading ? (
-          <div className="loading"><span className="spinner" /> Loading calendar\u2026</div>
+          <div className="loading"><span className="spinner" /> Loading calendar…</div>
         ) : (
           <div className="cal-body">
             <div className="cal-main">

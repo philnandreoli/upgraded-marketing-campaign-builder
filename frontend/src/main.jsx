@@ -42,6 +42,6 @@ msalInstance
     render();
   })
   .catch((error) => {
-    console.error("MSAL initialisation failed \u2013 rendering app anyway", error);
+    console.error("MSAL initialisation failed – rendering app anyway", error);
     render();
   });
