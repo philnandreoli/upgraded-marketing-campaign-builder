@@ -5,6 +5,7 @@ import { MsalProvider } from "@azure/msal-react";
 import App from "./App.jsx";
 import { msalInstance } from "./authConfig.js";
 import "./index.css";
+import "./calendar-compact.css";
 
 /**
  * Render the React tree.  Called once MSAL is ready (or on error so the
@@ -41,6 +42,6 @@ msalInstance
     render();
   })
   .catch((error) => {
-    console.error("MSAL initialisation failed – rendering app anyway", error);
+    console.error("MSAL initialisation failed \u2013 rendering app anyway", error);
     render();
   });
