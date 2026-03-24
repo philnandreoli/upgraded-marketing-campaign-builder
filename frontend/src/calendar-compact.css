@@ -1,0 +1,262 @@
+/* ------------------------------------------------------------------ */
+/* Calendar month-compact overrides                                     */
+/* Makes the full month visible with all 7 day columns and uniform rows */
+/* ------------------------------------------------------------------ */
+
+/* Remove min-width so grid never overflows horizontally */
+.cal-grid--month-compact {
+  min-width: 0 !important;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* Equal rows: auto-size based on content but uniform across the grid */
+  grid-auto-rows: minmax(5.5rem, auto);
+}
+
+/* Compact day cells */
+.cal-day--month-compact {
+  min-height: 5.5rem;
+  padding: 0.25rem 0.3rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Compact pill-style piece cards for month view                        */
+/* ------------------------------------------------------------------ */
+
+.cal-piece-card--compact {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.3rem;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 3px;
+  max-width: 100%;
+}
+
+.cal-piece-card--compact .cal-piece-icon {
+  font-size: 0.6rem;
+  flex-shrink: 0;
+}
+
+.cal-piece-card--compact .cal-piece-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hide the verbose channel badge in compact mode — just show the icon inline */
+.cal-piece-channel-badge--compact {
+  display: none;
+}
+
+/* "+N more" / "show less" button */
+.cal-day-more-btn {
+  background: none;
+  border: none;
+  color: var(--color-primary-hover);
+  font-size: 0.6rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.05rem 0;
+  text-align: left;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+
+.cal-day-more-btn:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar overlay for month view (replaces inline flex sidebar)        */
+/* ------------------------------------------------------------------ */
+
+.cal-sidebar-floating-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.7rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  margin-left: 0.35rem;
+}
+
+.cal-sidebar-floating-toggle:hover {
+  background: var(--color-border);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.cal-sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cal-sidebar-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  animation: cal-backdrop-fade 0.2s ease-out;
+}
+
+.cal-sidebar-overlay-panel {
+  position: relative;
+  width: 340px;
+  max-width: 90vw;
+  max-height: 100vh;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  animation: cal-sidebar-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Overlay panel header ---- */
+.cal-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  flex-shrink: 0;
+}
+
+.cal-overlay-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.cal-overlay-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.cal-overlay-close-btn:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/* ---- Overlay body (wraps sidebar when items exist) ---- */
+.cal-overlay-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Inside the overlay panel, remove the sidebar border/radius since the panel provides that */
+.cal-overlay-body .cal-unscheduled-sidebar {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+}
+
+/* Hide the built-in sidebar header in overlay mode — our overlay-header replaces it */
+.cal-overlay-body .cal-sidebar-header {
+  display: none;
+}
+
+/* Let the body scroll the full remaining space */
+.cal-overlay-body .cal-sidebar-body {
+  max-height: none;
+  padding: 0.65rem 0.85rem;
+}
+
+/* ---- Empty state ---- */
+.cal-overlay-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem 4rem;
+  text-align: center;
+  gap: 0.3rem;
+}
+
+.cal-overlay-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--color-primary);
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+
+.cal-overlay-empty-heading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.cal-overlay-empty-sub {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  line-height: 1.45;
+  max-width: 20ch;
+}
+
+/* ---- Animations ---- */
+@keyframes cal-sidebar-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes cal-backdrop-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Make cal-body position relative so floating toggle can be absolute   */
+/* ------------------------------------------------------------------ */
+
+.cal-body {
+  position: relative;
+}

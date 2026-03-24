@@ -185,6 +185,7 @@ export default function CampaignDetail() {
 
   // Whether the Calendar tab should be shown (campaign has content pieces)
   const showCalendarTab = (campaign?.content?.pieces?.length ?? 0) > 0;
+  const calendarAlwaysInPipeline = true; // Calendar always shows in pipeline progress
 
   // Fetch image assets when image generation is enabled for this campaign
   const loadImageAssets = useCallback(async () => {
@@ -244,7 +245,7 @@ export default function CampaignDetail() {
         tabs.push("images");
       }
     }
-    if (showCalendarTab) {
+    if (calendarAlwaysInPipeline) {
       // Insert "calendar" after "channel_plan" if present, else at the end
       const idx = tabs.indexOf("channel_plan");
       if (idx !== -1) {
@@ -254,7 +255,7 @@ export default function CampaignDetail() {
       }
     }
     return tabs;
-  }, [clickableTabs, showImagesTab, showCalendarTab]);
+  }, [clickableTabs, showImagesTab]);
 
   // Derive the active tab: honour explicit user click, otherwise show the latest pipeline tab
   const activeTab = useMemo(() => {
@@ -422,8 +423,8 @@ export default function CampaignDetail() {
               </button>
               {stage.key === calendarAfterKey && allTabs.includes("calendar") && (
                 <button
-                  className={`pipeline-tab completed${activeTab === "calendar" ? " selected" : ""}`}
-                  onClick={() => setUserTab("calendar")}
+                  className={`pipeline-tab ${showCalendarTab ? "completed" : "pending"}${activeTab === "calendar" ? " selected" : ""}`}
+                  onClick={() => showCalendarTab && setUserTab("calendar")}
                 >
                   <span className="pipeline-tab-icon" aria-hidden="true">📅</span>
                   Calendar
@@ -445,8 +446,8 @@ export default function CampaignDetail() {
         {/* If channel_plan is hidden (not in filtered stages), show Calendar at the end */}
         {allTabs.includes("calendar") && !stages.some(s => s.key === calendarAfterKey) && (
           <button
-            className={`pipeline-tab completed${activeTab === "calendar" ? " selected" : ""}`}
-            onClick={() => setUserTab("calendar")}
+            className={`pipeline-tab ${showCalendarTab ? "completed" : "pending"}${activeTab === "calendar" ? " selected" : ""}`}
+            onClick={() => showCalendarTab && setUserTab("calendar")}
           >
             <span className="pipeline-tab-icon" aria-hidden="true">📅</span>
             Calendar
@@ -613,8 +614,8 @@ export default function CampaignDetail() {
                       </button>
                       {stage.key === "channel_plan" && allTabs.includes("calendar") && (
                         <button
-                          className={`sidebar-stage sidebar-stage-completed${activeTab === "calendar" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
-                          onClick={() => setUserTab("calendar")}
+                          className={`sidebar-stage sidebar-stage-${showCalendarTab ? "completed" : "pending"}${activeTab === "calendar" ? " sidebar-stage-selected" : ""}${showCalendarTab ? " sidebar-stage-clickable" : ""}`}
+                          onClick={() => showCalendarTab && setUserTab("calendar")}
                         >
                           <span className="sidebar-stage-dot" />
                           <span className="sidebar-stage-label">Calendar</span>
@@ -636,8 +637,8 @@ export default function CampaignDetail() {
                 {/* If channel_plan didn't render, show Calendar at the end */}
                 {allTabs.includes("calendar") && !PIPELINE_STAGES.filter(s => !(isAtApproval && HIDDEN_AT_APPROVAL.includes(s.key))).some(s => s.key === "channel_plan") && (
                   <button
-                    className={`sidebar-stage sidebar-stage-completed${activeTab === "calendar" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
-                    onClick={() => setUserTab("calendar")}
+                    className={`sidebar-stage sidebar-stage-${showCalendarTab ? "completed" : "pending"}${activeTab === "calendar" ? " sidebar-stage-selected" : ""}${showCalendarTab ? " sidebar-stage-clickable" : ""}`}
+                    onClick={() => showCalendarTab && setUserTab("calendar")}
                   >
                     <span className="sidebar-stage-dot" />
                     <span className="sidebar-stage-label">Calendar</span>

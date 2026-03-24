@@ -31,6 +31,8 @@ const CONTENT_TYPE_ICONS = {
   image:         "🖼️",
 };
 
+const MONTH_DAY_MAX_VISIBLE = 3;
+
 // ─── Utility helpers ──────────────────────────────────────────────────────────
 
 function toISODate(date) {
@@ -67,32 +69,68 @@ function truncate(str, max = 50) {
   return str.length > max ? str.slice(0, max) + "…" : str;
 }
 
-// ─── WorkspacePieceCard ───────────────────────────────────────────────────────
+// ─── WorkspacePieceCard (compact single-line pill) ────────────────────────────
 
 function WorkspacePieceCard({ wsPiece }) {
   const { piece, campaign_name } = wsPiece;
   const colors = getChannelColor(piece.channel);
   return (
     <div
-      className="cal-piece-card"
+      className="cal-piece-card cal-piece-card--compact"
       style={{ background: colors.bg, color: colors.text }}
       title={`${campaign_name}: ${piece.content}`}
     >
       <span className="cal-piece-icon" aria-hidden="true">
         {getContentIcon(piece.content_type)}
       </span>
-      <span className="cal-piece-text">{truncate(piece.content, 45)}</span>
-      <span
-        className="ws-cal-campaign-badge"
-        title={campaign_name}
-      >
-        {truncate(campaign_name, 20)}
-      </span>
+      <span className="cal-piece-text">{truncate(piece.content, 30)}</span>
       {piece.channel && (
-        <span className="cal-piece-channel-badge" style={{ background: colors.bg, color: colors.text }}>
+        <span className="cal-piece-channel-badge cal-piece-channel-badge--compact" style={{ background: colors.bg, color: colors.text }}>
           {piece.channel.replace(/_/g, " ")}
         </span>
       )}
+    </div>
+  );
+}
+
+// ─── Month day cell with +N more overflow ─────────────────────────────────────
+
+function WsMonthDayCell({ date, pieces, isToday }) {
+  const [expanded, setExpanded] = useState(false);
+  const overflow = pieces.length > MONTH_DAY_MAX_VISIBLE && !expanded;
+  const visible = overflow ? pieces.slice(0, MONTH_DAY_MAX_VISIBLE) : pieces;
+  const hiddenCount = pieces.length - MONTH_DAY_MAX_VISIBLE;
+
+  return (
+    <div
+      className={`cal-day cal-day--month-compact${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}`}
+    >
+      <div className={`cal-day-number${isToday ? " cal-day-number--today" : ""}`}>
+        {date.getDate()}
+      </div>
+      <div className="cal-day-pieces">
+        {visible.map((wsPiece, i) => (
+          <WorkspacePieceCard key={`${wsPiece.campaign_id}-${wsPiece.piece_index}-${i}`} wsPiece={wsPiece} />
+        ))}
+        {overflow && (
+          <button
+            type="button"
+            className="cal-day-more-btn"
+            onClick={() => setExpanded(true)}
+          >
+            +{hiddenCount} more
+          </button>
+        )}
+        {expanded && pieces.length > MONTH_DAY_MAX_VISIBLE && (
+          <button
+            type="button"
+            className="cal-day-more-btn"
+            onClick={() => setExpanded(false)}
+          >
+            show less
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -200,7 +238,7 @@ export default function WorkspaceCalendar() {
           <div className="cal-body">
             <div className="cal-main">
               <div className="cal-grid-container">
-                <div className="cal-grid">
+                <div className="cal-grid cal-grid--month-compact">
                   {WEEKDAY_LABELS.map((day) => (
                     <div key={day} className="cal-weekday-header">{day}</div>
                   ))}
@@ -213,19 +251,12 @@ export default function WorkspaceCalendar() {
                     const isToday = iso === todayISO;
                     const pieces = piecesByDate[iso] || [];
                     return (
-                      <div
+                      <WsMonthDayCell
                         key={iso}
-                        className={`cal-day${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}`}
-                      >
-                        <div className={`cal-day-number${isToday ? " cal-day-number--today" : ""}`}>
-                          {date.getDate()}
-                        </div>
-                        <div className="cal-day-pieces">
-                          {pieces.map((wsPiece, i) => (
-                            <WorkspacePieceCard key={`${wsPiece.campaign_id}-${wsPiece.piece_index}-${i}`} wsPiece={wsPiece} />
-                          ))}
-                        </div>
-                      </div>
+                        date={date}
+                        pieces={pieces}
+                        isToday={isToday}
+                      />
                     );
                   })}
                 </div>

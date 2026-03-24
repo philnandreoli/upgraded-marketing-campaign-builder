@@ -142,10 +142,26 @@ SECURITY RULES:
         except json.JSONDecodeError as exc:
             raise ValueError(f"Scheduling agent: invalid JSON — {exc}") from exc
 
-        if isinstance(parsed, dict) and "schedule" in parsed:
-            schedule = parsed["schedule"]
-        elif isinstance(parsed, list):
+        if isinstance(parsed, list):
             schedule = parsed
+        elif isinstance(parsed, dict) and "schedule" in parsed:
+            schedule = parsed["schedule"]
+        elif isinstance(parsed, dict):
+            # LLM sometimes wraps the array under an unexpected key name
+            # (e.g. "assignments", "pieces").  Pick the first list value.
+            list_vals = [v for v in parsed.values() if isinstance(v, list)]
+            if list_vals:
+                schedule = list_vals[0]
+                logger.info(
+                    "Scheduling agent: no 'schedule' key; using first list "
+                    "value (keys: %s)",
+                    list(parsed.keys()),
+                )
+            else:
+                raise ValueError(
+                    "Scheduling agent: expected a JSON array or object with "
+                    f"'schedule' key, got dict with keys {list(parsed.keys())}"
+                )
         else:
             raise ValueError(
                 "Scheduling agent: expected a JSON array or object with 'schedule' key, "
@@ -209,8 +225,21 @@ SECURITY RULES:
                 )
 
             violations = validate_schedule(temp_pieces, start, end)
-            if violations:
-                messages = "; ".join(v.message for v in violations)
+            # Separate hard errors (date out of range) from soft warnings
+            # (same-platform/same-day). Multiple content pieces often share a
+            # platform + day legitimately (e.g. headline + body + CTA for one
+            # email send), so we log those but do not reject the schedule.
+            hard_violations = [v for v in violations if "conflict" not in v.message]
+            soft_violations = [v for v in violations if "conflict" in v.message]
+            if soft_violations:
+                logger.info(
+                    "Scheduling agent: %d same-platform/same-day overlap(s) "
+                    "(allowed): %s",
+                    len(soft_violations),
+                    "; ".join(v.message for v in soft_violations),
+                )
+            if hard_violations:
+                messages = "; ".join(v.message for v in hard_violations)
                 raise ValueError(
                     f"Scheduling agent: schedule validation failed — {messages}"
                 )

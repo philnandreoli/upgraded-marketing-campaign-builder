@@ -51,6 +51,9 @@ const HOUR_START = 6;
 const HOUR_END = 22;
 const HOURS = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i);
 
+// Max events to show per day cell in month view before showing "+N more"
+const MONTH_DAY_MAX_VISIBLE = 3;
+
 function truncate(str, max = 60) {
   if (!str) return "";
   return str.length > max ? str.slice(0, max) + "…" : str;
@@ -136,6 +139,32 @@ function ContentPieceCard({ calPiece, isDraggable = false, isDragging = false, o
       <span className="cal-piece-text">{truncate(piece.content, 50)}</span>
       {piece.channel && (
         <span className="cal-piece-channel-badge" style={{ background: colors.bg, color: colors.text }}>
+          {getChannelIcon(piece.channel)} {piece.channel.replace(/_/g, " ")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Compact single-line pill for month view
+function MonthPieceCard({ calPiece, isDraggable = false, isDragging = false, onDragStart, onDragEnd }) {
+  const { piece } = calPiece;
+  const colors = getChannelColor(piece.channel);
+  return (
+    <div
+      className={`cal-piece-card cal-piece-card--compact${isDragging ? " cal-piece-card--dragging" : ""}${isDraggable ? " cal-piece-card--draggable" : ""}`}
+      style={{ background: colors.bg, color: colors.text }}
+      title={piece.content}
+      draggable={isDraggable}
+      onDragStart={isDraggable ? onDragStart : undefined}
+      onDragEnd={isDraggable ? onDragEnd : undefined}
+    >
+      <span className="cal-piece-icon" aria-hidden="true">
+        {getContentIcon(piece.content_type)}
+      </span>
+      <span className="cal-piece-text">{truncate(piece.content, 30)}</span>
+      {piece.channel && (
+        <span className="cal-piece-channel-badge cal-piece-channel-badge--compact" style={{ background: colors.bg, color: colors.text }}>
           {getChannelIcon(piece.channel)} {piece.channel.replace(/_/g, " ")}
         </span>
       )}
@@ -386,6 +415,58 @@ function UnscheduledSidebar({ unscheduled, isViewer, onSchedule, collapsed, onTo
   );
 }
 
+// Month view day cell with +N more overflow
+function MonthDayCell({ date, pieces, isToday, isViewer, dragOverDate, draggingIndex, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }) {
+  const [expanded, setExpanded] = useState(false);
+  const iso = toISODate(date);
+  const overflow = pieces.length > MONTH_DAY_MAX_VISIBLE && !expanded;
+  const visible = overflow ? pieces.slice(0, MONTH_DAY_MAX_VISIBLE) : pieces;
+  const hiddenCount = pieces.length - MONTH_DAY_MAX_VISIBLE;
+
+  return (
+    <div
+      className={`cal-day cal-day--month-compact${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}${dragOverDate === iso ? " cal-day--drag-over" : ""}`}
+      onDragOver={!isViewer ? (e) => onDragOver(e, iso) : undefined}
+      onDragLeave={!isViewer ? onDragLeave : undefined}
+      onDrop={!isViewer ? (e) => onDrop(e, iso) : undefined}
+    >
+      <span className={`cal-day-number${isToday ? " cal-day-number--today" : ""}`}>
+        {date.getDate()}
+      </span>
+      <div className="cal-day-pieces">
+        {visible.map((cp) => (
+          <MonthPieceCard
+            key={cp.piece_index}
+            calPiece={cp}
+            isDraggable={!isViewer}
+            isDragging={draggingIndex === cp.piece_index}
+            onDragStart={(e) => onDragStart(e, cp.piece_index, iso)}
+            onDragEnd={onDragEnd}
+          />
+        ))}
+        {overflow && (
+          <button
+            type="button"
+            className="cal-day-more-btn"
+            onClick={() => setExpanded(true)}
+          >
+            +{hiddenCount} more
+          </button>
+        )}
+        {expanded && pieces.length > MONTH_DAY_MAX_VISIBLE && (
+          <button
+            type="button"
+            className="cal-day-more-btn"
+            onClick={() => setExpanded(false)}
+          >
+            show less
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarView({ workspaceId, campaignId, isViewer = false, startDate }) {
   const today = new Date();
 
@@ -413,6 +494,9 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return localStorage.getItem(CAL_SIDEBAR_COLLAPSED_KEY) === "true";
   });
+
+  // Sidebar overlay open/closed state (for month view)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Drag-and-drop state
   const dragRef = useRef(null); // { pieceIndex: number, fromDate: string|null }
@@ -593,6 +677,8 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
   weekEnd.setDate(weekStart.getDate() + 6);
   const weekRangeLabel = `${formatWeekDay(weekStart, today.getFullYear())} – ${formatWeekDay(weekEnd, today.getFullYear())}`;
 
+  const unscheduledCount = (calData?.unscheduled || []).length;
+
   if (error) {
     return (
       <div className="card stage-error-card">
@@ -642,6 +728,19 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
               Week
             </button>
           </div>
+          {calViewMode === "month" && (
+            <button
+              type="button"
+              className="cal-sidebar-floating-toggle"
+              onClick={() => setSidebarOpen((o) => !o)}
+              aria-label={`${unscheduledCount} unscheduled items`}
+            >
+              Unscheduled
+              <span className="cal-sidebar-count-badge" aria-label={`${unscheduledCount} unscheduled`}>
+                {unscheduledCount}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -653,7 +752,7 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
             {calViewMode === "month" ? (
               <div className="cal-grid-container">
                 {/* Weekday headers */}
-                <div className="cal-grid">
+                <div className="cal-grid cal-grid--month-compact">
                   {WEEKDAY_LABELS.map((day) => (
                     <div key={day} className="cal-weekday-header">{day}</div>
                   ))}
@@ -667,29 +766,20 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
                     const isToday = iso === todayISO;
                     const pieces = piecesByDate[iso] || [];
                     return (
-                      <div
+                      <MonthDayCell
                         key={iso}
-                        className={`cal-day${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}${dragOverDate === iso ? " cal-day--drag-over" : ""}`}
-                        onDragOver={!isViewer ? (e) => handleDragOver(e, iso) : undefined}
-                        onDragLeave={!isViewer ? handleDragLeave : undefined}
-                        onDrop={!isViewer ? (e) => handleDrop(e, iso) : undefined}
-                      >
-                        <span className={`cal-day-number${isToday ? " cal-day-number--today" : ""}`}>
-                          {date.getDate()}
-                        </span>
-                        <div className="cal-day-pieces">
-                          {pieces.map((cp) => (
-                            <ContentPieceCard
-                              key={cp.piece_index}
-                              calPiece={cp}
-                              isDraggable={!isViewer}
-                              isDragging={draggingIndex === cp.piece_index}
-                              onDragStart={(e) => handleDragStart(e, cp.piece_index, iso)}
-                              onDragEnd={handleDragEnd}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                        date={date}
+                        pieces={pieces}
+                        isToday={isToday}
+                        isViewer={isViewer}
+                        dragOverDate={dragOverDate}
+                        draggingIndex={draggingIndex}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      />
                     );
                   })}
                 </div>
@@ -711,16 +801,64 @@ export default function CalendarView({ workspaceId, campaignId, isViewer = false
             )}
           </div>
 
-          <UnscheduledSidebar
-            unscheduled={calData?.unscheduled || []}
-            isViewer={isViewer}
-            onSchedule={handleSchedulePiece}
-            collapsed={sidebarCollapsed}
-            onToggle={handleSidebarToggle}
-            draggingIndex={draggingIndex}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          />
+          {/* In week view: inline sidebar. In month view: overlay drawer */}
+          {calViewMode === "week" ? (
+            <UnscheduledSidebar
+              unscheduled={calData?.unscheduled || []}
+              isViewer={isViewer}
+              onSchedule={handleSchedulePiece}
+              collapsed={sidebarCollapsed}
+              onToggle={handleSidebarToggle}
+              draggingIndex={draggingIndex}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            />
+          ) : (
+            <>
+              {sidebarOpen && (
+                <div className="cal-sidebar-overlay">
+                  <div className="cal-sidebar-overlay-backdrop" onClick={() => setSidebarOpen(false)} />
+                  <div className="cal-sidebar-overlay-panel">
+                    <div className="cal-overlay-header">
+                      <span className="cal-overlay-header-title">
+                        Unscheduled
+                        <span className="cal-sidebar-count-badge">{unscheduledCount}</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="cal-overlay-close-btn"
+                        onClick={() => setSidebarOpen(false)}
+                        aria-label="Close panel"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {unscheduledCount === 0 ? (
+                      <div className="cal-overlay-empty-state">
+                        <span className="cal-overlay-empty-icon" aria-hidden="true">✓</span>
+                        <p className="cal-overlay-empty-heading">All caught up!</p>
+                        <p className="cal-overlay-empty-sub">Every content piece has been scheduled.</p>
+                      </div>
+                    ) : (
+                      <div className="cal-overlay-body">
+                        <UnscheduledSidebar
+                          unscheduled={calData?.unscheduled || []}
+                          isViewer={isViewer}
+                          onSchedule={handleSchedulePiece}
+                          collapsed={false}
+                          onToggle={() => {}}
+                          draggingIndex={draggingIndex}
+                          onDragStart={handleDragStart}
+                          onDragEnd={handleDragEnd}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
