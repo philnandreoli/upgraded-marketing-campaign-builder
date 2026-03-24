@@ -658,6 +658,11 @@ class CoordinatorAgent:
         pieces = campaign.content.pieces
         channel_plan = campaign.channel_plan
 
+        await self._emit("stage_started", StageStartedEvent(
+            campaign_id=campaign.id,
+            stage="scheduling",
+        ).model_dump(mode="json"))
+
         # --- Attempt LLM scheduling ---
         used_agent = False
         try:
@@ -730,8 +735,18 @@ class CoordinatorAgent:
                     campaign.id,
                     exc,
                 )
+                await self._persist_and_emit(campaign, "stage_error", StageErrorEvent(
+                    campaign_id=campaign.id,
+                    stage="scheduling",
+                    error=str(exc),
+                ).model_dump(mode="json"))
+                return campaign
 
-        await self._store.update(campaign)
+        await self._persist_and_emit(campaign, "stage_completed", StageCompletedEvent(
+            campaign_id=campaign.id,
+            stage="scheduling",
+            output={"pieces_scheduled": len(campaign.content.pieces)},
+        ).model_dump(mode="json"))
         return campaign
 
     async def submit_clarification(self, response: ClarificationResponse) -> None:
