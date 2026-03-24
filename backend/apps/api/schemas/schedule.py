@@ -42,3 +42,19 @@ class CalendarDayGroup(BaseModel):
 class CalendarResponse(BaseModel):
     scheduled: list[CalendarDayGroup]
     unscheduled: list[CalendarPiece]
+
+
+class WorkspaceCalendarPiece(BaseModel):
+    campaign_id: str
+    campaign_name: str
+    piece_index: int
+    piece: ContentPiece
+
+
+class WorkspaceCalendarDayGroup(BaseModel):
+    date: date
+    pieces: list[WorkspaceCalendarPiece]
+
+
+class WorkspaceCalendarResponse(BaseModel):
+    scheduled: list[WorkspaceCalendarDayGroup]

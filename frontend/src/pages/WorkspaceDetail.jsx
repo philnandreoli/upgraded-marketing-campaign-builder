@@ -266,6 +266,12 @@ export default function WorkspaceDetail({ events = [] }) {
             )}
           </div>
           <div className="ws-detail-actions">
+            <Link
+              to={`/workspaces/${workspace.id}/calendar`}
+              className="btn btn-outline"
+            >
+              📅 Calendar
+            </Link>
             {isCreatorOrAdmin && (
               <Link
                 to={`/workspaces/${workspace.id}/settings`}
