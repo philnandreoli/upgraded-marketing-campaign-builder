@@ -25,9 +25,9 @@ function makeCalendarResponse(overrides = {}) {
   };
 }
 
-async function renderCalendar(calResponse = makeCalendarResponse()) {
+async function renderCalendar(calResponse = makeCalendarResponse(), props = {}) {
   api.getCalendar.mockResolvedValue(calResponse);
-  render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} />);
+  render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} {...props} />);
   await waitFor(() => expect(api.getCalendar).toHaveBeenCalled());
 }
 
@@ -233,5 +233,155 @@ describe('CalendarView – error state', () => {
     render(<CalendarView workspaceId={WORKSPACE_ID} campaignId={CAMPAIGN_ID} />);
     await waitFor(() => screen.getByText(/Failed to load calendar/i));
     expect(screen.getByText(/Network error/i)).toBeInTheDocument();
+  });
+});
+
+describe('CalendarView – unscheduled sidebar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  const makeUnscheduledPiece = (overrides = {}) => ({
+    piece_index: 0,
+    piece: {
+      content: 'Draft email headline',
+      content_type: 'headline',
+      channel: 'email',
+      scheduled_date: null,
+      scheduled_time: null,
+      ...overrides,
+    },
+  });
+
+  it('shows sidebar with count badge for unscheduled pieces', async () => {
+    const calResponse = makeCalendarResponse({
+      unscheduled: [
+        makeUnscheduledPiece(),
+        { piece_index: 1, piece: { ...makeUnscheduledPiece().piece, content: 'Another piece' } },
+      ],
+    });
+    await renderCalendar(calResponse);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    expect(screen.getByText('Unscheduled')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 unscheduled')).toBeInTheDocument();
+  });
+
+  it('lists unscheduled content pieces', async () => {
+    const calResponse = makeCalendarResponse({
+      unscheduled: [makeUnscheduledPiece()],
+    });
+    await renderCalendar(calResponse);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    expect(screen.getByText(/Draft email headline/)).toBeInTheDocument();
+  });
+
+  it('shows "All content is scheduled!" when unscheduled list is empty', async () => {
+    await renderCalendar(makeCalendarResponse({ unscheduled: [] }));
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    expect(screen.getByText('All content is scheduled!')).toBeInTheDocument();
+  });
+
+  it('collapses sidebar when header is clicked', async () => {
+    const calResponse = makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] });
+    await renderCalendar(calResponse);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    // Content visible initially
+    expect(screen.getByText(/Draft email headline/)).toBeInTheDocument();
+
+    // Click header to collapse
+    fireEvent.click(screen.getByRole('button', { name: /unscheduled/i }));
+    expect(screen.queryByText(/Draft email headline/)).not.toBeInTheDocument();
+  });
+
+  it('persists sidebar collapsed state in localStorage', async () => {
+    const calResponse = makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] });
+    await renderCalendar(calResponse);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /unscheduled/i }));
+    expect(localStorage.getItem('cal_sidebar_collapsed')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: /unscheduled/i }));
+    expect(localStorage.getItem('cal_sidebar_collapsed')).toBe('false');
+  });
+
+  it('restores collapsed state from localStorage', async () => {
+    localStorage.setItem('cal_sidebar_collapsed', 'true');
+    const calResponse = makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] });
+    await renderCalendar(calResponse);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    expect(screen.queryByText(/Draft email headline/)).not.toBeInTheDocument();
+  });
+
+  it('shows Schedule button for non-viewer', async () => {
+    const calResponse = makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] });
+    await renderCalendar(calResponse, { isViewer: false });
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    expect(screen.getByRole('button', { name: 'Schedule' })).toBeInTheDocument();
+  });
+
+  it('hides Schedule button for viewer (RBAC)', async () => {
+    const calResponse = makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] });
+    await renderCalendar(calResponse, { isViewer: true });
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    expect(screen.queryByRole('button', { name: /^schedule$/i })).not.toBeInTheDocument();
+  });
+
+  it('clicking Schedule button shows DatePicker and Cancel button', async () => {
+    const calResponse = makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] });
+    await renderCalendar(calResponse);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /^schedule$/i }));
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    // DatePicker trigger should appear
+    expect(screen.getByText(/Pick a date/i)).toBeInTheDocument();
+  });
+
+  it('Cancel button hides DatePicker and restores Schedule button', async () => {
+    const calResponse = makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] });
+    await renderCalendar(calResponse);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /^schedule$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    expect(screen.getByRole('button', { name: /^schedule$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  it('scheduling a piece calls schedulePiece API and refreshes calendar', async () => {
+    vi.spyOn(api, 'schedulePiece').mockResolvedValue({});
+    // After refresh: piece is now scheduled
+    api.getCalendar
+      .mockResolvedValueOnce(makeCalendarResponse({ unscheduled: [makeUnscheduledPiece()] }))
+      .mockResolvedValueOnce(makeCalendarResponse({ unscheduled: [] }));
+
+    await renderCalendar();
+    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+
+    // Open schedule picker
+    fireEvent.click(screen.getByRole('button', { name: /^schedule$/i }));
+
+    // Open DatePicker dropdown
+    fireEvent.click(screen.getByRole('button', { name: /mm\/dd\/yyyy|pick a date/i }));
+
+    // Click on day "15" in the calendar picker
+    const dayBtn = screen.getAllByRole('button', { name: '15' }).find(
+      (btn) => btn.className && btn.className.includes('datepicker-day'),
+    );
+    if (dayBtn && !dayBtn.disabled) {
+      fireEvent.click(dayBtn);
+      await waitFor(() => expect(api.schedulePiece).toHaveBeenCalled());
+      await waitFor(() => expect(api.getCalendar).toHaveBeenCalledTimes(2));
+    }
   });
 });

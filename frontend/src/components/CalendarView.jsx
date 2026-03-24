@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { getCalendar } from "../api";
+import { getCalendar, schedulePiece } from "../api";
+import DatePicker from "./DatePicker";
 
 // Channel type to CSS color variable mapping
 const CHANNEL_COLORS = {
@@ -42,6 +43,7 @@ const MONTH_NAMES = [
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const CAL_VIEW_MODE_KEY = "cal_view_mode";
+const CAL_SIDEBAR_COLLAPSED_KEY = "cal_sidebar_collapsed";
 
 // Hour labels for weekly time slots (6am–10pm)
 const HOUR_START = 6;
@@ -240,7 +242,116 @@ function WeeklyView({ weekStart, piecesByDate, todayISO }) {
   );
 }
 
-export default function CalendarView({ workspaceId, campaignId }) {
+function UnscheduledSidebar({ unscheduled, isViewer, onSchedule, collapsed, onToggle }) {
+  const [schedulingPieceIndex, setSchedulingPieceIndex] = useState(null);
+  const [scheduleError, setScheduleError] = useState(null);
+
+  const handleScheduleClick = (pieceIndex) => {
+    setScheduleError(null);
+    setSchedulingPieceIndex(pieceIndex);
+  };
+
+  const handleDateChange = async (e, pieceIndex) => {
+    const dateStr = e.target.value;
+    if (!dateStr) return;
+    setSchedulingPieceIndex(null);
+    setScheduleError(null);
+    try {
+      await onSchedule(pieceIndex, dateStr);
+    } catch {
+      setScheduleError("Failed to schedule. Please try again.");
+    }
+  };
+
+  const count = unscheduled.length;
+
+  return (
+    <div className="cal-unscheduled-sidebar">
+      <button
+        type="button"
+        className="cal-sidebar-header"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+      >
+        <span className="cal-sidebar-title">
+          Unscheduled
+          <span className="cal-sidebar-count-badge" aria-label={`${count} unscheduled`}>
+            {count}
+          </span>
+        </span>
+        <span className="cal-sidebar-chevron" aria-hidden="true">
+          {collapsed ? "›" : "⌄"}
+        </span>
+      </button>
+
+      {!collapsed && (
+        <div className="cal-sidebar-body">
+          {scheduleError && (
+            <p className="cal-sidebar-error">{scheduleError}</p>
+          )}
+          {count === 0 ? (
+            <p className="cal-sidebar-empty">All content is scheduled!</p>
+          ) : (
+            unscheduled.map((calPiece) => {
+              const { piece, piece_index } = calPiece;
+              const colors = getChannelColor(piece.channel);
+              const isScheduling = schedulingPieceIndex === piece_index;
+              return (
+                <div key={piece_index} className="cal-unscheduled-card">
+                  <div className="cal-unscheduled-card-meta">
+                    <span className="cal-piece-icon" aria-hidden="true">
+                      {getContentIcon(piece.content_type)}
+                    </span>
+                    {piece.channel && (
+                      <span
+                        className="cal-piece-channel-badge"
+                        style={{ background: colors.bg, color: colors.text }}
+                      >
+                        {getChannelIcon(piece.channel)} {piece.channel.replace(/_/g, " ")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="cal-unscheduled-card-content" title={piece.content}>
+                    {truncate(piece.content, 80)}
+                  </p>
+                  {!isViewer && (
+                    isScheduling ? (
+                      <div className="cal-unscheduled-datepicker">
+                        <DatePicker
+                          value=""
+                          onChange={(e) => handleDateChange(e, piece_index)}
+                          min={new Date().toISOString().slice(0, 10)}
+                          placeholder="Pick a date"
+                        />
+                        <button
+                          type="button"
+                          className="cal-sidebar-cancel-btn"
+                          onClick={() => setSchedulingPieceIndex(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="cal-schedule-btn"
+                        onClick={() => handleScheduleClick(piece_index)}
+                      >
+                        Schedule
+                      </button>
+                    )
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function CalendarView({ workspaceId, campaignId, isViewer = false }) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
@@ -253,9 +364,21 @@ export default function CalendarView({ workspaceId, campaignId }) {
     return stored === "week" || stored === "month" ? stored : "month";
   });
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem(CAL_SIDEBAR_COLLAPSED_KEY) === "true";
+  });
+
   const handleCalViewMode = (mode) => {
     setCalViewMode(mode);
     localStorage.setItem(CAL_VIEW_MODE_KEY, mode);
+  };
+
+  const handleSidebarToggle = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(CAL_SIDEBAR_COLLAPSED_KEY, String(next));
+      return next;
+    });
   };
 
   const load = useCallback(async () => {
@@ -271,6 +394,11 @@ export default function CalendarView({ workspaceId, campaignId }) {
       setLoading(false);
     }
   }, [workspaceId, campaignId]);
+
+  const handleSchedulePiece = useCallback(async (pieceIndex, dateStr) => {
+    await schedulePiece(workspaceId, campaignId, pieceIndex, { scheduledDate: dateStr });
+    load();
+  }, [workspaceId, campaignId, load]);
 
   useEffect(() => {
     const t = setTimeout(load, 0);
@@ -381,42 +509,56 @@ export default function CalendarView({ workspaceId, campaignId }) {
 
       {loading ? (
         <div className="loading"><span className="spinner" /> Loading calendar…</div>
-      ) : calViewMode === "month" ? (
-        <div className="cal-grid-container">
-          {/* Weekday headers */}
-          <div className="cal-grid">
-            {WEEKDAY_LABELS.map((day) => (
-              <div key={day} className="cal-weekday-header">{day}</div>
-            ))}
-
-            {/* Day cells */}
-            {grid.map((date, idx) => {
-              if (!date) {
-                return <div key={`empty-${idx}`} className="cal-day cal-day--empty" />;
-              }
-              const iso = toISODate(date);
-              const isToday = iso === todayISO;
-              const pieces = piecesByDate[iso] || [];
-              return (
-                <div
-                  key={iso}
-                  className={`cal-day${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}`}
-                >
-                  <span className={`cal-day-number${isToday ? " cal-day-number--today" : ""}`}>
-                    {date.getDate()}
-                  </span>
-                  <div className="cal-day-pieces">
-                    {pieces.map((cp) => (
-                      <ContentPieceCard key={cp.piece_index} calPiece={cp} />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       ) : (
-        <WeeklyView weekStart={weekStart} piecesByDate={piecesByDate} todayISO={todayISO} />
+        <div className="cal-body">
+          <div className="cal-main">
+            {calViewMode === "month" ? (
+              <div className="cal-grid-container">
+                {/* Weekday headers */}
+                <div className="cal-grid">
+                  {WEEKDAY_LABELS.map((day) => (
+                    <div key={day} className="cal-weekday-header">{day}</div>
+                  ))}
+
+                  {/* Day cells */}
+                  {grid.map((date, idx) => {
+                    if (!date) {
+                      return <div key={`empty-${idx}`} className="cal-day cal-day--empty" />;
+                    }
+                    const iso = toISODate(date);
+                    const isToday = iso === todayISO;
+                    const pieces = piecesByDate[iso] || [];
+                    return (
+                      <div
+                        key={iso}
+                        className={`cal-day${isToday ? " cal-day--today" : ""}${pieces.length > 0 ? " cal-day--has-pieces" : ""}`}
+                      >
+                        <span className={`cal-day-number${isToday ? " cal-day-number--today" : ""}`}>
+                          {date.getDate()}
+                        </span>
+                        <div className="cal-day-pieces">
+                          {pieces.map((cp) => (
+                            <ContentPieceCard key={cp.piece_index} calPiece={cp} />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <WeeklyView weekStart={weekStart} piecesByDate={piecesByDate} todayISO={todayISO} />
+            )}
+          </div>
+
+          <UnscheduledSidebar
+            unscheduled={calData?.unscheduled || []}
+            isViewer={isViewer}
+            onSchedule={handleSchedulePiece}
+            collapsed={sidebarCollapsed}
+            onToggle={handleSidebarToggle}
+          />
+        </div>
       )}
 
       {/* Legend */}
