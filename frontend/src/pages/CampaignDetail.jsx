@@ -149,6 +149,9 @@ export default function CampaignDetail() {
         states[stage.key] = "completed";
       } else if (stageIdx === currentIdx) {
         states[stage.key] = "active";
+      } else if (cs === "draft" && stage.key === PIPELINE_STAGES[0].key) {
+        // Pipeline just launched — first stage should appear active while starting up
+        states[stage.key] = "active";
       } else {
         states[stage.key] = "pending";
       }
