@@ -4469,6 +4469,20 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   text-overflow: ellipsis;
 }
 
+.ws-cal-campaign-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 0.05rem 0.25rem;
+  background: rgba(0,0,0,0.18);
+  color: inherit;
+  opacity: 0.95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+}
+
 .cal-legend {
   display: flex;
   flex-wrap: wrap;

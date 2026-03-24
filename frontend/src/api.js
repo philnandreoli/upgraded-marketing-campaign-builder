@@ -70,6 +70,11 @@ export const schedulePiece = (
 export const getCalendar = (workspaceId, campaignId) =>
   request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/calendar`);
 
+export const getWorkspaceCalendar = (workspaceId, month) => {
+  const params = month ? `?month=${encodeURIComponent(month)}` : "";
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/calendar${params}`);
+};
+
 export const bulkSchedule = (workspaceId, campaignId, schedules) =>
   request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/bulk-schedule`, {
     body: { schedules },

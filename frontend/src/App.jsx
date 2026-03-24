@@ -13,6 +13,7 @@ import UserSettings from "./pages/UserSettings.jsx";
 import WorkspaceList from "./pages/WorkspaceList.jsx";
 import WorkspaceDetail from "./pages/WorkspaceDetail.jsx";
 import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
+import WorkspaceCalendar from "./pages/WorkspaceCalendar.jsx";
 import useWebSocket from "./hooks/useWebSocket.js";
 import AppNavbar from "./components/AppNavbar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -123,6 +124,7 @@ function AuthenticatedApp() {
             <Route path="/" element={<Dashboard events={events} />} />
             <Route path="/workspaces" element={<WorkspaceList />} />
             <Route path="/workspaces/:id" element={<WorkspaceDetail events={events} />} />
+            <Route path="/workspaces/:id/calendar" element={<WorkspaceCalendar />} />
             <Route path="/workspaces/:id/settings" element={<RequireBuilder><WorkspaceSettings /></RequireBuilder>} />
             <Route path="/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
             <Route path="/workspaces/:workspaceId/campaigns/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />

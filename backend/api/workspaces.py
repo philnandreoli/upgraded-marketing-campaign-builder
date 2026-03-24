@@ -16,7 +16,9 @@ defined here and imported by workspace_members.py and campaigns.py.
 
 from __future__ import annotations
 
-from datetime import datetime
+import calendar
+from collections import defaultdict
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any, Literal, Optional
 
@@ -24,6 +26,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from backend.apps.api.schemas.common import PaginationMeta
+from backend.apps.api.schemas.schedule import (
+    WorkspaceCalendarDayGroup,
+    WorkspaceCalendarPiece,
+    WorkspaceCalendarResponse,
+)
 from backend.models.user import User, UserRole
 from backend.models.workspace import Workspace, WorkspaceRole
 from backend.infrastructure.auth import get_current_user
@@ -292,6 +299,80 @@ async def delete_workspace(
         raise HTTPException(status_code=409, detail="Personal workspaces cannot be deleted")
     await store.delete_workspace(workspace_id)
     return Response(status_code=204)
+
+
+@router.get("/workspaces/{workspace_id}/calendar", response_model=WorkspaceCalendarResponse)
+async def get_workspace_calendar(
+    workspace_id: str,
+    month: Optional[str] = Query(
+        default=None,
+        description="Month to filter by, in YYYY-MM format. Defaults to the current month.",
+        pattern=r"^\d{4}-\d{2}$",
+    ),
+    user: Optional[User] = Depends(get_current_user),
+) -> WorkspaceCalendarResponse:
+    """Return all scheduled content pieces from every campaign in the workspace,
+    grouped by date and annotated with campaign metadata.
+
+    Requires workspace membership (any role) or platform admin.
+    Only pieces whose ``scheduled_date`` falls within the requested month are included.
+    """
+    store = get_campaign_store()
+    workspace = await store.get_workspace(workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
+
+    # Resolve the requested month boundaries
+    today = datetime.now(timezone.utc).date()
+    if month is not None:
+        try:
+            year, month_num = int(month[:4]), int(month[5:7])
+            if not (1 <= month_num <= 12):
+                raise ValueError("month out of range")
+        except (ValueError, IndexError):
+            raise HTTPException(status_code=400, detail="Invalid month format; expected YYYY-MM")
+    else:
+        year, month_num = today.year, today.month
+
+    _, days_in_month = calendar.monthrange(year, month_num)
+    month_start = date(year, month_num, 1)
+    month_end = date(year, month_num, days_in_month)
+
+    # Collect all campaigns in the workspace (no pagination limit needed here)
+    campaigns, _total = await store.list_workspace_campaigns(
+        workspace_id, include_drafts=True, limit=10_000, offset=0
+    )
+
+    scheduled_by_day: dict[date, list[WorkspaceCalendarPiece]] = defaultdict(list)
+
+    for campaign in campaigns:
+        if campaign.content is None:
+            continue
+        campaign_name = (
+            campaign.brief.product_or_service
+            if campaign.brief and campaign.brief.product_or_service
+            else campaign.id
+        )
+        for idx, piece in enumerate(campaign.content.pieces):
+            if piece.scheduled_date is None:
+                continue
+            if month_start <= piece.scheduled_date <= month_end:
+                scheduled_by_day[piece.scheduled_date].append(
+                    WorkspaceCalendarPiece(
+                        campaign_id=campaign.id,
+                        campaign_name=campaign_name,
+                        piece_index=idx,
+                        piece=piece,
+                    )
+                )
+
+    scheduled = [
+        WorkspaceCalendarDayGroup(date=d, pieces=scheduled_by_day[d])
+        for d in sorted(scheduled_by_day.keys())
+    ]
+
+    return WorkspaceCalendarResponse(scheduled=scheduled)
 
 
 # ---------------------------------------------------------------------------

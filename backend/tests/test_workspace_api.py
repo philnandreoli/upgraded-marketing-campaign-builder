@@ -614,6 +614,154 @@ class TestRemoveWorkspaceMember:
         assert r.status_code == 204
 
 
+
+# ---------------------------------------------------------------------------
+# GET /api/workspaces/{id}/calendar
+# ---------------------------------------------------------------------------
+
+class TestWorkspaceCalendar:
+    """Tests for the workspace-level calendar endpoint."""
+
+    def _make_campaign_with_content(self, campaign_id: str, workspace_id: str, name: str, pieces):
+        from backend.models.campaign import Campaign, CampaignBrief, CampaignContent
+        brief = CampaignBrief(
+            product_or_service=name,
+            goal="Test goal",
+            target_audience="Test audience",
+        )
+        content = CampaignContent(theme="Test theme", tone_of_voice="", pieces=pieces)
+        return Campaign(
+            id=campaign_id,
+            brief=brief,
+            workspace_id=workspace_id,
+            content=content,
+        )
+
+    def _make_piece(self, content_type="social_post", channel="social_media", content="Test post", scheduled_date=None):
+        from backend.models.campaign import ContentPiece
+        from datetime import date as _date
+        return ContentPiece(
+            content_type=content_type,
+            channel=channel,
+            content=content,
+            scheduled_date=scheduled_date,
+        )
+
+    def test_returns_scheduled_pieces_grouped_by_date(self, _isolated_store, creator_client):
+        from datetime import date
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+
+        piece = self._make_piece(scheduled_date=date(2026, 4, 10))
+        campaign = self._make_campaign_with_content("camp-1", "ws-1", "Alpha Campaign", [piece])
+        _isolated_store._campaigns["camp-1"] = campaign
+
+        r = creator_client.get("/api/workspaces/ws-1/calendar?month=2026-04")
+        assert r.status_code == 200
+        data = r.json()
+        assert "scheduled" in data
+        assert len(data["scheduled"]) == 1
+        assert data["scheduled"][0]["date"] == "2026-04-10"
+        assert len(data["scheduled"][0]["pieces"]) == 1
+        piece_data = data["scheduled"][0]["pieces"][0]
+        assert piece_data["campaign_id"] == "camp-1"
+        assert piece_data["campaign_name"] == "Alpha Campaign"
+        assert piece_data["piece_index"] == 0
+
+    def test_aggregates_pieces_across_multiple_campaigns(self, _isolated_store, creator_client):
+        from datetime import date
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+
+        piece_a = self._make_piece(content="Post A", scheduled_date=date(2026, 4, 5))
+        piece_b = self._make_piece(content="Post B", scheduled_date=date(2026, 4, 5))
+        piece_c = self._make_piece(content="Post C", scheduled_date=date(2026, 4, 12))
+        campaign_a = self._make_campaign_with_content("camp-a", "ws-1", "Campaign A", [piece_a])
+        campaign_b = self._make_campaign_with_content("camp-b", "ws-1", "Campaign B", [piece_b, piece_c])
+        _isolated_store._campaigns["camp-a"] = campaign_a
+        _isolated_store._campaigns["camp-b"] = campaign_b
+
+        r = creator_client.get("/api/workspaces/ws-1/calendar?month=2026-04")
+        assert r.status_code == 200
+        data = r.json()
+        dates = [g["date"] for g in data["scheduled"]]
+        assert "2026-04-05" in dates
+        assert "2026-04-12" in dates
+        # Two pieces on the 5th
+        group_5 = next(g for g in data["scheduled"] if g["date"] == "2026-04-05")
+        assert len(group_5["pieces"]) == 2
+
+    def test_excludes_pieces_outside_requested_month(self, _isolated_store, creator_client):
+        from datetime import date
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+
+        piece_in = self._make_piece(content="In month", scheduled_date=date(2026, 4, 15))
+        piece_out = self._make_piece(content="Out of month", scheduled_date=date(2026, 5, 1))
+        campaign = self._make_campaign_with_content("camp-1", "ws-1", "Camp", [piece_in, piece_out])
+        _isolated_store._campaigns["camp-1"] = campaign
+
+        r = creator_client.get("/api/workspaces/ws-1/calendar?month=2026-04")
+        assert r.status_code == 200
+        data = r.json()
+        all_dates = {g["date"] for g in data["scheduled"]}
+        assert "2026-05-01" not in all_dates
+        assert "2026-04-15" in all_dates
+
+    def test_defaults_to_current_month_when_no_param(self, _isolated_store, creator_client):
+        """Calling without ?month should not raise an error."""
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+
+        r = creator_client.get("/api/workspaces/ws-1/calendar")
+        assert r.status_code == 200
+        assert "scheduled" in r.json()
+
+    def test_non_member_gets_404(self, _isolated_store):
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+
+        with _as_user(_OTHER_USER) as c:
+            r = c.get("/api/workspaces/ws-1/calendar?month=2026-04")
+        assert r.status_code == 404
+
+    def test_unknown_workspace_returns_404(self, _isolated_store, creator_client):
+        r = creator_client.get("/api/workspaces/no-such-ws/calendar?month=2026-04")
+        assert r.status_code == 404
+
+    def test_invalid_month_format_returns_400(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+
+        r = creator_client.get("/api/workspaces/ws-1/calendar?month=April-2026")
+        assert r.status_code == 422  # FastAPI pattern validation
+
+    def test_viewer_can_read_calendar(self, _isolated_store):
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _OTHER_USER.id)] = "viewer"
+
+        with _as_user(_OTHER_USER) as c:
+            r = c.get("/api/workspaces/ws-1/calendar?month=2026-04")
+        assert r.status_code == 200
+
+    def test_unscheduled_pieces_not_included(self, _isolated_store, creator_client):
+        from datetime import date
+        _isolated_store._workspaces["ws-1"] = _make_workspace("ws-1", "WS", _CREATOR_USER.id)
+        _isolated_store._workspace_members[("ws-1", _CREATOR_USER.id)] = "creator"
+
+        piece_scheduled = self._make_piece(content="Has date", scheduled_date=date(2026, 4, 10))
+        piece_unscheduled = self._make_piece(content="No date", scheduled_date=None)
+        campaign = self._make_campaign_with_content("camp-1", "ws-1", "Camp", [piece_scheduled, piece_unscheduled])
+        _isolated_store._campaigns["camp-1"] = campaign
+
+        r = creator_client.get("/api/workspaces/ws-1/calendar?month=2026-04")
+        assert r.status_code == 200
+        data = r.json()
+        all_pieces = [p for g in data["scheduled"] for p in g["pieces"]]
+        assert len(all_pieces) == 1
+        assert all_pieces[0]["piece"]["content"] == "Has date"
+
+
 # ---------------------------------------------------------------------------
 # Helper factory
 # ---------------------------------------------------------------------------
