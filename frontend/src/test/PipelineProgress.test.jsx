@@ -131,3 +131,24 @@ describe('PipelineProgress – pending stages', () => {
     });
   });
 });
+
+describe('PipelineProgress – draft startup', () => {
+  it('marks Draft as active and all pipeline stages as pending when status is "draft"', () => {
+    const campaign = { status: 'draft' };
+
+    const stages = renderStages(campaign);
+    const draftEl = stages.find(el => el.textContent === 'Draft');
+    const pipelineLabels = ['Strategy', 'Content', 'Channels', 'Analytics', 'Review', 'Revision', 'Approval'];
+
+    // Draft stage is the current stage — should be active
+    expect(classesOf(draftEl)).toContain('active');
+
+    // All pipeline stages have not started yet — should be neither completed nor active
+    pipelineLabels.forEach((label) => {
+      const el = stages.find(s => s.textContent === label);
+      const classes = classesOf(el);
+      expect(classes).not.toContain('completed');
+      expect(classes).not.toContain('active');
+    });
+  });
+});
