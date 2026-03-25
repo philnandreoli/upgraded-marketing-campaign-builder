@@ -5,8 +5,12 @@ Azure AI image generation service with retry + feature flag guard.
 from __future__ import annotations
 
 import base64
+import asyncio
+import ipaddress
 import logging
 import re
+import socket
+from urllib.parse import ParseResult, urlparse
 
 import aiohttp
 from azure.identity.aio import DefaultAzureCredential
@@ -40,6 +44,12 @@ class ImageGenerationService:
         self._model = cfg.model
         self._credential = DefaultAzureCredential()
         self._endpoint = cfg.endpoint
+        self._url_fetch_enabled = cfg.url_fetch_enabled
+        endpoint_host = urlparse(self._endpoint).hostname
+        configured_hosts = {host.lower() for host in cfg.url_fetch_allowed_hosts}
+        self._url_fetch_allowed_hosts = configured_hosts | ({endpoint_host.lower()} if endpoint_host else set())
+        self._url_fetch_timeout_seconds = cfg.url_fetch_timeout_seconds
+        self._url_fetch_max_bytes = cfg.url_fetch_max_bytes
 
     async def _get_client(self) -> AsyncOpenAI:
         """Return an AsyncOpenAI client authenticated with a fresh Azure token."""
@@ -76,6 +86,85 @@ class ImageGenerationService:
             return "1024x1536"  # portrait
         return "1024x1024"  # square-ish
 
+    @staticmethod
+    def _ensure_public_ip(ip_str: str) -> None:
+        ip = ipaddress.ip_address(ip_str)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise RuntimeError("Image URL resolved to a non-public IP address.")
+
+    def _validate_image_url(self, image_url: str) -> ParseResult:
+        parsed = urlparse(image_url)
+        if parsed.scheme.lower() != "https":
+            raise RuntimeError("Image URL fallback requires HTTPS.")
+        if parsed.port not in (None, 443):
+            raise RuntimeError("Image URL fallback only allows standard HTTPS port 443.")
+
+        hostname = (parsed.hostname or "").rstrip(".").lower()
+        if not hostname:
+            raise RuntimeError("Image URL fallback requires a valid hostname.")
+        if hostname not in self._url_fetch_allowed_hosts:
+            raise RuntimeError("Image URL host is not allowlisted.")
+        return parsed
+
+    async def _validate_url_destination(self, hostname: str, port: int) -> None:
+        try:
+            self._ensure_public_ip(hostname)
+            return
+        except ValueError:
+            pass
+
+        loop = asyncio.get_running_loop()
+        try:
+            addr_info = await loop.getaddrinfo(
+                hostname,
+                port,
+                family=socket.AF_UNSPEC,
+                type=socket.SOCK_STREAM,
+            )
+        except socket.gaierror as exc:
+            raise RuntimeError("Image URL hostname could not be resolved.") from exc
+
+        if not addr_info:
+            raise RuntimeError("Image URL hostname did not resolve to any address.")
+
+        for _family, _type, _proto, _canonname, sockaddr in addr_info:
+            self._ensure_public_ip(sockaddr[0])
+
+    async def _read_response_with_limit(self, url_response: aiohttp.ClientResponse) -> bytes:
+        content_length = url_response.headers.get("Content-Length")
+        if content_length:
+            try:
+                if int(content_length) > self._url_fetch_max_bytes:
+                    raise RuntimeError("Image response exceeded maximum allowed size.")
+            except ValueError:
+                pass
+
+        total = 0
+        chunks: list[bytes] = []
+        async for chunk in url_response.content.iter_chunked(64 * 1024):
+            total += len(chunk)
+            if total > self._url_fetch_max_bytes:
+                raise RuntimeError("Image response exceeded maximum allowed size.")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    async def _fetch_image_url_bytes(self, image_url: str) -> bytes:
+        parsed = self._validate_image_url(image_url)
+        await self._validate_url_destination(parsed.hostname or "", parsed.port or 443)
+
+        timeout = aiohttp.ClientTimeout(total=self._url_fetch_timeout_seconds)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(image_url, allow_redirects=False) as url_response:
+                url_response.raise_for_status()
+                return await self._read_response_with_limit(url_response)
+
     @retry(
         retry=retry_if_exception_type(Exception),
         stop=stop_after_attempt(3),
@@ -111,10 +200,11 @@ class ImageGenerationService:
 
         image_url = getattr(image_data, "url", None)
         if image_url:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as url_response:
-                    url_response.raise_for_status()
-                    return await url_response.read()
+            if not self._url_fetch_enabled:
+                raise RuntimeError(
+                    "Image generation response returned URL data, but URL fetch fallback is disabled."
+                )
+            return await self._fetch_image_url_bytes(image_url)
 
         raise RuntimeError("Image generation response did not contain image data.")
 

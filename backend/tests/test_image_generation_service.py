@@ -22,6 +22,10 @@ def image_generation_service():
                 enabled=True,
                 model="gpt-image-1.5",
                 endpoint="https://test.openai.azure.com/openai/v1/",
+                url_fetch_enabled=False,
+                url_fetch_allowed_hosts=[],
+                url_fetch_timeout_seconds=10.0,
+                url_fetch_max_bytes=10 * 1024 * 1024,
             ),
         )
         mock_cred_instance = MagicMock()
@@ -125,6 +129,44 @@ class TestImageGenerationService:
     async def test_generate_rejects_empty_prompt_after_sanitization(self, image_generation_service):
         with pytest.raises(ValueError, match="cannot be empty"):
             await image_generation_service.generate("\x00\x1f   ")
+
+    @pytest.mark.asyncio
+    async def test_generate_raises_when_only_url_returned_and_fallback_disabled(self, image_generation_service):
+        mock_image = MagicMock()
+        mock_image.b64_json = None
+        mock_image.url = "https://test.openai.azure.com/images/1"
+        mock_response = MagicMock(data=[mock_image])
+        _patch_get_client(image_generation_service, mock_response=mock_response)
+
+        with pytest.raises(RuntimeError, match="URL fetch fallback is disabled"):
+            await image_generation_service.generate("test")
+
+    @pytest.mark.asyncio
+    async def test_generate_fetches_url_when_fallback_enabled(self, image_generation_service):
+        image_generation_service._url_fetch_enabled = True
+        mock_image = MagicMock()
+        mock_image.b64_json = None
+        mock_image.url = "https://test.openai.azure.com/images/1"
+        mock_response = MagicMock(data=[mock_image])
+        _patch_get_client(image_generation_service, mock_response=mock_response)
+        image_generation_service._fetch_image_url_bytes = AsyncMock(return_value=b"img")
+
+        result = await image_generation_service.generate("test")
+
+        assert result == b"img"
+        image_generation_service._fetch_image_url_bytes.assert_awaited_once_with(mock_image.url)
+
+    def test_validate_image_url_rejects_non_https_and_non_allowlisted_hosts(self, image_generation_service):
+        image_generation_service._url_fetch_allowed_hosts = {"test.openai.azure.com"}
+
+        with pytest.raises(RuntimeError, match="requires HTTPS"):
+            image_generation_service._validate_image_url("http://test.openai.azure.com/images/1")
+
+        with pytest.raises(RuntimeError, match="not allowlisted"):
+            image_generation_service._validate_image_url("https://evil.example.com/images/1")
+
+        with pytest.raises(RuntimeError, match="port 443"):
+            image_generation_service._validate_image_url("https://test.openai.azure.com:444/images/1")
 
 
 class TestImageGenerationServiceAccessor:
