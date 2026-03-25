@@ -38,6 +38,61 @@ async function handleResponse(res) {
   return res.json();
 }
 
+async function handleResponseWithHeaders(res) {
+  if (res.status === 429) {
+    const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
+    throw new RateLimitError(res.status, null, retryAfter);
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    let body = null;
+    try {
+      body = await res.json();
+      detail = body.detail ?? detail;
+    } catch { /* response wasn't JSON */ }
+    throw new ApiError(res.status, detail, body);
+  }
+  const data = res.status === 204 ? undefined : await res.json();
+  return { data, headers: res.headers };
+}
+
+export async function requestWithHeaders(method, path, { body, headers, retries = 2 } = {}) {
+  const auth = await authHeaders();
+  const merged = { ...auth, ...headers };
+  if (body !== undefined) merged["Content-Type"] ??= "application/json";
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: merged,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    try {
+      return await handleResponseWithHeaders(res);
+    } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.status === 401 &&
+        authEnabled &&
+        attempt < retries
+      ) {
+        const freshAuth = await authHeaders({ forceRefresh: true });
+        if (!freshAuth.Authorization) {
+          redirectToLogin();
+          throw err;
+        }
+        Object.assign(merged, freshAuth);
+        continue;
+      }
+      if (err instanceof RateLimitError && attempt < retries) {
+        await new Promise((r) => setTimeout(r, err.retryAfter * 1000));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export async function request(method, path, { body, headers, retries = 2 } = {}) {
   const auth = await authHeaders();
   const merged = { ...auth, ...headers };

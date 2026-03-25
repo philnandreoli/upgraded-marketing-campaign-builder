@@ -1,4 +1,4 @@
-import { request } from "./lib/apiClient.js";
+import { request, requestWithHeaders } from "./lib/apiClient.js";
 import { authEnabled } from "./lib/auth.js";
 
 export { ApiError, RateLimitError } from "./lib/apiClient.js";
@@ -97,9 +97,16 @@ export const generateImageAsset = (workspaceId, campaignId, contentPieceIndex, p
 // Admin API
 // ---------------------------------------------------------------------------
 
-export const listUsers = (search = "") => {
-  const params = search ? `?search=${encodeURIComponent(search)}` : "";
-  return request("GET", `/api/admin/users${params}`);
+export const listUsers = async (search = "", { page = 1, pageSize = 25 } = {}) => {
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  params.set("page", page);
+  params.set("page_size", pageSize);
+  const { data, headers } = await requestWithHeaders("GET", `/api/admin/users?${params}`);
+  return {
+    users: data,
+    totalCount: parseInt(headers.get("X-Total-Count") ?? "0", 10),
+  };
 };
 
 export const updateUserRoles = (userId, roles) =>
@@ -120,6 +127,9 @@ export const provisionUser = (entraId, email, displayName, roles) =>
   request("POST", "/api/admin/users", {
     body: { entra_id: entraId, email, display_name: displayName, roles },
   });
+
+export const getUserWorkspaces = (userId) =>
+  request("GET", `/api/admin/users/${encodeURIComponent(userId)}/workspaces`);
 
 // ---------------------------------------------------------------------------
 // Campaign member management API

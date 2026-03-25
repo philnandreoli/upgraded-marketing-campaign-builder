@@ -25,7 +25,7 @@ function truncatePrompt(prompt, maxLen = 120) {
   return prompt.length > maxLen ? prompt.slice(0, maxLen) + "…" : prompt;
 }
 
-export default function ImageGallerySection({ workspaceId, campaignId, events, isViewer = false }) {
+export default function ImageGallerySection({ workspaceId, campaignId, events, isViewer = false, status, contentPieces }) {
   const [assets, setAssets] = useState(null);
   const [error, setError] = useState(null);
   const [lightbox, setLightbox] = useState(null);
@@ -116,17 +116,21 @@ export default function ImageGallerySection({ workspaceId, campaignId, events, i
           <div key={pieceIndex} className="image-gallery-group">
             <h3 className="image-gallery-group-header">{label}</h3>
             <div className="image-gallery-grid">
-              {groupAssets.map((asset) => (
-                <ImageAssetCard
-                  key={asset.id}
-                  asset={asset}
-                  workspaceId={workspaceId}
-                  campaignId={campaignId}
-                  canEdit={!isViewer}
-                  onOpenLightbox={setLightbox}
-                  onRegenerated={load}
-                />
-              ))}
+              {groupAssets.map((asset) => {
+                const pieceApproved = contentPieces?.[asset.content_piece_index]?.approval_status === "approved";
+                const locked = pieceApproved && status === "approved";
+                return (
+                  <ImageAssetCard
+                    key={asset.id}
+                    asset={asset}
+                    workspaceId={workspaceId}
+                    campaignId={campaignId}
+                    canEdit={!isViewer && !locked}
+                    onOpenLightbox={setLightbox}
+                    onRegenerated={load}
+                  />
+                );
+              })}
             </div>
           </div>
         );

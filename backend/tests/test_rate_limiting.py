@@ -3,7 +3,8 @@ Tests for API rate limiting.
 
 Verifies that:
 - Endpoints enforce their per-route limits (10/min for campaign creation,
-  30/min for admin endpoints, 10/min for WS ticket).
+  120/min for admin user-search endpoints, 30/min for other admin endpoints,
+  10/min for WS ticket).
 - Exceeding a limit returns HTTP 429 Too Many Requests.
 - 429 responses include a ``Retry-After`` header.
 - Health-check endpoints are exempt from rate limiting.
@@ -188,7 +189,7 @@ class TestCreateCampaignRateLimit:
 
 
 # ---------------------------------------------------------------------------
-# Admin endpoints — 30 req/min
+# Admin user search endpoints — 120 req/min
 # ---------------------------------------------------------------------------
 
 
@@ -205,13 +206,13 @@ class TestAdminRateLimit:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_db, None)
 
-    def test_admin_list_users_rate_limited_after_30(self, db_session):
-        """The 31st admin request within one minute must return 429."""
+    def test_admin_list_users_rate_limited_after_120(self, db_session):
+        """The 121st admin user-search request within one minute must return 429."""
         app.dependency_overrides[get_current_user] = lambda: _ADMIN
         app.dependency_overrides[get_db] = lambda: db_session
         try:
             client = TestClient(app, raise_server_exceptions=False)
-            for _ in range(30):
+            for _ in range(120):
                 r = client.get("/api/admin/users")
                 assert r.status_code == 200, f"Expected 200, got {r.status_code}"
 
@@ -226,7 +227,7 @@ class TestAdminRateLimit:
         app.dependency_overrides[get_db] = lambda: db_session
         try:
             client = TestClient(app, raise_server_exceptions=False)
-            for _ in range(30):
+            for _ in range(120):
                 client.get("/api/admin/users")
 
             r = client.get("/api/admin/users")

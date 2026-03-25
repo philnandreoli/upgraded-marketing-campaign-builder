@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
-import { listUsers, updateUserRoles, deactivateUser, reactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser } from "../api";
+import { listUsers, updateUserRoles, deactivateUser, reactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser, getUserWorkspaces } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { useConfirm } from "../ConfirmDialogContext";
@@ -114,8 +114,18 @@ export default function Admin() {
   const [deactivateError, setDeactivateError] = useState(null);
   const [reactivateError, setReactivateError] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
+
+  // Workspace access drill-down state (inline in user table)
+  const [expandedUserId, setExpandedUserId] = useState(null);
+  const [userWorkspaces, setUserWorkspaces] = useState({});
+  const [loadingUserWs, setLoadingUserWs] = useState({});
   const navigate = useNavigate();
   const confirm = useConfirm();
+
+  // Pagination state
+  const PAGE_SIZE = 25;
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   // Entra ID directory search state
   const [entraSearch, setEntraSearch] = useState("");
@@ -129,11 +139,13 @@ export default function Admin() {
   const [provisioning, setProvisioning] = useState(false);
   const entraSearchTimer = useRef(null);
 
-  const fetchUsers = useCallback(async (term = "") => {
+  const fetchUsers = useCallback(async (term = "", pg = 1) => {
     setLoadingUsers(true);
     setUsersError(null);
     try {
-      setUsers(await listUsers(term));
+      const { users: data, totalCount: total } = await listUsers(term, { page: pg, pageSize: PAGE_SIZE });
+      setUsers(data);
+      setTotalCount(total);
     } catch (err) {
       setUsersError(err.message);
     } finally {
@@ -165,8 +177,26 @@ export default function Admin() {
     }
   }, []);
 
+  const handleExpandUser = useCallback(async (userId) => {
+    if (expandedUserId === userId) {
+      setExpandedUserId(null);
+      return;
+    }
+    setExpandedUserId(userId);
+    if (userWorkspaces[userId]) return;
+    setLoadingUserWs((prev) => ({ ...prev, [userId]: true }));
+    try {
+      const data = await getUserWorkspaces(userId);
+      setUserWorkspaces((prev) => ({ ...prev, [userId]: data }));
+    } catch (err) {
+      setUserWorkspaces((prev) => ({ ...prev, [userId]: { error: err.message } }));
+    } finally {
+      setLoadingUserWs((prev) => ({ ...prev, [userId]: false }));
+    }
+  }, [expandedUserId, userWorkspaces]);
+
   useEffect(() => {
-    fetchUsers("");
+    fetchUsers("", 1);
     fetchCampaigns();
     fetchWorkspaces();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -175,7 +205,8 @@ export default function Admin() {
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setSearch(val);
-    fetchUsers(val);
+    setPage(1);
+    fetchUsers(val, 1);
   };
 
   const handleRolesChange = async (userId, newRoles) => {
@@ -269,7 +300,9 @@ export default function Admin() {
       setEntraSearch("");
       setEntraResults([]);
       setProvisionRoles(["viewer"]);
-      await fetchUsers("");
+      await fetchUsers("", 1);
+      setSearch("");
+      setPage(1);
     } catch (err) {
       setProvisionError(err.message);
     } finally {
@@ -488,7 +521,7 @@ export default function Admin() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                      {["Display Name", "Email", "Roles", "Active", "Date Added", "Actions"].map((h) => (
+                      {["Display Name", "Email", "Roles", "Workspaces", "Active", "Date Added", "Actions"].map((h) => (
                         <th
                           key={h}
                           style={{
@@ -505,11 +538,16 @@ export default function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((u) => (
+                    {users.map((u) => {
+                      const isExpanded = expandedUserId === u.id;
+                      const wsData = userWorkspaces[u.id];
+                      const wsLoading = loadingUserWs[u.id];
+                      return (
+                      <Fragment key={u.id}>
                       <tr
-                        key={u.id}
+                        className={isExpanded ? "ws-access-row ws-access-row--expanded" : "ws-access-row"}
                         style={{
-                          borderBottom: "1px solid var(--color-border)",
+                          borderBottom: isExpanded ? "none" : "1px solid var(--color-border)",
                           opacity: u.is_active ? 1 : 0.5,
                         }}
                       >
@@ -526,6 +564,23 @@ export default function Admin() {
                             onRolesChange={handleRolesChange}
                             disabled={!u.is_active}
                           />
+                        </td>
+                        <td style={{ padding: "0.6rem 0.75rem", color: "var(--color-text-muted)" }}>
+                          {u.workspace_count > 0 ? (
+                            <span
+                              className="ws-access-count-link"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleExpandUser(u.id)}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleExpandUser(u.id); } }}
+                              aria-expanded={isExpanded}
+                            >
+                              <span className="ws-access-chevron">{isExpanded ? "▾" : "▸"}</span>
+                              {u.workspace_count}
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--color-text-dim)" }}>0</span>
+                          )}
                         </td>
                         <td style={{ padding: "0.6rem 0.75rem" }}>
                           <span
@@ -563,11 +618,128 @@ export default function Admin() {
                           )}
                         </td>
                       </tr>
-                    ))}
+
+                      {/* Expanded workspace detail row */}
+                      {isExpanded && (
+                        <tr className="ws-access-detail-row">
+                          <td colSpan={7} style={{ padding: 0, borderBottom: "1px solid var(--color-border)" }}>
+                            <div className="ws-access-detail">
+                              {wsLoading ? (
+                                <div className="loading" style={{ padding: "0.75rem 1.5rem" }}>
+                                  <span className="spinner" style={{ width: 14, height: 14 }} /> Loading workspaces…
+                                </div>
+                              ) : wsData?.error ? (
+                                <p style={{ color: "var(--color-danger)", padding: "0.75rem 1.5rem", fontSize: "0.8rem" }}>
+                                  ⚠ {wsData.error}
+                                </p>
+                              ) : wsData && Array.isArray(wsData) && wsData.length > 0 ? (
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                                  <thead>
+                                    <tr>
+                                      {["Workspace", "Type", "Workspace Role", "Added"].map((h) => (
+                                        <th
+                                          key={h}
+                                          style={{
+                                            textAlign: "left",
+                                            padding: "0.4rem 0.75rem",
+                                            color: "var(--color-text-muted)",
+                                            fontWeight: 600,
+                                            fontSize: "0.78rem",
+                                          }}
+                                        >
+                                          {h}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {wsData.map((ws) => (
+                                      <tr
+                                        key={ws.workspace_id}
+                                        className="ws-access-workspace-row"
+                                        onClick={() => navigate(`/workspaces/${ws.workspace_id}`)}
+                                        style={{ cursor: "pointer" }}
+                                      >
+                                        <td style={{ padding: "0.4rem 0.75rem", fontWeight: 500 }}>
+                                          {ws.workspace_name}
+                                        </td>
+                                        <td style={{ padding: "0.4rem 0.75rem" }}>
+                                          {ws.is_personal ? (
+                                            <span className="badge" style={{ background: "rgba(99,102,241,0.15)", color: "var(--color-primary-hover)", fontSize: "0.68rem" }}>
+                                              🏠 Personal
+                                            </span>
+                                          ) : (
+                                            <span className="badge" style={{ background: "rgba(148,163,184,0.12)", color: "var(--color-text-dim)", fontSize: "0.68rem" }}>
+                                              📁 Team
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td style={{ padding: "0.4rem 0.75rem" }}>
+                                          <span className={`ws-role-badge ws-role-badge--${ws.role}`}>
+                                            {ws.role}
+                                          </span>
+                                        </td>
+                                        <td style={{ padding: "0.4rem 0.75rem", color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
+                                          {formatDate(ws.added_at)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : (
+                                <p style={{ color: "var(--color-text-muted)", padding: "0.75rem 1.5rem", fontSize: "0.82rem" }}>
+                                  No workspace memberships found.
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
+
+            {/* Pagination controls */}
+            {!loadingUsers && !usersError && totalCount > 0 && (() => {
+              const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+              return (
+                <div style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: "1rem",
+                  fontSize: "0.875rem",
+                  color: "var(--color-text-muted)",
+                }}>
+                  <span>
+                    Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount} users
+                  </span>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <button
+                      className="btn btn-outline"
+                      style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem" }}
+                      disabled={page <= 1}
+                      onClick={() => { const p = page - 1; setPage(p); fetchUsers(search, p); }}
+                    >
+                      Previous
+                    </button>
+                    <span>Page {page} of {totalPages}</span>
+                    <button
+                      className="btn btn-outline"
+                      style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem" }}
+                      disabled={page >= totalPages}
+                      onClick={() => { const p = page + 1; setPage(p); fetchUsers(search, p); }}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </>
       )}

@@ -86,7 +86,7 @@ function AddMemberForm({ workspaceId, onAdded }) {
     if (!val.trim()) { setResults([]); return; }
     setSearching(true);
     try {
-      const users = await listUsers(val);
+      const { users } = await listUsers(val);
       setResults(users);
     } catch {
       setResults([]);
