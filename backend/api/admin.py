@@ -29,7 +29,7 @@ from backend.config import get_settings
 from backend.models.user import User, UserRole, roles_from_db, roles_to_db
 from backend.infrastructure.auth import require_admin
 from backend.infrastructure.campaign_store import get_campaign_store
-from backend.infrastructure.database import CampaignMemberRow, UserRow, get_db
+from backend.infrastructure.database import CampaignMemberRow, UserRow, WorkspaceMemberRow, WorkspaceRow, get_db
 from backend.infrastructure.graph import InvalidSearchInputError, search_entra_users
 from backend.core.rate_limit import limiter
 
@@ -67,6 +67,7 @@ class UserListResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    workspace_count: int = 0
 
 
 class UserDetailResponse(BaseModel):
@@ -86,49 +87,57 @@ class UserDetailResponse(BaseModel):
 
 
 @router.get("/users", response_model=list[UserListResponse])
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def list_users(
     request: Request,
     response: Response,
     search: Optional[str] = Query(default=None, description="Filter by name or email"),
-    page: int = Query(default=1, ge=1, description="Page number (1-based); requires page_size to take effect"),
-    page_size: Optional[int] = Query(default=None, ge=1, le=200, description="Number of results per page; omit for all results"),
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(default=25, ge=1, le=200, description="Number of results per page"),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserListResponse]:
-    """List all platform users, optionally filtered by name/email with optional pagination."""
-    if page > 1 and page_size is None:
-        raise HTTPException(
-            status_code=400,
-            detail="page_size is required when page is specified.",
+    """List all platform users, optionally filtered by name/email with pagination."""
+    base = (
+        select(
+            UserRow,
+            func.count(WorkspaceMemberRow.workspace_id).label("ws_count"),
         )
-
-    stmt = select(UserRow).order_by(UserRow.created_at.desc())
+        .outerjoin(WorkspaceMemberRow, UserRow.id == WorkspaceMemberRow.user_id)
+        .group_by(UserRow.id)
+    )
 
     if search:
         term = f"%{search}%"
-        stmt = stmt.where(
+        base = base.where(
             or_(
                 UserRow.email.ilike(term),
                 UserRow.display_name.ilike(term),
             )
         )
 
-    if page_size is not None:
-        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+    # Total count (uses same filter, no ordering needed).
+    count_result = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = count_result.scalar() or 0
 
-    result = await db.execute(stmt)
-    rows = result.scalars().all()
+    # Paginated data query.
+    stmt = base.order_by(UserRow.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    rows = (await db.execute(stmt)).all()
+
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Page"] = str(page)
+    response.headers["X-Page-Size"] = str(page_size)
 
     return [
         UserListResponse(
-            id=r.id,
-            email=r.email,
-            display_name=r.display_name,
-            roles=[v.strip() for v in r.role.split(",") if v.strip()],
-            is_active=r.is_active,
-            created_at=r.created_at,
-            updated_at=r.updated_at,
+            id=r.UserRow.id,
+            email=r.UserRow.email,
+            display_name=r.UserRow.display_name,
+            roles=[v.strip() for v in r.UserRow.role.split(",") if v.strip()],
+            is_active=r.UserRow.is_active,
+            created_at=r.UserRow.created_at,
+            updated_at=r.UserRow.updated_at,
+            workspace_count=r.ws_count,
         )
         for r in rows
     ]
@@ -294,7 +303,7 @@ async def reactivate_user(
 
 
 @router.get("/entra/users", response_model=list[EntraUserResult])
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def search_entra_directory(
     request: Request,
     response: Response,
@@ -461,4 +470,51 @@ async def list_all_campaigns(
             "updated_at": c.updated_at.isoformat(),
         }
         for c in campaigns
+    ]
+
+
+# ---------------------------------------------------------------------------
+# User workspace access
+# ---------------------------------------------------------------------------
+
+
+class UserWorkspaceDetail(BaseModel):
+    workspace_id: str
+    workspace_name: str
+    is_personal: bool
+    role: str
+    added_at: datetime
+
+
+@router.get("/users/{user_id}/workspaces", response_model=list[UserWorkspaceDetail])
+@limiter.limit("30/minute")
+async def get_user_workspaces(
+    request: Request,
+    response: Response,
+    user_id: str,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[UserWorkspaceDetail]:
+    """Get all workspaces a user has access to, with their role in each."""
+    row = await db.get(UserRow, user_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stmt = (
+        select(WorkspaceMemberRow, WorkspaceRow)
+        .join(WorkspaceRow, WorkspaceMemberRow.workspace_id == WorkspaceRow.id)
+        .where(WorkspaceMemberRow.user_id == user_id)
+        .order_by(WorkspaceMemberRow.added_at.desc())
+    )
+    results = (await db.execute(stmt)).all()
+
+    return [
+        UserWorkspaceDetail(
+            workspace_id=r.WorkspaceRow.id,
+            workspace_name=r.WorkspaceRow.name,
+            is_personal=r.WorkspaceRow.is_personal,
+            role=r.WorkspaceMemberRow.role,
+            added_at=r.WorkspaceMemberRow.added_at,
+        )
+        for r in results
     ]

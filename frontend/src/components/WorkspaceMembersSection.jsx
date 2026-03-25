@@ -83,7 +83,7 @@ function AddWorkspaceMemberForm({ workspaceId, existingUserIds, onAdded }) {
     setSearchLoading(true);
     setSearchError(null);
     try {
-      const users = await listUsers(term);
+      const { users } = await listUsers(term);
       setResults(users.filter((u) => u.is_active && !existingUserIds.includes(u.id)));
       setShowDropdown(true);
     } catch (err) {

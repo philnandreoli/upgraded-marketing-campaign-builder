@@ -249,11 +249,16 @@ class TestListUsers:
             for item in data
         )
 
-    async def test_page_without_page_size_returns_400(self, admin_client):
+    async def test_page_without_page_size_uses_default(self, admin_client, db_session):
         client, _ = admin_client
-        r = await client.get("/api/admin/users?page=2")
-        assert r.status_code == 400
-        assert "page_size" in r.json()["detail"].lower()
+        for i in range(3):
+            db_session.add(_make_user_row(f"u{i}", email=f"user{i}@example.com"))
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users?page=1")
+        assert r.status_code == 200
+        assert len(r.json()) == 3
+        assert r.headers["x-total-count"] == "3"
 
     async def test_returns_403_for_non_admin(self, db_engine):
         """Non-admin users cannot access the users list."""

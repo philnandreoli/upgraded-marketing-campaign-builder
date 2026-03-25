@@ -89,6 +89,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
+    expose_headers=["X-Total-Count", "X-Page", "X-Page-Size"],
 )
 
 

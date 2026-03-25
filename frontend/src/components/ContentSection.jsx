@@ -429,7 +429,7 @@ export default function ContentSection({
                               asset={latestImage}
                               workspaceId={workspaceId}
                               campaignId={campaignId}
-                              canEdit={!isViewer}
+                              canEdit={!isViewer && !(piece.approval_status === "approved" && status === "approved")}
                               compact
                               onRegenerated={onImageGenerated}
                             />
@@ -446,7 +446,7 @@ export default function ContentSection({
                         ) : (
                           <button
                             className="btn btn-sm btn-outline"
-                            disabled={isViewer || !!generatingImages[i]}
+                            disabled={isViewer || !!generatingImages[i] || (piece.approval_status === "approved" && status === "approved")}
                             onClick={() => handleGenerateImage(i)}
                             aria-label={generatingImages[i] ? `Generating image for piece ${i + 1}` : `Generate image for piece ${i + 1}`}
                           >
