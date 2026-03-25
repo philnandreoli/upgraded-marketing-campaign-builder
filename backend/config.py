@@ -114,6 +114,10 @@ class ImageGenerationSettings(BaseSettings):
     enabled: bool = Field(default=False, alias="IMAGE_GENERATION_ENABLED")
     model: str = Field(default="gpt-image-1.5", alias="IMAGE_GENERATION_MODEL")
     endpoint: str = Field(default="", alias="IMAGE_GENERATION_ENDPOINT")
+    url_fetch_enabled: bool = Field(default=False, alias="IMAGE_GENERATION_URL_FETCH_ENABLED")
+    url_fetch_allowed_hosts: list[str] = Field(default_factory=list, alias="IMAGE_GENERATION_URL_FETCH_ALLOWED_HOSTS")
+    url_fetch_timeout_seconds: float = Field(default=10.0, alias="IMAGE_GENERATION_URL_FETCH_TIMEOUT_SECONDS")
+    url_fetch_max_bytes: int = Field(default=10 * 1024 * 1024, alias="IMAGE_GENERATION_URL_FETCH_MAX_BYTES")
     azure_storage_account_url: str = Field(default="", alias="AZURE_STORAGE_ACCOUNT_URL")
     azure_storage_container: str = Field(default="campaign-images", alias="AZURE_STORAGE_CONTAINER")
 
