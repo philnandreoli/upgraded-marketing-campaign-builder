@@ -3,112 +3,19 @@ Tests for the Azure App Configuration bootstrap loader (backend/core/config_load
 
 Covers:
 - Successful load of plain key-value pairs from Azure App Configuration.
-- Successful Key Vault reference resolution.
-- Failure behaviour when a Key Vault reference cannot be resolved.
+- Successful Key Vault reference resolution (handled natively by the provider).
+- Failure behaviour when the App Configuration store cannot be loaded.
 - Local fallback (no-op) when AZURE_APP_CONFIGURATION_ENDPOINT is not set.
 - Process-environment override wins over App Configuration values.
 - SystemExit on App Configuration load failure.
-- Invalid Key Vault URI format raises ValueError.
 """
 
 from __future__ import annotations
 
-import json
 import os
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-
-# ---------------------------------------------------------------------------
-# Helpers / shared fixtures
-# ---------------------------------------------------------------------------
-
-
-def _make_kv(key: str, value: str, content_type: str = "") -> SimpleNamespace:
-    """Return a lightweight mock of an Azure App Configuration ConfigurationSetting."""
-    return SimpleNamespace(key=key, value=value, content_type=content_type)
-
-
-def _make_kv_ref(key: str, vault_uri: str) -> SimpleNamespace:
-    """Return a Key Vault reference setting mock."""
-    return _make_kv(
-        key=key,
-        value=json.dumps({"uri": vault_uri}),
-        content_type="application/vnd.microsoft.appconfig.keyvaultref+json;charset=utf-8",
-    )
-
-
-# ---------------------------------------------------------------------------
-# _resolve_keyvault_reference
-# ---------------------------------------------------------------------------
-
-
-class TestResolveKeyvaultReference:
-    """Unit tests for the internal Key Vault reference resolver."""
-
-    def test_resolves_secret_without_version(self):
-        from backend.core.config_loader import _resolve_keyvault_reference
-
-        mock_secret = MagicMock()
-        mock_secret.value = "supersecret"
-        mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.get_secret.return_value = mock_secret
-
-        with patch(
-            "backend.core.config_loader.SecretClient", return_value=mock_client
-        ):
-            result = _resolve_keyvault_reference(
-                "https://myvault.vault.azure.net/secrets/mysecret",
-                MagicMock(),
-            )
-
-        assert result == "supersecret"
-        mock_client.get_secret.assert_called_once_with("mysecret", version=None)
-
-    def test_resolves_secret_with_version(self):
-        from backend.core.config_loader import _resolve_keyvault_reference
-
-        mock_secret = MagicMock()
-        mock_secret.value = "versioned-value"
-        mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.get_secret.return_value = mock_secret
-
-        with patch(
-            "backend.core.config_loader.SecretClient", return_value=mock_client
-        ):
-            result = _resolve_keyvault_reference(
-                "https://myvault.vault.azure.net/secrets/mysecret/abc123version",
-                MagicMock(),
-            )
-
-        assert result == "versioned-value"
-        mock_client.get_secret.assert_called_once_with(
-            "mysecret", version="abc123version"
-        )
-
-    def test_raises_value_error_for_invalid_uri(self):
-        from backend.core.config_loader import _resolve_keyvault_reference
-
-        with pytest.raises(ValueError, match="Unexpected Key Vault secret URI format"):
-            _resolve_keyvault_reference(
-                "https://myvault.vault.azure.net/keys/mykey",
-                MagicMock(),
-            )
-
-    def test_raises_value_error_for_missing_secret_name(self):
-        from backend.core.config_loader import _resolve_keyvault_reference
-
-        with pytest.raises(ValueError, match="Unexpected Key Vault secret URI format"):
-            _resolve_keyvault_reference(
-                "https://myvault.vault.azure.net/secrets/",
-                MagicMock(),
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -117,39 +24,27 @@ class TestResolveKeyvaultReference:
 
 
 class TestLoadAzureAppConfiguration:
-    """Tests for load_azure_app_configuration (mocks the Azure SDK)."""
+    """Tests for load_azure_app_configuration (mocks the Azure Provider SDK)."""
 
-    def _patch_sdk(self, settings_list, monkeypatch=None):
-        """Return context managers that patch the Azure SDK with given setting list."""
-        mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.list_configuration_settings.return_value = iter(settings_list)
-        mock_app_config_class = MagicMock(return_value=mock_client)
-        mock_credential = MagicMock()
-        mock_credential.__enter__ = MagicMock(return_value=mock_credential)
-        mock_credential.__exit__ = MagicMock(return_value=False)
-        return mock_app_config_class, mock_credential, mock_client
+    def _make_provider(self, data: dict) -> MagicMock:
+        """Return a mock that behaves like an AzureAppConfigurationProvider mapping."""
+        mock_provider = MagicMock()
+        mock_provider.items.return_value = data.items()
+        return mock_provider
 
     def test_loads_plain_key_values(self):
         from backend.core.config_loader import load_azure_app_configuration
 
-        settings = [
-            _make_kv("APP_ENV", "dev"),
-            _make_kv("APP_PORT", "8000"),
-            _make_kv("TRACING_ENABLED", "true"),
-        ]
-        mock_client_class, mock_cred, mock_client = self._patch_sdk(settings)
+        provider_data = {
+            "APP_ENV": "dev",
+            "APP_PORT": "8000",
+            "TRACING_ENABLED": "true",
+        }
+        mock_provider = self._make_provider(provider_data)
 
         with (
-            patch(
-                "backend.core.config_loader.AzureAppConfigurationClient",
-                mock_client_class,
-            ),
-            patch(
-                "backend.core.config_loader.DefaultAzureCredential",
-                return_value=mock_cred,
-            ),
+            patch("backend.core.config_loader.load", return_value=mock_provider) as mock_load,
+            patch("backend.core.config_loader.DefaultAzureCredential"),
         ):
             result = load_azure_app_configuration(
                 "https://appcs-dev-marketing.azconfig.io", "dev"
@@ -160,42 +55,25 @@ class TestLoadAzureAppConfiguration:
             "APP_PORT": "8000",
             "TRACING_ENABLED": "true",
         }
-        mock_client.list_configuration_settings.assert_called_once_with(
-            label_filter="dev"
-        )
+        mock_load.assert_called_once()
+        call_kwargs = mock_load.call_args.kwargs
+        assert call_kwargs["endpoint"] == "https://appcs-dev-marketing.azconfig.io"
 
-    def test_resolves_keyvault_references(self):
+    def test_key_vault_references_resolved_by_provider(self):
+        """Key Vault references are resolved natively by the provider SDK — the caller
+        simply receives the resolved plaintext value in the returned dict."""
         from backend.core.config_loader import load_azure_app_configuration
 
-        settings = [
-            _make_kv("APP_ENV", "prod"),
-            _make_kv_ref(
-                "AZURE_CLIENT_SECRET",
-                "https://myvault.vault.azure.net/secrets/client-secret",
-            ),
-        ]
-        mock_client_class, mock_cred, mock_client = self._patch_sdk(settings)
-
-        mock_secret = MagicMock()
-        mock_secret.value = "resolved-secret-value"
-        mock_kv_client = MagicMock()
-        mock_kv_client.__enter__ = MagicMock(return_value=mock_kv_client)
-        mock_kv_client.__exit__ = MagicMock(return_value=False)
-        mock_kv_client.get_secret.return_value = mock_secret
+        # Provider has already resolved the KV reference; we get plaintext back
+        provider_data = {
+            "APP_ENV": "prod",
+            "AZURE_CLIENT_SECRET": "resolved-secret-value",
+        }
+        mock_provider = self._make_provider(provider_data)
 
         with (
-            patch(
-                "backend.core.config_loader.AzureAppConfigurationClient",
-                mock_client_class,
-            ),
-            patch(
-                "backend.core.config_loader.DefaultAzureCredential",
-                return_value=mock_cred,
-            ),
-            patch(
-                "backend.core.config_loader.SecretClient",
-                return_value=mock_kv_client,
-            ),
+            patch("backend.core.config_loader.load", return_value=mock_provider),
+            patch("backend.core.config_loader.DefaultAzureCredential"),
         ):
             result = load_azure_app_configuration(
                 "https://appcs-prod-marketing.azconfig.io", "prod"
@@ -204,37 +82,18 @@ class TestLoadAzureAppConfiguration:
         assert result["APP_ENV"] == "prod"
         assert result["AZURE_CLIENT_SECRET"] == "resolved-secret-value"
 
-    def test_raises_runtime_error_on_unresolvable_kv_reference(self):
+    def test_raises_on_provider_load_failure(self):
+        """An exception raised by load() propagates to the caller."""
         from backend.core.config_loader import load_azure_app_configuration
-
-        settings = [
-            _make_kv_ref(
-                "MISSING_SECRET",
-                "https://myvault.vault.azure.net/secrets/does-not-exist",
-            ),
-        ]
-        mock_client_class, mock_cred, mock_client = self._patch_sdk(settings)
-
-        mock_kv_client = MagicMock()
-        mock_kv_client.__enter__ = MagicMock(return_value=mock_kv_client)
-        mock_kv_client.__exit__ = MagicMock(return_value=False)
-        mock_kv_client.get_secret.side_effect = Exception("SecretNotFound")
 
         with (
             patch(
-                "backend.core.config_loader.AzureAppConfigurationClient",
-                mock_client_class,
+                "backend.core.config_loader.load",
+                side_effect=RuntimeError("connection refused"),
             ),
-            patch(
-                "backend.core.config_loader.DefaultAzureCredential",
-                return_value=mock_cred,
-            ),
-            patch(
-                "backend.core.config_loader.SecretClient",
-                return_value=mock_kv_client,
-            ),
+            patch("backend.core.config_loader.DefaultAzureCredential"),
         ):
-            with pytest.raises(RuntimeError, match="failed to resolve Key Vault reference"):
+            with pytest.raises(RuntimeError, match="connection refused"):
                 load_azure_app_configuration(
                     "https://appcs-prod-marketing.azconfig.io", "prod"
                 )
@@ -242,18 +101,12 @@ class TestLoadAzureAppConfiguration:
     def test_none_value_stored_as_empty_string(self):
         from backend.core.config_loader import load_azure_app_configuration
 
-        settings = [_make_kv("OPTIONAL_KEY", None)]  # type: ignore[arg-type]
-        mock_client_class, mock_cred, mock_client = self._patch_sdk(settings)
+        provider_data = {"OPTIONAL_KEY": None}
+        mock_provider = self._make_provider(provider_data)
 
         with (
-            patch(
-                "backend.core.config_loader.AzureAppConfigurationClient",
-                mock_client_class,
-            ),
-            patch(
-                "backend.core.config_loader.DefaultAzureCredential",
-                return_value=mock_cred,
-            ),
+            patch("backend.core.config_loader.load", return_value=mock_provider),
+            patch("backend.core.config_loader.DefaultAzureCredential"),
         ):
             result = load_azure_app_configuration(
                 "https://appcs-dev-marketing.azconfig.io", "dev"
@@ -261,29 +114,43 @@ class TestLoadAzureAppConfiguration:
 
         assert result["OPTIONAL_KEY"] == ""
 
-    def test_uses_label_filter(self):
+    def test_uses_label_in_selector(self):
+        """The label is passed via SettingSelector to the provider load() call."""
         from backend.core.config_loader import load_azure_app_configuration
 
-        mock_client_class, mock_cred, mock_client = self._patch_sdk([])
-        mock_client.list_configuration_settings.return_value = iter([])
+        mock_provider = self._make_provider({})
 
         with (
-            patch(
-                "backend.core.config_loader.AzureAppConfigurationClient",
-                mock_client_class,
-            ),
-            patch(
-                "backend.core.config_loader.DefaultAzureCredential",
-                return_value=mock_cred,
-            ),
+            patch("backend.core.config_loader.load", return_value=mock_provider) as mock_load,
+            patch("backend.core.config_loader.DefaultAzureCredential"),
         ):
             load_azure_app_configuration(
                 "https://appcs-test-marketing.azconfig.io", "test"
             )
 
-        mock_client.list_configuration_settings.assert_called_once_with(
-            label_filter="test"
-        )
+        call_kwargs = mock_load.call_args.kwargs
+        selectors = call_kwargs["selectors"]
+        assert len(selectors) == 1
+        assert selectors[0].label_filter == "test"
+
+    def test_passes_key_vault_options(self):
+        """key_vault_options is passed to load() so the provider handles KV references."""
+        from backend.core.config_loader import load_azure_app_configuration
+        from azure.appconfiguration.provider import AzureAppConfigurationKeyVaultOptions
+
+        mock_provider = self._make_provider({})
+
+        with (
+            patch("backend.core.config_loader.load", return_value=mock_provider) as mock_load,
+            patch("backend.core.config_loader.DefaultAzureCredential"),
+        ):
+            load_azure_app_configuration(
+                "https://appcs-dev-marketing.azconfig.io", "dev"
+            )
+
+        call_kwargs = mock_load.call_args.kwargs
+        assert "key_vault_options" in call_kwargs
+        assert isinstance(call_kwargs["key_vault_options"], AzureAppConfigurationKeyVaultOptions)
 
 
 # ---------------------------------------------------------------------------
@@ -388,3 +255,4 @@ class TestBootstrapConfig:
             config_loader.bootstrap_config()
 
         mock_load.assert_called_once_with("https://appcs.azconfig.io", "development")
+

@@ -1,8 +1,9 @@
 """Azure App Configuration bootstrap loader.
 
 Loads runtime configuration from Azure App Configuration using environment
-labels, with automatic Key Vault reference resolution. Falls back to `.env`
-file loading (via pydantic-settings) for local development.
+labels, with automatic Key Vault reference resolution via the Azure App
+Configuration Provider SDK. Falls back to `.env` file loading (via
+pydantic-settings) for local development.
 
 Configuration source precedence
 --------------------------------
@@ -26,72 +27,30 @@ Bootstrap environment variables
     Client ID of the user-assigned managed identity.  Required when using
     user-assigned managed identity with ``DefaultAzureCredential``.
     Not needed for system-assigned identity or developer credential flows.
+
+Key Vault references
+--------------------
+Azure App Configuration natively resolves Key Vault references.  No direct
+Key Vault SDK calls are required; the provider transparently fetches secrets
+when a value stored in App Configuration is a Key Vault reference.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from urllib.parse import urlparse
 
-from azure.appconfiguration import AzureAppConfigurationClient
+from azure.appconfiguration.provider import (
+    AzureAppConfigurationKeyVaultOptions,
+    SettingSelector,
+    load,
+)
 from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
 
 logger = logging.getLogger(__name__)
 
 _BOOTSTRAP_ENDPOINT_VAR = "AZURE_APP_CONFIGURATION_ENDPOINT"
 _LABEL_SOURCE_VAR = "APP_ENV"
-_KEYVAULT_REF_CONTENT_TYPE_PREFIX = "application/vnd.microsoft.appconfig.keyvaultref"
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _resolve_keyvault_reference(secret_uri: str, credential: object) -> str:
-    """Resolve a Key Vault secret URI to its plaintext value.
-
-    Parameters
-    ----------
-    secret_uri:
-        Full Key Vault secret URI, e.g.
-        ``https://myvault.vault.azure.net/secrets/mysecret`` or
-        ``https://myvault.vault.azure.net/secrets/mysecret/abc123``.
-    credential:
-        Azure credential object (typically ``DefaultAzureCredential``).
-
-    Returns
-    -------
-    str
-        The secret's plaintext value.
-
-    Raises
-    ------
-    ValueError
-        When *secret_uri* does not match the expected format.
-    RuntimeError
-        When the secret cannot be retrieved from Key Vault.
-    """
-    parsed = urlparse(secret_uri)
-    vault_url = f"{parsed.scheme}://{parsed.netloc}"
-
-    # Expect path of the form /secrets/<name>[/<version>]
-    path_parts = [p for p in parsed.path.split("/") if p]
-    if len(path_parts) < 2 or path_parts[0] != "secrets":
-        raise ValueError(
-            f"Unexpected Key Vault secret URI format: {secret_uri!r}. "
-            "Expected https://<vault>.vault.azure.net/secrets/<name>[/<version>]."
-        )
-
-    secret_name = path_parts[1]
-    version = path_parts[2] if len(path_parts) > 2 else None
-
-    with SecretClient(vault_url=vault_url, credential=credential) as client:  # type: ignore[arg-type]
-        secret = client.get_secret(secret_name, version=version)
-        return secret.value  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -102,10 +61,12 @@ def _resolve_keyvault_reference(secret_uri: str, credential: object) -> str:
 def load_azure_app_configuration(endpoint: str, label: str) -> dict[str, str]:
     """Load all key-value pairs from Azure App Configuration for *label*.
 
-    Key Vault references are resolved transparently so callers receive
-    plaintext values.  Authentication is handled by ``DefaultAzureCredential``,
-    which supports Managed Identity in cloud environments and developer
-    credentials (Azure CLI / environment variables) locally.
+    Key Vault references are resolved transparently by the Azure App
+    Configuration Provider SDK, so callers receive plaintext values without
+    any additional Key Vault SDK calls.  Authentication is handled by
+    ``DefaultAzureCredential``, which supports Managed Identity in cloud
+    environments and developer credentials (Azure CLI / environment variables)
+    locally.
 
     Parameters
     ----------
@@ -124,40 +85,25 @@ def load_azure_app_configuration(endpoint: str, label: str) -> dict[str, str]:
     Raises
     ------
     RuntimeError
-        When a Key Vault reference cannot be resolved.
+        When the App Configuration store cannot be reached or a Key Vault
+        reference cannot be resolved.
     """
-    with DefaultAzureCredential() as credential:
-        with AzureAppConfigurationClient(base_url=endpoint, credential=credential) as client:
-            settings: dict[str, str] = {}
-            kv_references: dict[str, str] = {}  # key → Key Vault secret URI
+    credential = DefaultAzureCredential()
 
-            logger.debug(
-                "config: listing settings from Azure App Configuration (endpoint=%s, label=%s)",
-                endpoint,
-                label,
-            )
+    logger.debug(
+        "config: loading from Azure App Configuration (endpoint=%s, label=%s)",
+        endpoint,
+        label,
+    )
 
-            for kv in client.list_configuration_settings(label_filter=label):
-                content_type = kv.content_type or ""
-                if _KEYVAULT_REF_CONTENT_TYPE_PREFIX in content_type:
-                    # Key Vault reference — defer resolution to a single credential context
-                    ref_data = json.loads(kv.value)
-                    kv_references[kv.key] = ref_data["uri"]
-                else:
-                    settings[kv.key] = kv.value if kv.value is not None else ""
+    provider = load(
+        endpoint=endpoint,
+        credential=credential,
+        selectors=[SettingSelector(key_filter="*", label_filter=label)],
+        key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=credential),
+    )
 
-        # Resolve all Key Vault references while the credential context is still open
-        for key, secret_uri in kv_references.items():
-            try:
-                settings[key] = _resolve_keyvault_reference(secret_uri, credential)
-                logger.debug("config: resolved Key Vault reference for '%s'", key)
-            except Exception as exc:  # noqa: BLE001
-                raise RuntimeError(
-                    f"config: failed to resolve Key Vault reference for '{key}' "
-                    f"(uri={secret_uri!r}): {exc}"
-                ) from exc
-
-    return settings
+    return {key: (value if value is not None else "") for key, value in provider.items()}
 
 
 def bootstrap_config() -> None:
