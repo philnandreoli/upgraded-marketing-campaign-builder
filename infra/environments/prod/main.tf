@@ -113,6 +113,28 @@ module "identities" {
 }
 
 # ---------------------------------------------------------------------------
+# App Configuration
+# ---------------------------------------------------------------------------
+
+module "app_configuration" {
+  source = "../../modules/app_configuration"
+
+  resource_group_name             = azurerm_resource_group.this.name
+  location                        = var.location
+  environment                     = var.environment
+  sku                             = var.app_configuration_sku
+  soft_delete_retention_days      = var.app_configuration_soft_delete_retention_days
+  enable_private_networking       = var.enable_private_networking
+  private_endpoint_subnet_id      = var.enable_private_networking ? module.networking.private_endpoints_subnet_id : null
+  private_dns_zone_id             = var.enable_private_networking ? module.networking.app_configuration_private_dns_zone_id : null
+  api_identity_principal_id       = module.identities.api_identity_principal_id
+  worker_identity_principal_id    = module.identities.worker_identity_principal_id
+  migration_identity_principal_id = module.identities.migration_identity_principal_id
+  log_analytics_workspace_id      = module.monitoring.log_analytics_workspace_id
+  tags                            = local.tags
+}
+
+# ---------------------------------------------------------------------------
 # Key Vault
 # ---------------------------------------------------------------------------
 
@@ -236,17 +258,13 @@ module "container_apps" {
   migration_memory             = var.migration_memory
 
   # Shared application config
-  postgresql_fqdn                        = module.postgresql.postgresql_fqdn
-  postgresql_database_name               = module.postgresql.postgresql_database_name
-  azure_postgres_user_api                = module.identities.api_identity_principal_id
-  azure_postgres_user_worker             = module.identities.worker_identity_principal_id
-  azure_postgres_user_migration          = module.identities.migration_identity_principal_id
-  service_bus_namespace_fqdn             = module.service_bus.service_bus_namespace_fqdn
-  service_bus_queue_name                 = module.service_bus.service_bus_queue_name
-  key_vault_uri                          = module.key_vault.key_vault_uri
-  application_insights_connection_string = module.monitoring.application_insights_connection_string
-  azure_ai_project_endpoint              = var.azure_ai_project_endpoint
-  azure_ai_model_deployment_name         = var.azure_ai_model_deployment_name
+  azure_postgres_user_api       = module.identities.api_identity_principal_id
+  azure_postgres_user_worker    = module.identities.worker_identity_principal_id
+  azure_postgres_user_migration = module.identities.migration_identity_principal_id
+
+  # Bootstrap configuration — all other runtime settings are loaded from
+  # Azure App Configuration at startup using APP_ENV as the label.
+  azure_app_configuration_endpoint = module.app_configuration.app_configuration_endpoint
 
   tags = local.tags
 }

@@ -163,3 +163,20 @@ resource "azurerm_private_dns_zone_virtual_network_link" "acr" {
   registration_enabled  = false
   tags                  = var.tags
 }
+
+resource "azurerm_private_dns_zone" "app_configuration" {
+  count               = var.enable_private_networking ? 1 : 0
+  name                = "privatelink.azconfig.io"
+  resource_group_name = var.resource_group_name
+  tags                = var.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "app_configuration" {
+  count                 = var.enable_private_networking ? 1 : 0
+  name                  = "vnetlink-appcs-${var.environment}"
+  resource_group_name   = var.resource_group_name
+  private_dns_zone_name = azurerm_private_dns_zone.app_configuration[0].name
+  virtual_network_id    = azurerm_virtual_network.this.id
+  registration_enabled  = false
+  tags                  = var.tags
+}

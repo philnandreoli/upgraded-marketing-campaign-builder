@@ -12,7 +12,7 @@ from pydantic import Field
 class AzureAIProjectSettings(BaseSettings):
     """Azure AI Foundry project connection settings."""
 
-    endpoint: str = Field(..., alias="AZURE_AI_PROJECT_ENDPOINT")
+    endpoint: str = Field(default="", alias="AZURE_AI_PROJECT_ENDPOINT")
     deployment_name: str = Field(
         default="gpt-4", alias="AZURE_AI_MODEL_DEPLOYMENT_NAME"
     )
@@ -392,25 +392,37 @@ class RedisSettings(BaseSettings):
 class Settings(BaseSettings):
     """Aggregate settings — single entry-point for the whole app."""
 
-    app: AppSettings = AppSettings()
-    azure_ai_project: AzureAIProjectSettings = AzureAIProjectSettings()
-    agent: AgentSettings = AgentSettings()
-    tracing: TracingSettings = TracingSettings()
-    foundry_agents: FoundryAgentsSettings = FoundryAgentsSettings()
-    image_generation: ImageGenerationSettings = ImageGenerationSettings()
-    oidc: OIDCSettings = OIDCSettings()
-    cors: CORSSettings = CORSSettings()
-    service_bus: ServiceBusSettings = ServiceBusSettings()
-    worker: WorkerSettings = WorkerSettings()
-    events: EventSettings = EventSettings()
-    websocket: WebSocketSettings = WebSocketSettings()
-    database: DatabaseSettings = DatabaseSettings()
-    redis: RedisSettings = RedisSettings()
+    app: AppSettings = Field(default_factory=AppSettings)
+    azure_ai_project: AzureAIProjectSettings = Field(default_factory=AzureAIProjectSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
+    tracing: TracingSettings = Field(default_factory=TracingSettings)
+    foundry_agents: FoundryAgentsSettings = Field(default_factory=FoundryAgentsSettings)
+    image_generation: ImageGenerationSettings = Field(default_factory=ImageGenerationSettings)
+    oidc: OIDCSettings = Field(default_factory=OIDCSettings)
+    cors: CORSSettings = Field(default_factory=CORSSettings)
+    service_bus: ServiceBusSettings = Field(default_factory=ServiceBusSettings)
+    worker: WorkerSettings = Field(default_factory=WorkerSettings)
+    events: EventSettings = Field(default_factory=EventSettings)
+    websocket: WebSocketSettings = Field(default_factory=WebSocketSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached Settings instance (read env once)."""
+    """Return a cached Settings instance (read env once).
+
+    On the first call the Azure App Configuration bootstrap layer is invoked
+    before constructing the Settings object.  When
+    ``AZURE_APP_CONFIGURATION_ENDPOINT`` is set, configuration is loaded from
+    Azure App Configuration (using the ``APP_ENV`` value as the label) and
+    injected into the process environment so that pydantic-settings picks it up
+    transparently.  When the endpoint variable is absent the function falls back
+    to local ``.env`` file loading.
+    """
+    from backend.core.config_loader import bootstrap_config  # noqa: PLC0415
+
+    bootstrap_config()
     return Settings()
