@@ -335,7 +335,7 @@ variable "migration_memory" {
 # ---------------------------------------------------------------------------
 
 variable "app_configuration_sku" {
-  description = "SKU for the Azure App Configuration store. 'free' for dev; 'standard' recommended for prod."
+  description = "SKU for the Azure App Configuration store. 'standard' is required for Key Vault reference support and is strongly recommended for all environments."
   type        = string
   default     = "standard"
 }

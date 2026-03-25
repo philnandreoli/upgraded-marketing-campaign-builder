@@ -54,6 +54,8 @@ class TestResolveKeyvaultReference:
         mock_secret = MagicMock()
         mock_secret.value = "supersecret"
         mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.get_secret.return_value = mock_secret
 
         with patch(
@@ -73,6 +75,8 @@ class TestResolveKeyvaultReference:
         mock_secret = MagicMock()
         mock_secret.value = "versioned-value"
         mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.get_secret.return_value = mock_secret
 
         with patch(
@@ -118,9 +122,13 @@ class TestLoadAzureAppConfiguration:
     def _patch_sdk(self, settings_list, monkeypatch=None):
         """Return context managers that patch the Azure SDK with given setting list."""
         mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.list_configuration_settings.return_value = iter(settings_list)
         mock_app_config_class = MagicMock(return_value=mock_client)
         mock_credential = MagicMock()
+        mock_credential.__enter__ = MagicMock(return_value=mock_credential)
+        mock_credential.__exit__ = MagicMock(return_value=False)
         return mock_app_config_class, mock_credential, mock_client
 
     def test_loads_plain_key_values(self):
@@ -171,6 +179,8 @@ class TestLoadAzureAppConfiguration:
         mock_secret = MagicMock()
         mock_secret.value = "resolved-secret-value"
         mock_kv_client = MagicMock()
+        mock_kv_client.__enter__ = MagicMock(return_value=mock_kv_client)
+        mock_kv_client.__exit__ = MagicMock(return_value=False)
         mock_kv_client.get_secret.return_value = mock_secret
 
         with (
@@ -206,6 +216,8 @@ class TestLoadAzureAppConfiguration:
         mock_client_class, mock_cred, mock_client = self._patch_sdk(settings)
 
         mock_kv_client = MagicMock()
+        mock_kv_client.__enter__ = MagicMock(return_value=mock_kv_client)
+        mock_kv_client.__exit__ = MagicMock(return_value=False)
         mock_kv_client.get_secret.side_effect = Exception("SecretNotFound")
 
         with (

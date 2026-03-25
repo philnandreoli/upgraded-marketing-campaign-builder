@@ -89,9 +89,9 @@ def _resolve_keyvault_reference(secret_uri: str, credential: object) -> str:
     secret_name = path_parts[1]
     version = path_parts[2] if len(path_parts) > 2 else None
 
-    client = SecretClient(vault_url=vault_url, credential=credential)  # type: ignore[arg-type]
-    secret = client.get_secret(secret_name, version=version)
-    return secret.value  # type: ignore[return-value]
+    with SecretClient(vault_url=vault_url, credential=credential) as client:  # type: ignore[arg-type]
+        secret = client.get_secret(secret_name, version=version)
+        return secret.value  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -126,37 +126,36 @@ def load_azure_app_configuration(endpoint: str, label: str) -> dict[str, str]:
     RuntimeError
         When a Key Vault reference cannot be resolved.
     """
-    credential = DefaultAzureCredential()
-    client = AzureAppConfigurationClient(base_url=endpoint, credential=credential)
+    with DefaultAzureCredential() as credential:
+        with AzureAppConfigurationClient(base_url=endpoint, credential=credential) as client:
+            settings: dict[str, str] = {}
+            kv_references: dict[str, str] = {}  # key → Key Vault secret URI
 
-    settings: dict[str, str] = {}
-    kv_references: dict[str, str] = {}  # key → Key Vault secret URI
+            logger.debug(
+                "config: listing settings from Azure App Configuration (endpoint=%s, label=%s)",
+                endpoint,
+                label,
+            )
 
-    logger.debug(
-        "config: listing settings from Azure App Configuration (endpoint=%s, label=%s)",
-        endpoint,
-        label,
-    )
+            for kv in client.list_configuration_settings(label_filter=label):
+                content_type = kv.content_type or ""
+                if _KEYVAULT_REF_CONTENT_TYPE_PREFIX in content_type:
+                    # Key Vault reference — defer resolution to a single credential context
+                    ref_data = json.loads(kv.value)
+                    kv_references[kv.key] = ref_data["uri"]
+                else:
+                    settings[kv.key] = kv.value if kv.value is not None else ""
 
-    for kv in client.list_configuration_settings(label_filter=label):
-        content_type = kv.content_type or ""
-        if _KEYVAULT_REF_CONTENT_TYPE_PREFIX in content_type:
-            # Key Vault reference — defer resolution to a single credential context
-            ref_data = json.loads(kv.value)
-            kv_references[kv.key] = ref_data["uri"]
-        else:
-            settings[kv.key] = kv.value if kv.value is not None else ""
-
-    # Resolve all Key Vault references
-    for key, secret_uri in kv_references.items():
-        try:
-            settings[key] = _resolve_keyvault_reference(secret_uri, credential)
-            logger.debug("config: resolved Key Vault reference for '%s'", key)
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f"config: failed to resolve Key Vault reference for '{key}' "
-                f"(uri={secret_uri!r}): {exc}"
-            ) from exc
+        # Resolve all Key Vault references while the credential context is still open
+        for key, secret_uri in kv_references.items():
+            try:
+                settings[key] = _resolve_keyvault_reference(secret_uri, credential)
+                logger.debug("config: resolved Key Vault reference for '%s'", key)
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(
+                    f"config: failed to resolve Key Vault reference for '{key}' "
+                    f"(uri={secret_uri!r}): {exc}"
+                ) from exc
 
     return settings
 

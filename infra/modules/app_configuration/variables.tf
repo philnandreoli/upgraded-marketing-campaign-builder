@@ -14,7 +14,7 @@ variable "environment" {
 }
 
 variable "sku" {
-  description = "SKU for the App Configuration store. 'free' is suitable for dev; 'standard' recommended for prod (supports Key Vault references and private endpoints)."
+  description = "SKU for the App Configuration store. 'standard' is required for Key Vault reference support and is strongly recommended for all environments. 'free' does not support Key Vault references or private endpoints."
   type        = string
   default     = "standard"
 }
