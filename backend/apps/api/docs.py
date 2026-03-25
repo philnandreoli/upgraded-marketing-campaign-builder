@@ -7,8 +7,12 @@ teal primary accent, and the same typography scale.
 
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+
+from backend.config import get_settings
 
 # ---------------------------------------------------------------------------
 # Design tokens — mirrored from frontend/src/index.css :root (dark theme)
@@ -235,6 +239,8 @@ def register_custom_docs(app: FastAPI) -> None:
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui():
         openapi_url = app.openapi_url or "/openapi.json"
+        persist_authorization = get_settings().app.env == "development"
+        persist_authorization_json = json.dumps(persist_authorization)
         html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -253,7 +259,7 @@ SwaggerUIBundle({{
   url: "{openapi_url}",
   dom_id: "#swagger-ui",
   deepLinking: true,
-  persistAuthorization: true,
+  persistAuthorization: {persist_authorization_json},
   displayRequestDuration: true,
   syntaxHighlight: {{ theme: "monokai" }},
   presets: [
