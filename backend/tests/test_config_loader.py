@@ -179,6 +179,7 @@ class TestBootstrapConfig:
         monkeypatch.setenv("AZURE_APP_CONFIGURATION_ENDPOINT", "https://appcs.azconfig.io")
         monkeypatch.setenv("APP_ENV", "dev")
         monkeypatch.delenv("APP_PORT", raising=False)
+        monkeypatch.delenv("TRACING_ENABLED", raising=False)
 
         with patch(
             "backend.core.config_loader.load_azure_app_configuration",
