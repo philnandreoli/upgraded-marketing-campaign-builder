@@ -239,7 +239,10 @@ def register_custom_docs(app: FastAPI) -> None:
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui():
         openapi_url = app.openapi_url or "/openapi.json"
-        persist_authorization = get_settings().app.env == "development"
+        persist_authorization = (
+            get_settings().app.env.strip().lower()
+            in {"development", "dev", "local", "localdev"}
+        )
         persist_authorization_json = json.dumps(persist_authorization)
         html = f"""<!DOCTYPE html>
 <html lang="en">

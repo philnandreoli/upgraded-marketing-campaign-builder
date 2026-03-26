@@ -52,3 +52,4 @@ override.tf.json
 *_override.tf.json
 # Note: .terraform.lock.hcl is intentionally NOT ignored — commit it to pin provider versions.
 .env.test
+.env.old

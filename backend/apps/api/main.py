@@ -18,6 +18,7 @@ it is the responsibility of the worker/orchestration process.
 from __future__ import annotations
 
 import logging
+import os
 
 import sqlalchemy
 from fastapi import FastAPI
@@ -31,18 +32,24 @@ from backend.core.rate_limit import limiter
 from backend.core.tracing import setup_tracing
 
 # ------------------------------------------------------------------
-# Logging — must be configured first so all subsequent log calls
-# (including setup_tracing) use the right format.
-# force=True is required because uvicorn configures the root logger
-# via dictConfig before importing the app module, which causes
-# basicConfig() to silently no-op without it.
+# Logging bootstrap: configure an initial logger before get_settings() so
+# bootstrap_config() messages are visible while loading Azure App Config.
+# We then re-apply logging with the final level from loaded settings.
 # ------------------------------------------------------------------
+
+_LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+
+logging.basicConfig(
+    level=getattr(logging, os.getenv("APP_LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format=_LOG_FORMAT,
+    force=True,
+)
 
 settings = get_settings()
 
 logging.basicConfig(
     level=getattr(logging, settings.app.log_level.upper(), logging.INFO),
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    format=_LOG_FORMAT,
     force=True,
 )
 
