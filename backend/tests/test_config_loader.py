@@ -129,9 +129,9 @@ class TestLoadAzureAppConfiguration:
             )
 
         call_kwargs = mock_load.call_args.kwargs
-        selectors = call_kwargs["selectors"]
-        assert len(selectors) == 1
-        assert selectors[0].label_filter == "test"
+        selects = call_kwargs["selects"]
+        assert len(selects) == 1
+        assert selects[0].label_filter == "test"
 
     def test_passes_key_vault_options(self):
         """key_vault_options is passed to load() so the provider handles KV references."""
@@ -208,6 +208,63 @@ class TestBootstrapConfig:
 
         # Process env value wins
         assert os.environ.get("APP_PORT") == "8888"
+
+    def test_blank_values_are_skipped(self, monkeypatch):
+        """Blank App Configuration values are treated as unset and not injected."""
+        monkeypatch.setenv("AZURE_APP_CONFIGURATION_ENDPOINT", "https://appcs.azconfig.io")
+        monkeypatch.setenv("APP_ENV", "dev")
+        monkeypatch.delenv("WS_AUTHZ_CACHE_TTL_SECONDS", raising=False)
+
+        with patch(
+            "backend.core.config_loader.load_azure_app_configuration",
+            return_value={"WS_AUTHZ_CACHE_TTL_SECONDS": ""},
+        ):
+            from backend.core import config_loader
+
+            config_loader.bootstrap_config()
+
+        assert os.environ.get("WS_AUTHZ_CACHE_TTL_SECONDS") is None
+
+    def test_blank_values_emit_warning_with_key_names(self, monkeypatch):
+        """A warning is logged when blank values are skipped during injection."""
+        monkeypatch.setenv("AZURE_APP_CONFIGURATION_ENDPOINT", "https://appcs.azconfig.io")
+        monkeypatch.setenv("APP_ENV", "dev")
+
+        with (
+            patch(
+                "backend.core.config_loader.load_azure_app_configuration",
+                return_value={
+                    "WS_AUTHZ_CACHE_TTL_SECONDS": "",
+                    "WS_FANOUT_MAX_CONCURRENCY": "",
+                },
+            ),
+            patch("backend.core.config_loader.logger.warning") as mock_warning,
+        ):
+            from backend.core import config_loader
+
+            config_loader.bootstrap_config()
+
+        mock_warning.assert_called_once()
+        call_args = mock_warning.call_args[0]
+        assert call_args[1] == 2
+        assert "WS_AUTHZ_CACHE_TTL_SECONDS" in call_args[2]
+        assert "WS_FANOUT_MAX_CONCURRENCY" in call_args[2]
+
+    def test_blank_value_does_not_override_process_env(self, monkeypatch):
+        """A blank App Configuration value must not clear an explicit process env value."""
+        monkeypatch.setenv("AZURE_APP_CONFIGURATION_ENDPOINT", "https://appcs.azconfig.io")
+        monkeypatch.setenv("APP_ENV", "dev")
+        monkeypatch.setenv("WS_FANOUT_MAX_CONCURRENCY", "25")
+
+        with patch(
+            "backend.core.config_loader.load_azure_app_configuration",
+            return_value={"WS_FANOUT_MAX_CONCURRENCY": ""},
+        ):
+            from backend.core import config_loader
+
+            config_loader.bootstrap_config()
+
+        assert os.environ.get("WS_FANOUT_MAX_CONCURRENCY") == "25"
 
     def test_system_exit_on_load_failure(self, monkeypatch):
         """SystemExit(1) is raised when App Configuration cannot be loaded."""

@@ -46,6 +46,22 @@ _RESUMABLE_STATUSES = [
 _AUTO_RESUME_DELAY_SECONDS = 1
 
 
+def _is_local_or_test_env(app_env: str) -> bool:
+    """Return True when *app_env* should be treated as local/test.
+
+    The project may use short or custom local labels (for example ``dev`` or
+    ``localdev``) as App Configuration labels. These should be considered
+    non-production for startup safety guard behavior.
+    """
+    return app_env.strip().lower() in {
+        "development",
+        "dev",
+        "local",
+        "localdev",
+        "test",
+    }
+
+
 def _check_auth_safety(app_env: str, auth_enabled: bool) -> None:
     """Refuse to start when authentication is disabled outside development/test.
 
@@ -54,11 +70,11 @@ def _check_auth_safety(app_env: str, auth_enabled: bool) -> None:
     (OWASP A05:2021 — Security Misconfiguration).  Fail-secure: block startup
     rather than silently allow misconfigured deployments.
 
-    Development and test environments are exempt so that local runs and CI
-    pipelines can still disable auth for convenience.
+    Local and test environments are exempt so that local runs and CI pipelines
+    can still disable auth for convenience.
     """
     if not auth_enabled:
-        if app_env.lower() not in ("development", "test"):
+        if not _is_local_or_test_env(app_env):
             logger.critical(
                 "AUTH_ENABLED is False in non-development environment '%s'. "
                 "Refusing to start. Set AUTH_ENABLED=true for production.",
@@ -80,7 +96,7 @@ def _check_cors_safety(app_env: str, allowed_origins: list[str]) -> None:
     Set ``CORS_ALLOWED_ORIGINS`` to an explicit JSON array before deploying,
     e.g. ``'["https://app.example.com"]'``.
     """
-    if app_env != "development" and "*" in allowed_origins:
+    if not _is_local_or_test_env(app_env) and "*" in allowed_origins:
         logger.critical(
             "CORS_ALLOWED_ORIGINS contains wildcard '*' in non-development "
             "environment (%s). Set explicit origins for production.",

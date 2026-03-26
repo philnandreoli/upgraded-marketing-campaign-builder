@@ -7,6 +7,7 @@ services:
     extra_hosts:
       - "ai-managed-aiservices.openai.azure.com:20.62.58.5"
       - "AI-Managed-AIServices.services.ai.azure.com:20.62.58.5"
+      - "andrmarketingfoundry001.services.ai.azure.com:20.232.91.180"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/campaigns
       REDIS_URL: redis://redis:6379/0

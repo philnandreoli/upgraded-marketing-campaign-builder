@@ -161,6 +161,11 @@ class TestCORSStartupGuard:
         # Should not raise
         _real_check_cors_safety("development", ["*"])
 
+    def test_wildcard_allowed_in_localdev(self):
+        """No SystemExit when app_env=localdev and origins=['*']."""
+        # Should not raise
+        _real_check_cors_safety("localdev", ["*"])
+
     def test_explicit_origins_allowed_in_production(self):
         """No SystemExit when origins are explicit even in production."""
         # Should not raise

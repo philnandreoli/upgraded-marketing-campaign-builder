@@ -36,3 +36,13 @@ def test_docs_enables_persist_authorization_in_development():
             response = client.get("/docs")
         assert response.status_code == 200
         assert "persistAuthorization: true" in response.text
+
+
+def test_docs_enables_persist_authorization_in_localdev():
+    settings = MagicMock()
+    settings.app.env = "localdev"
+    with patch("backend.apps.api.docs.get_settings", return_value=settings):
+        with TestClient(_make_app()) as client:
+            response = client.get("/docs")
+        assert response.status_code == 200
+        assert "persistAuthorization: true" in response.text

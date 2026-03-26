@@ -313,6 +313,11 @@ class TestAuthStartupGuard:
         # Should not raise
         _real_check_auth_safety("development", False)
 
+    def test_auth_disabled_in_localdev_is_allowed(self):
+        """No SystemExit when auth is disabled in localdev."""
+        # Should not raise
+        _real_check_auth_safety("localdev", False)
+
     def test_auth_disabled_in_test_is_allowed(self):
         """No SystemExit when auth is disabled in test environments (e.g. CI)."""
         # Should not raise

@@ -1,6 +1,6 @@
 ---
 description: "Use when breaking down EPIC issues into smaller developer-ready issues, triaging large feature requests, planning implementation work, or when the user says 'break down', 'decompose', 'split epic', 'create sub-issues', or 'plan work items'."
-tools: [read, search, github-mcp/*]
+tools: [read, search, github-mcp/*, ]
 user-invocable: true
 model: Claude Opus 4.6 (copilot)
 ---

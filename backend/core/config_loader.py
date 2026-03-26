@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 _BOOTSTRAP_ENDPOINT_VAR = "AZURE_APP_CONFIGURATION_ENDPOINT"
 _LABEL_SOURCE_VAR = "APP_ENV"
+_MAX_LOGGED_SKIPPED_EMPTY_KEYS = 15
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +100,7 @@ def load_azure_app_configuration(endpoint: str, label: str) -> dict[str, str]:
     provider = load(
         endpoint=endpoint,
         credential=credential,
-        selectors=[SettingSelector(key_filter="*", label_filter=label)],
+        selects=[SettingSelector(key_filter="*", label_filter=label)],
         key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=credential),
     )
 
@@ -156,7 +157,17 @@ def bootstrap_config() -> None:
 
     injected = 0
     skipped = 0
+    skipped_empty = 0
+    skipped_empty_keys: list[str] = []
     for key, value in loaded.items():
+        # Treat blank values as "unset" so pydantic defaults can apply.
+        # This avoids startup failures when App Configuration has placeholders
+        # such as empty strings for non-string fields (int/bool/list).
+        if value == "":
+            skipped_empty += 1
+            if len(skipped_empty_keys) < _MAX_LOGGED_SKIPPED_EMPTY_KEYS:
+                skipped_empty_keys.append(key)
+            continue
         if key in os.environ:
             # Explicit process env vars always win (emergency/ops override path).
             skipped += 1
@@ -166,9 +177,17 @@ def bootstrap_config() -> None:
 
     logger.info(
         "config: loaded %d settings from Azure App Configuration "
-        "(label=%s, injected=%d, skipped_by_process_env=%d)",
+        "(label=%s, injected=%d, skipped_by_process_env=%d, skipped_empty=%d)",
         len(loaded),
         label,
         injected,
         skipped,
+        skipped_empty,
     )
+
+    if skipped_empty > 0:
+        logger.warning(
+            "config: skipped blank App Configuration values for %d key(s): %s",
+            skipped_empty,
+            ", ".join(skipped_empty_keys),
+        )
