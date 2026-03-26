@@ -74,6 +74,10 @@ frontend_max_replicas = 3
 migration_cpu    = 0.5
 migration_memory = "1Gi"
 
+# App Configuration — standard SKU for test
+app_configuration_sku                        = "standard"
+app_configuration_soft_delete_retention_days = 7
+
 # Azure AI
 azure_ai_project_endpoint      = ""
 azure_ai_model_deployment_name = "gpt-4"

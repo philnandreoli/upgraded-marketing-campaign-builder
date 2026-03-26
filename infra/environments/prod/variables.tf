@@ -331,6 +331,22 @@ variable "migration_memory" {
 }
 
 # ---------------------------------------------------------------------------
+# App Configuration
+# ---------------------------------------------------------------------------
+
+variable "app_configuration_sku" {
+  description = "SKU for the Azure App Configuration store. 'standard' is required for Key Vault reference support and is strongly recommended for all environments."
+  type        = string
+  default     = "standard"
+}
+
+variable "app_configuration_soft_delete_retention_days" {
+  description = "Soft-delete retention days for App Configuration key-values."
+  type        = number
+  default     = 7
+}
+
+# ---------------------------------------------------------------------------
 # Azure AI
 # ---------------------------------------------------------------------------
 

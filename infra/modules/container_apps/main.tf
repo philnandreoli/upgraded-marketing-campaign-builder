@@ -115,62 +115,25 @@ resource "azurerm_container_app" "api" {
       cpu    = var.api_cpu
       memory = var.api_memory
 
-      # Application configuration
+      # Bootstrap — all runtime settings are loaded from Azure App Configuration
+      # at startup using APP_ENV as the label selector.
       env {
         name  = "APP_ENV"
         value = var.environment
       }
       env {
-        name  = "DB_AUTH_MODE"
-        value = "azure"
-      }
-      env {
-        name  = "AZURE_POSTGRES_HOST"
-        value = var.postgresql_fqdn
-      }
-      env {
-        name  = "AZURE_POSTGRES_DATABASE"
-        value = var.postgresql_database_name
-      }
-      env {
-        name  = "AZURE_POSTGRES_USER"
-        value = var.azure_postgres_user_api
+        name  = "AZURE_APP_CONFIGURATION_ENDPOINT"
+        value = var.azure_app_configuration_endpoint
       }
       env {
         name  = "AZURE_CLIENT_ID"
         value = var.api_identity_client_id
       }
+      # Per-component identity override — each app uses its own managed identity
+      # principal as the PostgreSQL user; this overrides any App Config value.
       env {
-        name  = "WORKFLOW_EXECUTOR"
-        value = "azure_service_bus"
-      }
-      env {
-        name  = "AZURE_SERVICE_BUS_NAMESPACE"
-        value = var.service_bus_namespace_fqdn
-      }
-      env {
-        name  = "AZURE_SERVICE_BUS_QUEUE_NAME"
-        value = var.service_bus_queue_name
-      }
-      env {
-        name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.application_insights_connection_string
-      }
-      env {
-        name  = "TRACING_ENABLED"
-        value = "true"
-      }
-      env {
-        name  = "TRACING_EXPORTER"
-        value = "azure_monitor"
-      }
-      env {
-        name  = "AZURE_AI_PROJECT_ENDPOINT"
-        value = var.azure_ai_project_endpoint
-      }
-      env {
-        name  = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
-        value = var.azure_ai_model_deployment_name
+        name  = "AZURE_POSTGRES_USER"
+        value = var.azure_postgres_user_api
       }
     }
   }
@@ -218,61 +181,25 @@ resource "azurerm_container_app" "worker" {
       cpu    = var.worker_cpu
       memory = var.worker_memory
 
+      # Bootstrap — all runtime settings are loaded from Azure App Configuration
+      # at startup using APP_ENV as the label selector.
       env {
         name  = "APP_ENV"
         value = var.environment
       }
       env {
-        name  = "DB_AUTH_MODE"
-        value = "azure"
-      }
-      env {
-        name  = "AZURE_POSTGRES_HOST"
-        value = var.postgresql_fqdn
-      }
-      env {
-        name  = "AZURE_POSTGRES_DATABASE"
-        value = var.postgresql_database_name
-      }
-      env {
-        name  = "AZURE_POSTGRES_USER"
-        value = var.azure_postgres_user_worker
+        name  = "AZURE_APP_CONFIGURATION_ENDPOINT"
+        value = var.azure_app_configuration_endpoint
       }
       env {
         name  = "AZURE_CLIENT_ID"
         value = var.worker_identity_client_id
       }
+      # Per-component identity override — each app uses its own managed identity
+      # principal as the PostgreSQL user; this overrides any App Config value.
       env {
-        name  = "WORKFLOW_EXECUTOR"
-        value = "azure_service_bus"
-      }
-      env {
-        name  = "AZURE_SERVICE_BUS_NAMESPACE"
-        value = var.service_bus_namespace_fqdn
-      }
-      env {
-        name  = "AZURE_SERVICE_BUS_QUEUE_NAME"
-        value = var.service_bus_queue_name
-      }
-      env {
-        name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
-        value = var.application_insights_connection_string
-      }
-      env {
-        name  = "TRACING_ENABLED"
-        value = "true"
-      }
-      env {
-        name  = "TRACING_EXPORTER"
-        value = "azure_monitor"
-      }
-      env {
-        name  = "AZURE_AI_PROJECT_ENDPOINT"
-        value = var.azure_ai_project_endpoint
-      }
-      env {
-        name  = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
-        value = var.azure_ai_model_deployment_name
+        name  = "AZURE_POSTGRES_USER"
+        value = var.azure_postgres_user_worker
       }
     }
   }
@@ -314,6 +241,8 @@ resource "azurerm_container_app_job" "migration" {
       cpu    = var.migration_cpu
       memory = var.migration_memory
 
+      # Bootstrap — all runtime settings are loaded from Azure App Configuration
+      # at startup using APP_ENV as the label selector.
       env {
         name  = "APP_ENV"
         value = var.environment
@@ -323,24 +252,18 @@ resource "azurerm_container_app_job" "migration" {
         value = "1"
       }
       env {
-        name  = "DB_AUTH_MODE"
-        value = "azure"
-      }
-      env {
-        name  = "AZURE_POSTGRES_HOST"
-        value = var.postgresql_fqdn
-      }
-      env {
-        name  = "AZURE_POSTGRES_DATABASE"
-        value = var.postgresql_database_name
-      }
-      env {
-        name  = "AZURE_POSTGRES_USER"
-        value = var.azure_postgres_user_migration
+        name  = "AZURE_APP_CONFIGURATION_ENDPOINT"
+        value = var.azure_app_configuration_endpoint
       }
       env {
         name  = "AZURE_CLIENT_ID"
         value = var.migration_identity_client_id
+      }
+      # Per-component identity override — migration uses its own managed identity
+      # principal as the PostgreSQL user; this overrides any App Config value.
+      env {
+        name  = "AZURE_POSTGRES_USER"
+        value = var.azure_postgres_user_migration
       }
     }
   }

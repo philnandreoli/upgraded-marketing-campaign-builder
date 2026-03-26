@@ -199,13 +199,8 @@ variable "migration_memory" {
 
 # --- Shared application configuration ---
 
-variable "postgresql_fqdn" {
-  description = "FQDN of the PostgreSQL Flexible Server."
-  type        = string
-}
-
-variable "postgresql_database_name" {
-  description = "Name of the PostgreSQL database."
+variable "azure_app_configuration_endpoint" {
+  description = "Endpoint URL of the Azure App Configuration store. Passed as AZURE_APP_CONFIGURATION_ENDPOINT bootstrap variable to all container apps."
   type        = string
 }
 
@@ -222,38 +217,6 @@ variable "azure_postgres_user_worker" {
 variable "azure_postgres_user_migration" {
   description = "PostgreSQL username for the migration managed identity."
   type        = string
-}
-
-variable "service_bus_namespace_fqdn" {
-  description = "FQDN of the Service Bus namespace."
-  type        = string
-}
-
-variable "service_bus_queue_name" {
-  description = "Name of the Service Bus workflow queue."
-  type        = string
-}
-
-variable "key_vault_uri" {
-  description = "URI of the Key Vault."
-  type        = string
-}
-
-variable "application_insights_connection_string" {
-  description = "Application Insights connection string."
-  type        = string
-}
-
-variable "azure_ai_project_endpoint" {
-  description = "Azure AI Foundry project endpoint URL."
-  type        = string
-  default     = ""
-}
-
-variable "azure_ai_model_deployment_name" {
-  description = "Azure AI model deployment name."
-  type        = string
-  default     = "gpt-4"
 }
 
 variable "tags" {

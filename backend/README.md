@@ -228,7 +228,122 @@ If registration fails for any agent, it falls back to direct LLM calls transpare
 
 ## Configuration
 
-All settings are loaded from environment variables (or a `.env` file) using **pydantic-settings**. A complete reference is available in `.env.example`. The configuration is defined in `config.py` and organised into:
+Runtime configuration is loaded from **Azure App Configuration** in cloud deployments and from a `.env` file (or process environment) for local development. Settings are parsed and validated by **pydantic-settings** at startup.
+
+### Configuration source precedence
+
+| Priority | Source | When active |
+|----------|--------|-------------|
+| 1 (highest) | Process environment variables | Always — emergency/ops overrides |
+| 2 | Azure App Configuration | When `AZURE_APP_CONFIGURATION_ENDPOINT` is set |
+| 3 (lowest) | `.env` file | Local development fallback |
+
+### Bootstrap environment variables
+
+These must be set directly in the container/deployment environment (not loaded from App Configuration):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AZURE_APP_CONFIGURATION_ENDPOINT` | Cloud only | Endpoint URL of the Azure App Configuration store, e.g. `https://appcs-dev-marketing.azconfig.io`. When absent, the loader is a no-op and falls back to `.env`. |
+| `APP_ENV` | Yes | Determines the **label** used to select key-value pairs from the App Configuration store (e.g. `dev`, `test`, `prod`). Also used as the startup environment identifier. |
+| `AZURE_CLIENT_ID` | Cloud only | Client ID of the user-assigned managed identity. Required for `DefaultAzureCredential` when using user-assigned managed identity. |
+| `AZURE_POSTGRES_USER` | Cloud only | Per-component PostgreSQL username. Set per container app to the managed identity principal ID. Overrides any App Configuration value. |
+
+### App Configuration key naming and label strategy
+
+All configuration keys use the same names as the environment variables listed below. Each key is tagged with a label matching `APP_ENV`:
+
+- `dev` — development environment
+- `test` — test / staging environment
+- `prod` — production environment
+
+Keys with no label are used as shared defaults; labeled keys override defaults for the corresponding environment.
+
+### Non-secret settings stored in Azure App Configuration
+
+| Key | Description |
+|-----|-------------|
+| `AZURE_AI_PROJECT_ENDPOINT` | Azure AI Foundry project endpoint URL |
+| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | AI model deployment name |
+| `APP_LOG_LEVEL` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `APP_PORT` | API server port |
+| `WORKFLOW_EXECUTOR` | Pipeline executor (`in_process` or `azure_service_bus`) |
+| `AUTO_RESUME_ON_STARTUP` | Auto-resume stuck pipelines on restart |
+| `AGENT_MAX_RETRIES` | Maximum agent retry attempts |
+| `AGENT_TEMPERATURE` | LLM temperature |
+| `AGENT_MAX_TOKENS` | Maximum tokens per LLM call |
+| `PIPELINE_IDLE_TIMEOUT_DAYS` | Days before idle pipeline moves to manual review |
+| `AUTH_ENABLED` | Enable JWT authentication |
+| `OIDC_AUTHORITY` | OIDC authority URL |
+| `OIDC_CLIENT_ID` | OAuth 2.0 client ID |
+| `OIDC_JWKS_CACHE_TTL` | JWKS cache TTL in seconds |
+| `FOUNDRY_AGENTS_ENABLED` | Register agents as Foundry Agent versions |
+| `IMAGE_GENERATION_ENABLED` | Enable image generation feature |
+| `IMAGE_GENERATION_MODEL` | Image generation model name |
+| `IMAGE_GENERATION_ENDPOINT` | Image generation endpoint URL |
+| `AZURE_STORAGE_ACCOUNT_URL` | Azure Blob Storage account URL |
+| `AZURE_STORAGE_CONTAINER` | Blob container name for campaign images |
+| `TRACING_ENABLED` | Enable OpenTelemetry tracing |
+| `TRACING_EXPORTER` | Tracing exporter (`console`, `otlp`, `azure_monitor`) |
+| `OTLP_ENDPOINT` | OTLP collector endpoint URL |
+| `CORS_ALLOWED_ORIGINS` | JSON array of allowed CORS origins |
+| `AZURE_SERVICE_BUS_NAMESPACE` | Service Bus namespace FQDN |
+| `AZURE_SERVICE_BUS_QUEUE_NAME` | Service Bus queue name |
+| `WORKER_MAX_CONCURRENCY` | Maximum concurrent pipeline executions |
+| `WORKER_SHUTDOWN_TIMEOUT_SECONDS` | Worker graceful shutdown timeout |
+| `WORKER_HEALTH_PORT` | Worker health check port |
+| `EVENT_CHANNEL_NAME` | PostgreSQL NOTIFY channel name |
+| `WS_AUTHZ_CACHE_TTL_SECONDS` | WebSocket authorisation cache TTL |
+| `WS_FANOUT_MAX_CONCURRENCY` | WebSocket fanout concurrency limit |
+| `DB_AUTH_MODE` | Database auth mode (`local` or `azure`) |
+| `AZURE_POSTGRES_HOST` | PostgreSQL Flexible Server FQDN |
+| `AZURE_POSTGRES_DATABASE` | Database name |
+| `API_AUTO_MIGRATE` | Run Alembic migrations on API startup |
+| `REDIS_MODE` | Redis auth mode (`local` or `azure`) |
+| `AZURE_REDIS_HOST` | Azure Cache for Redis hostname |
+| `AZURE_REDIS_PORT` | Azure Cache for Redis port |
+| `AZURE_REDIS_USE_SSL` | Use TLS for Azure Redis connection |
+
+### Secrets stored in Azure Key Vault (referenced from App Configuration)
+
+Secrets are stored directly in Azure Key Vault. Azure App Configuration holds Key Vault references (content type `application/vnd.microsoft.appconfig.keyvaultref+json`) that are resolved transparently at startup.
+
+| Key Vault Secret | App Config Key | Description |
+|-----------------|----------------|-------------|
+| `client-secret` | `AZURE_CLIENT_SECRET` | Azure AD application client secret |
+| `service-bus-connection-string` | `AZURE_SERVICE_BUS_CONNECTION_STRING` | Service Bus SAS connection string (connection-string auth mode only) |
+| `database-url` | `DATABASE_URL` | PostgreSQL connection URL (`DB_AUTH_MODE=local` only) |
+| `redis-url` | `REDIS_URL` | Redis connection URL (`REDIS_MODE=local` only) |
+| `appinsights-connection-string` | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Application Insights connection string |
+
+#### Key Vault reference setup
+
+1. Store the secret in Key Vault:
+   ```bash
+   az keyvault secret set --vault-name kv-dev-mkt-XXXXXX --name client-secret --value "<value>"
+   ```
+
+2. Add a Key Vault reference in App Configuration:
+   ```bash
+   az appconfig kv set-keyvault \
+     --name appcs-dev-marketing-XXXXXX \
+     --key AZURE_CLIENT_SECRET \
+     --label dev \
+     --secret-identifier "https://kv-dev-mkt-XXXXXX.vault.azure.net/secrets/client-secret"
+   ```
+
+### Required role assignments
+
+| Identity | Resource | Role |
+|----------|----------|------|
+| API / Worker / Migration | App Configuration store | **App Configuration Data Reader** |
+| API / Worker / Migration | Key Vault | **Key Vault Secrets User** |
+
+These are provisioned automatically by the Terraform modules (`infra/modules/app_configuration` and `infra/modules/identities`).
+
+### Settings classes reference
+
+The configuration is defined in `config.py` and organised into:
 
 | Settings class | Key variables |
 |----------------|---------------|

@@ -42,3 +42,8 @@ output "acr_private_dns_zone_id" {
   description = "Resource ID of the ACR private DNS zone. Null when private networking is disabled."
   value       = var.enable_private_networking ? azurerm_private_dns_zone.acr[0].id : null
 }
+
+output "app_configuration_private_dns_zone_id" {
+  description = "Resource ID of the App Configuration private DNS zone. Null when private networking is disabled."
+  value       = var.enable_private_networking ? azurerm_private_dns_zone.app_configuration[0].id : null
+}
