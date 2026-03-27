@@ -322,10 +322,12 @@ export default function CampaignDetail() {
   const activeTab = useMemo(() => {
     if (allTabs.length === 0) return null;
     if (userTab && allTabs.includes(userTab)) return userTab;
+    // Approved campaigns default to the budget tab
+    if (campaign?.status === "approved" && allTabs.includes("budget")) return "budget";
     // Auto-select the last *pipeline* tab (not images, calendar, or budget)
     const pipelineTabs = allTabs.filter(t => t !== "images" && t !== "calendar" && t !== "budget");
     return pipelineTabs[pipelineTabs.length - 1] ?? allTabs[0];
-  }, [allTabs, userTab]);
+  }, [allTabs, userTab, campaign?.status]);
 
   if (error) {
     return <div className="card" style={{ color: "var(--color-danger)" }}>Error: {error}</div>;
@@ -484,6 +486,8 @@ export default function CampaignDetail() {
             workspaceId={effectiveWorkspaceId}
             campaignId={campaign.id}
             isViewer={isViewer}
+            channels={campaign.brief?.selected_channels || []}
+            socialPlatforms={campaign.brief?.social_media_platforms || []}
           />
         );
       default:
