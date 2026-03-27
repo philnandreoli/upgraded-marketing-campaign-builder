@@ -107,6 +107,33 @@ class TestCommentStoreUnit:
         assert len(results) == 2
 
     @pytest.mark.asyncio
+    async def test_list_by_campaign_combined_filters(self, store):
+        await store.create(CAMPAIGN_ID, AUTHOR_ID, "A", CommentSection.CONTENT, content_piece_index=0)
+        await store.create(CAMPAIGN_ID, AUTHOR_ID, "B", CommentSection.CONTENT, content_piece_index=1)
+        await store.create(CAMPAIGN_ID, AUTHOR_ID, "C", CommentSection.STRATEGY)
+
+        results = await store.list_by_campaign(
+            CAMPAIGN_ID, section=CommentSection.CONTENT, content_piece_index=0
+        )
+        assert len(results) == 1
+        assert results[0].body == "A"
+
+    @pytest.mark.asyncio
+    async def test_create_with_nonexistent_parent_id(self, store):
+        """Store does not validate parent_id — it stores as-is."""
+        comment = await store.create(
+            campaign_id=CAMPAIGN_ID,
+            author_id=AUTHOR_ID,
+            body="Orphaned reply",
+            section=CommentSection.GENERAL,
+            parent_id="nonexistent-parent",
+        )
+        assert comment.parent_id == "nonexistent-parent"
+        fetched = await store.get(comment.id)
+        assert fetched is not None
+        assert fetched.parent_id == "nonexistent-parent"
+
+    @pytest.mark.asyncio
     async def test_update_body(self, store):
         comment = await store.create(CAMPAIGN_ID, AUTHOR_ID, "Original", CommentSection.GENERAL)
         updated = await store.update(comment.id, "Updated text")

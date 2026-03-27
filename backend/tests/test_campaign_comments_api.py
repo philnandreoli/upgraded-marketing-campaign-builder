@@ -221,6 +221,33 @@ class TestCreateComment:
         assert r2.json()["parent_id"] == parent_id
         assert r2.json()["content_piece_index"] == 3
 
+    def test_missing_campaign_returns_404(self):
+        """404 when the campaign does not exist at all."""
+        store, _campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        with _as_user(_OWNER, store, comment_store) as client:
+            r = client.post(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/no-such-campaign/comments",
+                json={"body": "Won't work", "section": "general"},
+            )
+        assert r.status_code == 404
+
+    def test_reply_to_nonexistent_parent(self):
+        """201 — the API does not validate parent_id existence."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        with _as_user(_OWNER, store, comment_store) as client:
+            r = client.post(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments",
+                json={
+                    "body": "Reply to nothing",
+                    "section": "strategy",
+                    "parent_id": "nonexistent-parent-id",
+                },
+            )
+        assert r.status_code == 201
+        assert r.json()["parent_id"] == "nonexistent-parent-id"
+
 
 # ---------------------------------------------------------------------------
 # GET .../comments
@@ -303,6 +330,39 @@ class TestListComments:
             )
         assert r.status_code == 200
         assert len(r.json()) == 2
+
+    def test_list_includes_replies(self):
+        """List returns both top-level comments and replies."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+
+        loop = asyncio.get_event_loop()
+        parent = loop.run_until_complete(
+            comment_store.create(campaign.id, _OWNER.id, "Parent", CommentSection.STRATEGY)
+        )
+        loop.run_until_complete(
+            comment_store.create(campaign.id, _EDITOR.id, "Reply", CommentSection.STRATEGY, parent_id=parent.id)
+        )
+
+        with _as_user(_OWNER, store, comment_store) as client:
+            r = client.get(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments"
+            )
+        assert r.status_code == 200
+        items = r.json()
+        assert len(items) == 2
+        reply = next(c for c in items if c["parent_id"] is not None)
+        assert reply["parent_id"] == parent.id
+
+    def test_missing_campaign_returns_404_on_list(self):
+        """404 when the campaign does not exist at all."""
+        store, _campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        with _as_user(_OWNER, store, comment_store) as client:
+            r = client.get(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/no-such-campaign/comments"
+            )
+        assert r.status_code == 404
 
     def test_non_member_gets_404_on_list(self):
         """Non-members get 404 on GET list."""
@@ -469,6 +529,22 @@ class TestUpdateComment:
             )
         assert r.status_code == 422
 
+    def test_viewer_cannot_update_comment(self):
+        """403 when a viewer (READ-only) tries to update a comment."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+
+        comment = asyncio.get_event_loop().run_until_complete(
+            comment_store.create(campaign.id, _VIEWER.id, "Viewer's comment", CommentSection.STRATEGY)
+        )
+
+        with _as_user(_VIEWER, store, comment_store) as client:
+            r = client.patch(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments/{comment.id}",
+                json={"body": "Cannot edit"},
+            )
+        assert r.status_code == 403
+
     def test_non_member_gets_404_on_update(self):
         """Non-members get 404 (consistent RBAC pattern)."""
         store, campaign = _make_store_with_campaign()
@@ -537,6 +613,21 @@ class TestDeleteComment:
                 f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments/{comment.id}"
             )
         assert r.status_code == 204
+
+    def test_viewer_cannot_delete_comment(self):
+        """403 when a viewer (READ-only) tries to delete a comment."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+
+        comment = asyncio.get_event_loop().run_until_complete(
+            comment_store.create(campaign.id, _VIEWER.id, "Viewer's comment", CommentSection.STRATEGY)
+        )
+
+        with _as_user(_VIEWER, store, comment_store) as client:
+            r = client.delete(
+                f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments/{comment.id}"
+            )
+        assert r.status_code == 403
 
     def test_delete_nonexistent_comment_returns_404(self):
         """404 when comment does not exist."""
