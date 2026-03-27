@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   listBudgetEntries,
   createBudgetEntry,
@@ -7,11 +7,141 @@ import {
 } from "../api";
 import BudgetCharts from "./BudgetCharts.jsx";
 import BudgetAlertBanner from "./BudgetAlertBanner.jsx";
+import DatePicker from "./DatePicker";
 
 const ENTRY_TYPE_OPTIONS = [
   { value: "planned", label: "Planned" },
   { value: "actual", label: "Actual" },
 ];
+
+const CHANNEL_META = {
+  email: { label: "Email", icon: "✉️" },
+  social_media: { label: "Social Media", icon: "📱" },
+  paid_ads: { label: "Paid Ads", icon: "💰" },
+  content_marketing: { label: "Content Marketing", icon: "✍️" },
+  seo: { label: "SEO", icon: "🔍" },
+  influencer: { label: "Influencer", icon: "🌟" },
+  events: { label: "Events", icon: "🎪" },
+  pr: { label: "PR", icon: "📰" },
+};
+
+const SOCIAL_PLATFORM_META = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  x: "X",
+  linkedin: "LinkedIn",
+};
+
+function channelLabel(value) {
+  return CHANNEL_META[value]?.label || value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function channelIcon(value) {
+  return CHANNEL_META[value]?.icon || "📢";
+}
+
+function socialPlatformLabel(value) {
+  return SOCIAL_PLATFORM_META[value] || value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatChannelDisplay(cat) {
+  if (!cat) return "—";
+  if (cat.startsWith("social_media:")) {
+    const platform = cat.split(":")[1];
+    return `${channelIcon("social_media")} ${socialPlatformLabel(platform)}`;
+  }
+  return `${channelIcon(cat)} ${channelLabel(cat)}`;
+}
+
+function ChannelPicker({ channels, socialPlatforms, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const hasSocial = channels.includes("social_media");
+  const isSocialSubPlatform = hasSocial && socialPlatforms.some((p) => value === `social_media:${p}`);
+
+  function displayLabel() {
+    if (!value) return null;
+    if (value.startsWith("social_media:")) {
+      const platform = value.split(":")[1];
+      return `${channelIcon("social_media")} Social Media — ${socialPlatformLabel(platform)}`;
+    }
+    return `${channelIcon(value)} ${channelLabel(value)}`;
+  }
+
+  function select(val) {
+    onChange(val);
+    setOpen(false);
+  }
+
+  return (
+    <div className="budget-channel-picker" ref={ref}>
+      <button
+        type="button"
+        className="datepicker-trigger"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className={value ? "datepicker-value" : "datepicker-placeholder"}>
+          {value ? displayLabel() : "Select channel"}
+        </span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="datepicker-icon">
+          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
+      {open && (
+        <div className="budget-channel-dropdown">
+          {channels.map((ch) => {
+            if (ch === "social_media" && hasSocial && socialPlatforms.length > 0) {
+              return (
+                <div key={ch} className="budget-channel-group">
+                  <div className="budget-channel-group-label">
+                    <span className="budget-channel-item-icon">{channelIcon(ch)}</span>
+                    {channelLabel(ch)}
+                  </div>
+                  <div className="budget-channel-sub-list">
+                    {socialPlatforms.map((p) => {
+                      const val = `social_media:${p}`;
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          className={`budget-channel-item${value === val ? " budget-channel-item--selected" : ""}`}
+                          onClick={() => select(val)}
+                        >
+                          {socialPlatformLabel(p)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <button
+                key={ch}
+                type="button"
+                className={`budget-channel-item${value === ch ? " budget-channel-item--selected" : ""}`}
+                onClick={() => select(ch)}
+              >
+                <span className="budget-channel-item-icon">{channelIcon(ch)}</span>
+                {channelLabel(ch)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatCurrency(amount, currency = "USD") {
   return Number(amount).toLocaleString(undefined, {
@@ -36,7 +166,7 @@ const emptyForm = {
   entry_date: new Date().toISOString().split("T")[0],
 };
 
-export default function BudgetSection({ workspaceId, campaignId, isViewer = false }) {
+export default function BudgetSection({ workspaceId, campaignId, isViewer = false, channels = [], socialPlatforms = [] }) {
   const [entries, setEntries] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -147,13 +277,15 @@ export default function BudgetSection({ workspaceId, campaignId, isViewer = fals
       <div className="card">
         <div className="section-header-row">
           <h2>💰 Budget Entries</h2>
-          {!isViewer && (
+          {!isViewer && !formOpen && (
             <button
-              className="btn btn-primary"
-              onClick={() => setFormOpen((prev) => !prev)}
-              aria-expanded={formOpen}
+              className="budget-add-entry-btn"
+              onClick={() => setFormOpen(true)}
             >
-              {formOpen ? "Cancel" : "+ Add Entry"}
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              Add Entry
             </button>
           )}
         </div>
@@ -199,24 +331,20 @@ export default function BudgetSection({ workspaceId, campaignId, isViewer = fals
               </label>
             </div>
             <div className="budget-form-row">
-              <label className="budget-form-field">
-                <span>Category</span>
-                <input
-                  type="text"
-                  name="category"
+              <div className="budget-form-field">
+                <span>Channel</span>
+                <ChannelPicker
+                  channels={channels}
+                  socialPlatforms={socialPlatforms}
                   value={form.category}
-                  onChange={handleChange}
-                  placeholder="e.g. Advertising"
+                  onChange={(val) => setForm((prev) => ({ ...prev, category: val }))}
                 />
-              </label>
+              </div>
               <label className="budget-form-field">
                 <span>Date</span>
-                <input
-                  type="date"
-                  name="entry_date"
+                <DatePicker
                   value={form.entry_date}
-                  onChange={handleChange}
-                  required
+                  onChange={(e) => handleChange({ target: { name: "entry_date", value: e.target.value } })}
                 />
               </label>
             </div>
@@ -230,9 +358,14 @@ export default function BudgetSection({ workspaceId, campaignId, isViewer = fals
                 placeholder="Optional description"
               />
             </label>
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? "Saving…" : "Save Entry"}
-            </button>
+            <div className="budget-form-actions">
+              <button type="submit" className="btn btn-primary" disabled={submitting}>
+                {submitting ? "Saving…" : "Save Entry"}
+              </button>
+              <button type="button" className="btn btn-outline" onClick={() => { setFormOpen(false); setForm({ ...emptyForm }); }}>
+                Cancel
+              </button>
+            </div>
           </form>
         )}
 
@@ -247,7 +380,7 @@ export default function BudgetSection({ workspaceId, campaignId, isViewer = fals
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Category</th>
+                      <th>Channel</th>
                       <th>Description</th>
                       <th className="budget-table-amount">Amount</th>
                       {!isViewer && <th />}
@@ -257,7 +390,7 @@ export default function BudgetSection({ workspaceId, campaignId, isViewer = fals
                     {plannedEntries.map((entry) => (
                       <tr key={entry.id}>
                         <td>{formatDate(entry.entry_date)}</td>
-                        <td>{entry.category || "—"}</td>
+                        <td>{formatChannelDisplay(entry.category)}</td>
                         <td>{entry.description || "—"}</td>
                         <td className="budget-table-amount">{formatCurrency(entry.amount, entry.currency)}</td>
                         {!isViewer && (
@@ -286,7 +419,7 @@ export default function BudgetSection({ workspaceId, campaignId, isViewer = fals
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Category</th>
+                      <th>Channel</th>
                       <th>Description</th>
                       <th className="budget-table-amount">Amount</th>
                       {!isViewer && <th />}
@@ -296,7 +429,7 @@ export default function BudgetSection({ workspaceId, campaignId, isViewer = fals
                     {actualEntries.map((entry) => (
                       <tr key={entry.id}>
                         <td>{formatDate(entry.entry_date)}</td>
-                        <td>{entry.category || "—"}</td>
+                        <td>{formatChannelDisplay(entry.category)}</td>
                         <td>{entry.description || "—"}</td>
                         <td className="budget-table-amount">{formatCurrency(entry.amount, entry.currency)}</td>
                         {!isViewer && (

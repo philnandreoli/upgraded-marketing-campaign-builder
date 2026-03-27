@@ -2390,8 +2390,8 @@ a:hover { color: var(--color-primary-hover); }
 
 .filter-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
-  overflow-x: auto;
   scrollbar-width: none;           /* Firefox */
   -webkit-overflow-scrolling: touch;
   padding-bottom: 2px;             /* room for focus ring */
@@ -3401,6 +3401,126 @@ a:hover { color: var(--color-primary-hover); }
   font-size: 0.8rem;
   color: var(--color-text-muted);
   margin: 0.4rem 0 0;
+}
+
+/* Two-column layout: Campaigns + Budget sidebar */
+.ws-detail-columns {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1.25rem;
+  align-items: start;
+  margin-top: 1.5rem;
+}
+
+.ws-detail-col-main {
+  min-width: 0;
+}
+
+.ws-detail-col-sidebar {
+  position: sticky;
+  top: 1.5rem;
+}
+
+.ws-detail-col-sidebar .workspace-budget-overview {
+  margin-top: 0;
+}
+
+/* Compact budget stats in sidebar */
+.ws-detail-col-sidebar .budget-summary-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.ws-detail-col-sidebar .budget-stat-value {
+  font-size: var(--text-base);
+}
+
+/* Workspace budget campaign list (sidebar-friendly) */
+.workspace-budget-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.workspace-budget-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.workspace-budget-row:last-child {
+  border-bottom: none;
+}
+
+.workspace-budget-row-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-budget-row-nums {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.workspace-budget-row-spend {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-budget-row-of {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.ws-detail-col-sidebar .budget-status-badge {
+  font-size: 0.62rem;
+  padding: 0.12rem 0.4rem;
+  white-space: nowrap;
+}
+
+.ws-detail-col-sidebar .workspace-budget-campaigns h4 {
+  font-size: 0.7rem;
+}
+
+.workspace-budget-row.budget-row-over {
+  border-left: 3px solid var(--color-danger);
+  padding-left: calc(0.6rem - 3px);
+}
+
+.workspace-budget-row.budget-row-near {
+  border-left: 3px solid var(--color-warning);
+  padding-left: calc(0.6rem - 3px);
+}
+
+@media (max-width: 1060px) {
+  .ws-detail-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-detail-col-sidebar {
+    position: static;
+  }
+
+  .ws-detail-col-sidebar .budget-summary-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+  }
+
+  .ws-detail-col-sidebar .budget-stat-value {
+    font-size: var(--text-lg);
+  }
 }
 
 /* ── Members List ─────────────────────────────────────────────────────── */
@@ -5635,6 +5755,32 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
 }
 
 /* Entry form */
+.budget-add-entry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--color-primary-hover);
+  background: transparent;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  letter-spacing: 0.01em;
+}
+
+.budget-add-entry-btn:hover {
+  background: rgba(13, 148, 136, 0.12);
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.15);
+}
+
+.budget-add-entry-btn:active {
+  background: rgba(13, 148, 136, 0.2);
+}
+
 .budget-entry-form {
   display: flex;
   flex-direction: column;
@@ -5679,6 +5825,92 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
 
 .budget-form-field--full {
   flex-basis: 100%;
+}
+
+.budget-form-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 0.25rem;
+}
+
+/* Budget channel picker */
+.budget-channel-picker {
+  position: relative;
+  width: 100%;
+}
+
+.budget-channel-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 220px;
+  width: 100%;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 0.4rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  animation: datepicker-fade-in 0.15s ease;
+}
+
+.budget-channel-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.84rem;
+  font-family: inherit;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  text-align: left;
+}
+
+.budget-channel-item:hover {
+  background: var(--color-surface-2);
+  color: var(--color-primary-hover);
+}
+
+.budget-channel-item--selected {
+  background: rgba(13, 148, 136, 0.15);
+  color: var(--color-primary-hover);
+  font-weight: 600;
+}
+
+.budget-channel-item-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.budget-channel-group {
+  padding-bottom: 0.25rem;
+}
+
+.budget-channel-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.budget-channel-sub-list {
+  padding-left: 1.4rem;
 }
 
 /* Budget table */
@@ -5741,6 +5973,33 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   margin-top: 1rem;
 }
 
+.workspace-budget-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+
+.workspace-budget-toggle h3 {
+  margin: 0;
+}
+
+.workspace-budget-chevron {
+  color: var(--color-text-muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.workspace-budget-chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
 .workspace-budget-campaigns {
   margin-top: 1rem;
 }
@@ -5751,4 +6010,50 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 0.5rem;
+}
+
+.workspace-budget-table td.budget-table-amount,
+.workspace-budget-table th.budget-table-amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-table-status {
+  text-align: center;
+  width: 80px;
+}
+
+.budget-status-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.budget-status-badge--over {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
+}
+
+.budget-status-badge--near {
+  background: rgba(234, 179, 8, 0.15);
+  color: var(--color-warning);
+}
+
+.budget-status-badge--under {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--color-success);
+}
+
+.budget-row-over td:first-child {
+  border-left: 3px solid var(--color-danger);
+  padding-left: calc(0.75rem - 3px);
+}
+
+.budget-row-near td:first-child {
+  border-left: 3px solid var(--color-warning);
+  padding-left: calc(0.75rem - 3px);
 }

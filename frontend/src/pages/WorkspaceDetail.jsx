@@ -293,18 +293,18 @@ export default function WorkspaceDetail({ events = [] }) {
         )}
       </div>
 
-      {/* ── Budget Overview ─────────────────────────────────────────── */}
-      <WorkspaceBudgetOverview workspaceId={id} />
-
-      {/* ── Campaigns Section ─────────────────────────────────────────── */}
-      <div className="section-header" style={{ marginTop: "1.5rem" }}>
-        <h2>Campaigns</h2>
-        {isCreatorOrAdmin && (
-          <Link to={`/workspaces/${workspace.id}/campaigns/new`} className="btn btn-primary">
-            + Create Campaign
-          </Link>
-        )}
-      </div>
+      {/* ── Two-column layout: Campaigns + Budget Overview ────────── */}
+      <div className="ws-detail-columns">
+        <div className="ws-detail-col-main">
+          {/* ── Campaigns Section ─────────────────────────────────────────── */}
+          <div className="section-header">
+            <h2>Campaigns</h2>
+            {isCreatorOrAdmin && (
+              <Link to={`/workspaces/${workspace.id}/campaigns/new`} className="btn btn-primary">
+                + Create Campaign
+              </Link>
+            )}
+          </div>
 
       {loadingCampaigns && campaigns.length === 0 ? (
         <div>
@@ -384,6 +384,13 @@ export default function WorkspaceDetail({ events = [] }) {
           )}
         </>
       )}
+        </div>
+
+        <div className="ws-detail-col-sidebar">
+          {/* ── Budget Overview ─────────────────────────────────────────── */}
+          <WorkspaceBudgetOverview workspaceId={id} />
+        </div>
+      </div>
 
       <Toast events={events} notifications={notifications} />
     </div>
