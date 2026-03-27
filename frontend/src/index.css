@@ -2977,6 +2977,36 @@ a:hover { color: var(--color-primary-hover); }
   .campaign-banner-side { flex-direction: row; flex-wrap: wrap; align-items: center; }
 }
 
+/* ------------------------------------------------------------------ */
+/* Campaign Detail — Utility Toolbar (below banner)                    */
+/* ------------------------------------------------------------------ */
+.campaign-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  margin-top: -0.75rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow);
+}
+.campaign-toolbar-start,
+.campaign-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+@media (max-width: 640px) {
+  .campaign-toolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
 /* Progress indicator (banner) */
 .progress-indicator {
   display: flex;
@@ -5128,6 +5158,49 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   line-height: 1.5;
 }
 
+/* When the backdrop is present, make the textarea text transparent
+   so the highlighted backdrop shows through, while keeping the caret visible. */
+.comment-textarea--with-backdrop {
+  background: transparent;
+  position: relative;
+  z-index: 2;
+  caret-color: var(--color-text);
+  color: transparent;
+}
+.comment-textarea--with-backdrop::selection {
+  background: rgba(13, 148, 136, 0.25);
+  color: transparent;
+}
+
+/* Backdrop div mirrors textarea geometry exactly */
+.comment-textarea-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+  /* Match textarea styling exactly */
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+/* Highlighted @mention pills inside the backdrop */
+.mention-inline-tag {
+  background: rgba(13, 148, 136, 0.15);
+  color: var(--color-primary-hover);
+  border-radius: 3px;
+  padding: 0.05em 0.15em;
+  font-weight: 600;
+}
+
 .comment-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
@@ -5215,7 +5288,7 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
 }
 
 .mention-autocomplete {
-  position: fixed;
+  position: absolute;
   z-index: 400;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -5224,7 +5297,8 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   max-height: 200px;
   overflow-y: auto;
   min-width: 200px;
-  max-width: 320px;
+  max-width: 100%;
+  width: 100%;
 }
 
 [data-theme="light"] .mention-autocomplete {

@@ -119,7 +119,7 @@ function AddMemberForm({ workspaceId, campaignId, existingUserIds, onAdded }) {
     setSearchLoading(true);
     setSearchError(null);
     try {
-      const users = await listUsers(term);
+      const { users } = await listUsers(term);
       setResults(users.filter((u) => u.is_active && !existingUserIds.includes(u.id)));
       setShowDropdown(true);
     } catch (err) {
@@ -255,7 +255,7 @@ function CompactAddMemberForm({ workspaceId, campaignId, existingUserIds, onAdde
     if (!term.trim()) { setResults([]); setShowDropdown(false); return; }
     setSearchLoading(true);
     try {
-      const users = await listUsers(term);
+      const { users } = await listUsers(term);
       setResults(users.filter((u) => u.is_active && !existingUserIds.includes(u.id)));
       setShowDropdown(true);
     } catch { setResults([]); }
@@ -360,7 +360,7 @@ export function TeamMembersCompact({ workspaceId, campaignId, canManage }) {
 
   useEffect(() => {
     if (!canManage) return;
-    listUsers("").then((users) => {
+    listUsers("").then(({ users }) => {
       const map = {};
       users.forEach((u) => { map[u.id] = { display_name: u.display_name, email: u.email }; });
       setUserMap(map);
@@ -486,7 +486,7 @@ export default function TeamMembersSection({ workspaceId, campaignId, canManage 
   useEffect(() => {
     if (!canManage) return;
     listUsers("")
-      .then((users) => {
+      .then(({ users }) => {
         const map = {};
         users.forEach((u) => { map[u.id] = { display_name: u.display_name, email: u.email }; });
         setUserMap(map);

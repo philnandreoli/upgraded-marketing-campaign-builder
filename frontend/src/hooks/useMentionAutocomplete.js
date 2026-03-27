@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 /**
  * Filter members by a query string (matches display_name or email, case-insensitive).
@@ -16,11 +16,12 @@ function filterMembers(members, query) {
  * Hook to manage mention autocomplete state for a textarea.
  *
  * Returns:
- *   mentionState   – { active, query, anchorPosition, activeIndex } for rendering
- *   handleChange   – Wraps textarea onChange to detect @-trigger
- *   handleKeyDown  – Wraps textarea onKeyDown for keyboard nav
- *   insertMention  – Called when a member is selected
- *   dismissMention – Called to close the dropdown
+ *   mentionState    – { active, query, anchorPosition, activeIndex } for rendering
+ *   handleChange    – Wraps textarea onChange to detect @-trigger
+ *   handleKeyDown   – Wraps textarea onKeyDown for keyboard nav
+ *   insertMention   – Called when a member is selected
+ *   dismissMention  – Called to close the dropdown
+ *   encodeMentions  – Converts friendly @DisplayName text to @[userId:displayName] tokens
  */
 export function useMentionAutocomplete({ members, textareaRef, value, onChange }) {
   const [mentionState, setMentionState] = useState({
@@ -31,15 +32,20 @@ export function useMentionAutocomplete({ members, textareaRef, value, onChange }
     activeIndex: 0,
   });
 
+  // Track inserted mentions: displayName -> user_id
+  const insertedMentionsRef = useRef(new Map());
+
   /**
    * Compute an approximate dropdown anchor based on the textarea element.
    */
   const computeAnchorPosition = useCallback((textarea) => {
-    if (!textarea) return { top: 0, left: 0 };
-    const rect = textarea.getBoundingClientRect();
+    if (!textarea) return { bottom: "100%", left: 0 };
+    // Position relative to .comment-textarea-wrap (position:relative parent).
+    // Default: open upward (above textarea) since compose area is at the bottom.
     return {
-      top: rect.bottom + 4,
-      left: rect.left,
+      bottom: "100%",
+      left: 0,
+      marginBottom: 4,
     };
   }, []);
 
@@ -122,11 +128,15 @@ export function useMentionAutocomplete({ members, textareaRef, value, onChange }
     const textarea = textareaRef?.current;
     const cursorPos = textarea ? textarea.selectionStart : value.length;
 
-    const token = `@[${member.user_id}:${member.display_name || member.user_id}]`;
+    const displayName = member.display_name || member.user_id;
+    const friendlyText = `@${displayName}`;
     const before = value.slice(0, startIndex);
     const after = value.slice(cursorPos);
-    const newValue = before + token + " " + after;
+    const newValue = before + friendlyText + " " + after;
     onChange(newValue);
+
+    // Track this mention so we can encode it on submit
+    insertedMentionsRef.current.set(displayName, member.user_id);
 
     setMentionState({
       active: false,
@@ -140,7 +150,7 @@ export function useMentionAutocomplete({ members, textareaRef, value, onChange }
     requestAnimationFrame(() => {
       if (textarea) {
         textarea.focus();
-        const pos = before.length + token.length + 1;
+        const pos = before.length + friendlyText.length + 1;
         textarea.setSelectionRange(pos, pos);
       }
     });
@@ -156,11 +166,48 @@ export function useMentionAutocomplete({ members, textareaRef, value, onChange }
     });
   }
 
+  /**
+   * Convert friendly @DisplayName references back to @[userId:displayName] tokens.
+   * Call this before submitting the comment body to the API.
+   */
+  function encodeMentions(text) {
+    let encoded = text;
+    // Sort by display name length descending to avoid partial matches
+    const entries = [...insertedMentionsRef.current.entries()].sort(
+      (a, b) => b[0].length - a[0].length,
+    );
+    for (const [displayName, userId] of entries) {
+      // Replace all occurrences of @DisplayName with the token format
+      const pattern = `@${displayName}`;
+      while (encoded.includes(pattern)) {
+        encoded = encoded.replace(pattern, `@[${userId}:${displayName}]`);
+      }
+    }
+    return encoded;
+  }
+
+  /**
+   * Clear tracked mentions (call after successful submit).
+   */
+  function clearMentions() {
+    insertedMentionsRef.current.clear();
+  }
+
+  /**
+   * Return a copy of the current inserted mentions map (displayName → userId).
+   */
+  function getInsertedMentions() {
+    return new Map(insertedMentionsRef.current);
+  }
+
   return {
     mentionState,
     handleChange,
     handleKeyDown,
     insertMention,
     dismissMention,
+    encodeMentions,
+    clearMentions,
+    getInsertedMentions,
   };
 }

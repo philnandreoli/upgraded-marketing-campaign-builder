@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createComment,
   deleteComment,
@@ -260,21 +260,41 @@ export default function CommentPanel({
           listWorkspaceMembers(workspaceId),
         ]);
         if (cancelled) return;
-        // Build a lookup from workspace members (which have display_name / email)
+        // Build a merged, deduplicated list of mentionable users from both
+        // campaign members and workspace members (who also have access).
+        const seen = new Set();
+        const merged = [];
+
+        // Workspace members have display_name / email — index them for lookup
         const wsMap = {};
         workspaceMembers.forEach((wm) => {
           wsMap[wm.user_id] = wm;
         });
-        // Map campaign member IDs to enriched objects
-        const enriched = campaignMembers.map((cm) => {
+
+        // Add campaign members first (enriched with workspace info)
+        campaignMembers.forEach((cm) => {
+          if (seen.has(cm.user_id)) return;
+          seen.add(cm.user_id);
           const ws = wsMap[cm.user_id];
-          return {
+          merged.push({
             user_id: cm.user_id,
             display_name: ws?.display_name || cm.user_id,
             email: ws?.email || "",
-          };
+          });
         });
-        setMembers(enriched);
+
+        // Then add remaining workspace members not already in the list
+        workspaceMembers.forEach((wm) => {
+          if (seen.has(wm.user_id)) return;
+          seen.add(wm.user_id);
+          merged.push({
+            user_id: wm.user_id,
+            display_name: wm.display_name || wm.user_id,
+            email: wm.email || "",
+          });
+        });
+
+        setMembers(merged);
       } catch {
         // Non-critical — mention autocomplete just won't have data
       }
@@ -291,12 +311,47 @@ export default function CommentPanel({
     handleChange: handleMentionChange,
     handleKeyDown: handleMentionKeyDown,
     insertMention,
+    encodeMentions,
+    clearMentions,
+    getInsertedMentions,
   } = useMentionAutocomplete({
     members,
     textareaRef: composeTextareaRef,
     value: newBody,
     onChange: setNewBody,
   });
+
+  const backdropRef = useRef(null);
+
+  // Sync scroll between textarea and highlights backdrop
+  const handleComposeScroll = useCallback(() => {
+    if (composeTextareaRef.current && backdropRef.current) {
+      backdropRef.current.scrollTop = composeTextareaRef.current.scrollTop;
+    }
+  }, []);
+
+  // Build highlighted HTML for the backdrop
+  const highlightedBody = useMemo(() => {
+    const mentions = getInsertedMentions();
+    if (mentions.size === 0 || !newBody) return newBody || "";
+    // Sort by length descending to avoid partial matches
+    const names = [...mentions.keys()].sort((a, b) => b.length - a.length);
+    // Escape HTML entities, then wrap mention patterns
+    let html = newBody
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    for (const name of names) {
+      const escaped = name
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const pattern = `@${escaped}`;
+      html = html.replaceAll(pattern, `<mark class="mention-inline-tag">${pattern}</mark>`);
+    }
+    // Append a trailing space so the backdrop has the same height as the textarea
+    return html + "\n";
+  }, [newBody, getInsertedMentions]);
 
   // ---------------------------------------------------------------------------
   // WebSocket real-time updates
@@ -333,11 +388,13 @@ export default function CommentPanel({
     if (!trimmed) return;
     setSubmitting(true);
     try {
-      const payload = { body: trimmed };
+      const encoded = encodeMentions(trimmed);
+      const payload = { body: encoded };
       if (section) payload.section = section;
       if (contentPieceIndex != null) payload.content_piece_index = contentPieceIndex;
       await createComment(workspaceId, campaignId, payload);
       setNewBody("");
+      clearMentions();
       await fetchComments();
       listEndRef.current?.scrollIntoView({ behavior: "smooth" });
     } catch (err) {
@@ -420,12 +477,30 @@ export default function CommentPanel({
   };
 
   // ---------------------------------------------------------------------------
+  // Resolve author display names from the members list
+  // ---------------------------------------------------------------------------
+
+  const memberMap = useMemo(() => {
+    const map = {};
+    members.forEach((m) => { map[m.user_id] = m.display_name || m.email || m.user_id; });
+    return map;
+  }, [members]);
+
+  const enrichedComments = useMemo(() =>
+    comments.map((c) => ({
+      ...c,
+      author_display_name: c.author_display_name || memberMap[c.author_id] || c.author_id,
+    })),
+    [comments, memberMap],
+  );
+
+  // ---------------------------------------------------------------------------
   // Group comments: top-level + replies
   // ---------------------------------------------------------------------------
 
-  const topLevel = comments.filter((c) => !c.parent_id);
+  const topLevel = enrichedComments.filter((c) => !c.parent_id);
   const repliesMap = {};
-  comments
+  enrichedComments
     .filter((c) => c.parent_id)
     .forEach((c) => {
       repliesMap[c.parent_id] = repliesMap[c.parent_id] ?? [];
@@ -551,13 +626,20 @@ export default function CommentPanel({
       {!isReadOnly && (
         <form className="comment-panel-compose" onSubmit={handleCreate}>
           <div className="comment-textarea-wrap">
+            <div
+              ref={backdropRef}
+              className="comment-textarea-backdrop"
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: highlightedBody }}
+            />
             <textarea
               ref={composeTextareaRef}
-              className="comment-textarea"
+              className="comment-textarea comment-textarea--with-backdrop"
               placeholder="Add a comment… (type @ to mention)"
               value={newBody}
               onChange={handleMentionChange}
               onKeyDown={handleMentionKeyDown}
+              onScroll={handleComposeScroll}
               rows={3}
             />
             {mentionState.active && (

@@ -602,6 +602,12 @@ export default function CampaignDetail() {
               👁 Read-only
             </span>
           )}
+        </div>
+      </div>
+
+      {/* Utility toolbar — view toggle + comment controls */}
+      <div className="campaign-toolbar">
+        <div className="campaign-toolbar-start">
           <div className="view-toggle" role="group" aria-label="Layout view">
             <button
               className={`view-toggle-btn${viewMode === "focus" ? " active" : ""}`}
@@ -618,6 +624,8 @@ export default function CampaignDetail() {
               Split
             </button>
           </div>
+        </div>
+        <div className="campaign-toolbar-end">
           <button
             className={`comment-toggle-btn${commentPanelState.isOpen && commentPanelState.section === "general" ? " comment-toggle-btn--active" : ""}`}
             onClick={openGeneralComments}
