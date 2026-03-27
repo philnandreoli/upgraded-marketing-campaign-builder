@@ -18,6 +18,7 @@
  * 13. Review Section
  * 14. Team Members
  * 15. Utilities & Misc
+ * 16. Budget Tracking
  */
 
 :root,
@@ -5451,3 +5452,303 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   border-radius: 9999px;
 }
 
+
+/* ------------------------------------------------------------------ */
+/* 16. Budget Tracking                                                 */
+/* ------------------------------------------------------------------ */
+
+.budget-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Alert banner */
+.budget-alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.budget-alert-banner--warning {
+  background: rgba(244, 157, 55, 0.12);
+  border: 1px solid rgba(244, 157, 55, 0.35);
+  color: var(--color-warning);
+}
+
+.budget-alert-banner--danger {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  color: var(--color-danger);
+}
+
+.budget-alert-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.budget-alert-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Summary stats */
+.budget-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin: 0.75rem 0;
+}
+
+.budget-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.budget-stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.budget-stat-value {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.budget-stat-danger {
+  color: var(--color-danger);
+}
+
+.budget-stat-success {
+  color: var(--color-success);
+}
+
+/* Bar chart */
+.budget-bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+
+.budget-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.budget-bar-label {
+  width: 60px;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.budget-bar-track {
+  flex: 1;
+  height: 20px;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.budget-bar {
+  height: 100%;
+  border-radius: var(--radius);
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+
+.budget-bar--planned {
+  background: var(--color-primary);
+}
+
+.budget-bar--actual {
+  background: var(--color-success);
+}
+
+.budget-bar--over {
+  background: var(--color-danger);
+}
+
+.budget-bar-value {
+  width: 90px;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Utilization progress bar */
+.budget-utilization {
+  margin: 0.75rem 0 0.25rem;
+}
+
+.budget-utilization-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.budget-utilization-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.budget-utilization-pct {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.budget-progress-track {
+  height: 10px;
+  background: var(--color-surface-2);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.budget-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--color-success);
+  transition: width 0.4s ease;
+}
+
+.budget-progress-fill--warning {
+  background: var(--color-warning);
+}
+
+.budget-progress-fill--over {
+  background: var(--color-danger);
+}
+
+/* Entry form */
+.budget-entry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}
+
+.budget-form-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.budget-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 120px;
+}
+
+.budget-form-field > span {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.budget-form-field input,
+.budget-form-field select {
+  padding: 0.45rem 0.6rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.budget-form-field--full {
+  flex-basis: 100%;
+}
+
+/* Budget table */
+.budget-entries-tables {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.budget-entry-group h3 {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+
+.budget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.budget-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.budget-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(42, 48, 80, 0.4);
+  color: var(--color-text);
+}
+
+.budget-table-amount {
+  text-align: right;
+}
+
+.budget-delete-btn {
+  padding: 0.15rem 0.4rem !important;
+  font-size: 0.7rem !important;
+  line-height: 1;
+}
+
+.budget-empty {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  padding: 1rem 0;
+}
+
+/* Workspace budget overview */
+.workspace-budget-overview {
+  margin-top: 1rem;
+}
+
+.workspace-budget-campaigns {
+  margin-top: 1rem;
+}
+
+.workspace-budget-campaigns h4 {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
