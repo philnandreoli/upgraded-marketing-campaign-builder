@@ -186,7 +186,7 @@ export default function Dashboard({ events }) {
       setCampaigns((prev) => [...prev, ...newItems]);
 
       // Fetch unresolved comment counts for the new page
-      fetchCommentCounts(newItems.map((c) => ({ ...c, workspace_id: workspaceId })));
+      fetchCommentCounts(newItems);
     } catch {
       /* silent */
     } finally {
