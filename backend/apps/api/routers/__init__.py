@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from backend.api.admin import router as admin_router
+from backend.api.budget_entries import router as budget_entries_router
 from backend.api.campaigns import me_router, router as campaigns_router
 from backend.api.campaign_assets import router as campaign_assets_router
 from backend.api.campaign_comments import router as campaign_comments_router
@@ -25,6 +26,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(campaign_schedule_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(campaign_workflow_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(campaign_comments_router, prefix="/api/workspaces/{workspace_id}")
+    app.include_router(budget_entries_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(campaign_members_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(workspaces_router, prefix="/api")
     app.include_router(workspace_members_router, prefix="/api")
