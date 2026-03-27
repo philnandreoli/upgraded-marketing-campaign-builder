@@ -66,7 +66,6 @@ function ChannelPicker({ channels, socialPlatforms, value, onChange }) {
   }, []);
 
   const hasSocial = channels.includes("social_media");
-  const isSocialSubPlatform = hasSocial && socialPlatforms.some((p) => value === `social_media:${p}`);
 
   function displayLabel() {
     if (!value) return null;

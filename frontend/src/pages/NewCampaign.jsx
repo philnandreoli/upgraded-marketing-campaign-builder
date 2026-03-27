@@ -230,7 +230,7 @@ export default function NewCampaign() {
         setError("Failed to load draft campaign.");
       }
     })();
-  }, [routeCampaignId, routeWorkspaceId]);
+  }, [routeCampaignId, routeWorkspaceId, navigate]);
 
   // Auto-save: debounced PATCH on form changes (steps 2-4 only)
   const scheduleAutoSave = useCallback(
