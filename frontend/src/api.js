@@ -94,6 +94,37 @@ export const generateImageAsset = (workspaceId, campaignId, contentPieceIndex, p
   });
 
 // ---------------------------------------------------------------------------
+// Campaign comment API
+// ---------------------------------------------------------------------------
+
+export const listComments = (workspaceId, campaignId, { section, pieceIndex } = {}) => {
+  const params = new URLSearchParams();
+  if (section !== undefined && section !== null) params.set("section", section);
+  if (pieceIndex !== undefined && pieceIndex !== null) params.set("piece_index", pieceIndex);
+  const qs = params.toString();
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/comments${qs ? `?${qs}` : ""}`);
+};
+
+export const createComment = (workspaceId, campaignId, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/comments`, {
+    body,
+  });
+
+export const updateComment = (workspaceId, campaignId, commentId, body) =>
+  request("PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/comments/${encodeURIComponent(commentId)}`, {
+    body,
+  });
+
+export const deleteComment = (workspaceId, campaignId, commentId) =>
+  request("DELETE", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/comments/${encodeURIComponent(commentId)}`);
+
+export const resolveComment = (workspaceId, campaignId, commentId, resolved) =>
+  request("PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/comments/${encodeURIComponent(commentId)}/resolve?resolved=${encodeURIComponent(resolved)}`);
+
+export const getUnresolvedCommentCount = (workspaceId, campaignId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/comments/count`);
+
+// ---------------------------------------------------------------------------
 // Admin API
 // ---------------------------------------------------------------------------
 
