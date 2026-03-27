@@ -960,6 +960,7 @@ a:hover { color: var(--color-primary-hover); }
 .badge-content_approval { background: rgba(245,158,11,0.15); color: var(--color-warning); }
 /* In-progress pipeline stage (teal) */
 .badge-content_revision { background: rgba(13,148,136,0.15); color: var(--color-primary-hover); }
+.badge-comments { background: rgba(59,130,246,0.12); color: #2563eb; }
 
 /* Pipeline progress tabs (unified progress + navigation) */
 .pipeline-tabs {
