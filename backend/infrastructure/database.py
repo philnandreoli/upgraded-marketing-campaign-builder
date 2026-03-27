@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -413,6 +413,30 @@ class CampaignCommentRow(Base):
         Index("ix_campaign_comments_campaign_id", "campaign_id"),
         Index("ix_campaign_comments_campaign_section", "campaign_id", "section"),
         Index("ix_campaign_comments_parent_id", "parent_id"),
+    )
+
+
+class BudgetEntryRow(Base):
+    """Persists planned and actual spend entries for campaign budget tracking."""
+
+    __tablename__ = "budget_entries"
+
+    id = Column(String, primary_key=True)  # UUID
+    campaign_id = Column(
+        String, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    entry_type = Column(String, nullable=False)  # "planned" | "actual"
+    amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String, nullable=False, default="USD")
+    category = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    entry_date = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_budget_entries_campaign_id", "campaign_id"),
+        Index("ix_budget_entries_campaign_type", "campaign_id", "entry_type"),
     )
 
 
