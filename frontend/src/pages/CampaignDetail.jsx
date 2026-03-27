@@ -18,6 +18,7 @@ import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { useUser } from "../UserContext";
 import { SkeletonCard } from "../components/Skeleton.jsx";
+import CommentPanel from "../components/CommentPanel.jsx";
 
 const TERMINAL_STATES = ["approved", "rejected", "manual_review_required"];
 const PAUSE_STATES = ["clarification", "content_approval"];  // pipeline paused but will resume
@@ -64,6 +65,7 @@ export default function CampaignDetail() {
   );
   const [badgePulse, setBadgePulse] = useState(false);
   const [imageAssets, setImageAssets] = useState([]);
+  const [commentPanelOpen, setCommentPanelOpen] = useState(false);
   const { events, connected, connectionFailed } = useWebSocket(id);
   const { isViewer, isAdmin, user, imageGenerationAvailable } = useUser();
   const prevStatusRef = useRef(null);
@@ -527,6 +529,14 @@ export default function CampaignDetail() {
               Split
             </button>
           </div>
+          <button
+            className={`comment-toggle-btn${commentPanelOpen ? " comment-toggle-btn--active" : ""}`}
+            onClick={() => setCommentPanelOpen((o) => !o)}
+            aria-pressed={commentPanelOpen}
+            title="Toggle comments panel"
+          >
+            💬 Comments
+          </button>
         </div>
       </div>
 
@@ -665,6 +675,16 @@ export default function CampaignDetail() {
           <div key={activeTab} className="detail-tab-content">{renderTabContent()}</div>
         </>
       )}
+
+      {/* Comments sliding panel */}
+      <CommentPanel
+        campaignId={id}
+        workspaceId={effectiveWorkspaceId}
+        isReadOnly={isViewer}
+        events={events}
+        isOpen={commentPanelOpen}
+        onClose={() => setCommentPanelOpen(false)}
+      />
     </div>
   );
 }
