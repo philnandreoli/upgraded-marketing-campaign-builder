@@ -10,10 +10,11 @@ simply ``await`` these methods.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
-from sqlalchemy import delete as sa_delete, func, or_, select, update as sa_update
+from sqlalchemy import case, delete as sa_delete, exists, func, or_, select, update as sa_update
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
@@ -145,6 +146,62 @@ class CampaignStore:
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows]
 
+    async def list_all_paginated(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return paginated campaign summaries without full JSON deserialization.
+
+        Projects only the indexed columns plus ``brief.product_or_service`` and
+        ``brief.goal`` via PostgreSQL JSON path extraction.  This avoids loading
+        the ~50–200 KB full JSON document for every campaign when only summary
+        data is needed (e.g. the admin dashboard).
+
+        Returns a ``(items, total)`` tuple where each item is a plain dict with
+        the summary fields.
+        """
+        async with async_session() as session:
+            count_result = await session.execute(
+                select(func.count()).select_from(CampaignRow)
+            )
+            total = count_result.scalar() or 0
+
+            result = await session.execute(
+                select(
+                    CampaignRow.id,
+                    CampaignRow.status,
+                    CampaignRow.owner_id,
+                    CampaignRow.workspace_id,
+                    CampaignRow.created_at,
+                    CampaignRow.updated_at,
+                    func.json_extract_path_text(
+                        CampaignRow.data, "brief", "product_or_service"
+                    ).label("product_or_service"),
+                    func.json_extract_path_text(
+                        CampaignRow.data, "brief", "goal"
+                    ).label("goal"),
+                )
+                .order_by(CampaignRow.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            rows = result.all()
+            return [
+                {
+                    "id": r.id,
+                    "status": r.status,
+                    "owner_id": r.owner_id,
+                    "workspace_id": r.workspace_id,
+                    "created_at": r.created_at,
+                    "updated_at": r.updated_at,
+                    "product_or_service": r.product_or_service,
+                    "goal": r.goal,
+                }
+                for r in rows
+            ], total
+
     async def list_by_owner(self, owner_id: str) -> list[Campaign]:
         """Return all campaigns belonging to a specific owner."""
         async with async_session() as session:
@@ -191,20 +248,32 @@ class CampaignStore:
             if is_admin:
                 base = select(CampaignRow)
             else:
+                # Use EXISTS subqueries instead of OUTERJOIN + DISTINCT to avoid
+                # row-multiplication when campaigns have multiple members/workspace members.
+                campaign_member_subq = (
+                    select(CampaignMemberRow.campaign_id)
+                    .where(
+                        CampaignMemberRow.campaign_id == CampaignRow.id,
+                        CampaignMemberRow.user_id == user_id,
+                    )
+                    .correlate(CampaignRow)
+                )
+                workspace_member_subq = (
+                    select(WorkspaceMemberRow.workspace_id)
+                    .where(
+                        WorkspaceMemberRow.workspace_id == CampaignRow.workspace_id,
+                        WorkspaceMemberRow.user_id == user_id,
+                    )
+                    .correlate(CampaignRow)
+                )
                 base = (
                     select(CampaignRow)
-                    .outerjoin(CampaignMemberRow, CampaignRow.id == CampaignMemberRow.campaign_id)
-                    .outerjoin(
-                        WorkspaceMemberRow,
-                        CampaignRow.workspace_id == WorkspaceMemberRow.workspace_id,
-                    )
                     .where(
                         or_(
-                            CampaignMemberRow.user_id == user_id,
-                            WorkspaceMemberRow.user_id == user_id,
+                            exists(campaign_member_subq),
+                            exists(workspace_member_subq),
                         )
                     )
-                    .distinct()
                 )
 
             # Total count
@@ -556,17 +625,27 @@ class CampaignStore:
                 if ws_id in result:
                     result[ws_id]["owner_display_name"] = owner_display_name
 
-            member_count_rows = await session.execute(
+            # Consolidate member_count and the per-user role into a single query
+            # using conditional aggregation, reducing one DB round-trip.
+            member_rows = await session.execute(
                 select(
                     WorkspaceMemberRow.workspace_id,
-                    func.count(WorkspaceMemberRow.user_id),
+                    func.count(WorkspaceMemberRow.user_id).label("member_count"),
+                    func.max(
+                        case(
+                            (WorkspaceMemberRow.user_id == user_id, WorkspaceMemberRow.role),
+                            else_=None,
+                        )
+                    ).label("user_role"),
                 )
                 .where(WorkspaceMemberRow.workspace_id.in_(unique_ids))
                 .group_by(WorkspaceMemberRow.workspace_id)
             )
-            for ws_id, count in member_count_rows.all():
+            for ws_id, member_count, user_role in member_rows.all():
                 if ws_id in result:
-                    result[ws_id]["member_count"] = int(count or 0)
+                    result[ws_id]["member_count"] = int(member_count or 0)
+                    if user_role is not None and user_id is not None:
+                        result[ws_id]["role"] = user_role
 
             campaign_count_rows = await session.execute(
                 select(
@@ -579,16 +658,6 @@ class CampaignStore:
             for ws_id, count in campaign_count_rows.all():
                 if ws_id is not None and ws_id in result:
                     result[ws_id]["campaign_count"] = int(count or 0)
-
-            if user_id is not None:
-                role_rows = await session.execute(
-                    select(WorkspaceMemberRow.workspace_id, WorkspaceMemberRow.role)
-                    .where(WorkspaceMemberRow.workspace_id.in_(unique_ids))
-                    .where(WorkspaceMemberRow.user_id == user_id)
-                )
-                for ws_id, role in role_rows.all():
-                    if ws_id in result and role is not None:
-                        result[ws_id]["role"] = role
 
         return result
 
@@ -728,6 +797,56 @@ class CampaignStore:
                     email=user_row.email if user_row is not None else None,
                 )
                 for member_row, user_row in rows
+            ]
+
+    async def count_workspace_members(self, workspace_id: str) -> int:
+        """Return the number of members in *workspace_id* using a COUNT query.
+
+        Avoids loading the full member list when only the count is needed
+        (e.g. when computing workspace summary statistics in the fallback path).
+        """
+        async with async_session() as session:
+            result = await session.execute(
+                select(func.count())
+                .select_from(WorkspaceMemberRow)
+                .where(WorkspaceMemberRow.workspace_id == workspace_id)
+            )
+            return result.scalar() or 0
+
+    async def list_workspace_campaign_calendar_data(
+        self,
+        workspace_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return minimal data for the calendar view using JSON path extraction.
+
+        Projects only ``id``, ``brief.product_or_service`` (as *campaign_name*),
+        and the ``content`` JSON subtree for each campaign in *workspace_id*.
+        The full campaign JSON is never deserialized, which is a significant win
+        when campaigns carry large strategy / analytics payloads.
+
+        Returns a list of dicts with keys:
+          ``id``, ``campaign_name``, ``content_json`` (raw JSON string or None).
+        """
+        async with async_session() as session:
+            result = await session.execute(
+                select(
+                    CampaignRow.id,
+                    func.json_extract_path_text(
+                        CampaignRow.data, "brief", "product_or_service"
+                    ).label("campaign_name"),
+                    func.json_extract_path_text(
+                        CampaignRow.data, "content"
+                    ).label("content_json"),
+                )
+                .where(CampaignRow.workspace_id == workspace_id)
+            )
+            return [
+                {
+                    "id": r.id,
+                    "campaign_name": r.campaign_name,
+                    "content_json": r.content_json,
+                }
+                for r in result.all()
             ]
 
     # ------------------------------------------------------------------

@@ -17,6 +17,7 @@ defined here and imported by workspace_members.py and campaigns.py.
 from __future__ import annotations
 
 import calendar
+import json as _json
 from collections import defaultdict
 from datetime import date, datetime, timezone
 from enum import Enum
@@ -33,6 +34,7 @@ from backend.apps.api.schemas.schedule import (
 )
 from backend.models.user import User, UserRole
 from backend.models.workspace import Workspace, WorkspaceRole
+from backend.models.campaign import ContentPiece
 from backend.infrastructure.auth import get_current_user
 from backend.infrastructure.campaign_store import get_campaign_store
 
@@ -197,9 +199,13 @@ async def list_workspaces(
                 role_str = role.value if role is not None else WorkspaceRole.VIEWER.value
             else:
                 role_str = WorkspaceRole.CREATOR.value
-            members = await store.list_workspace_members(ws.id)
+            # Use COUNT query when available to avoid loading full member list
+            if hasattr(store, "count_workspace_members"):
+                member_count = await store.count_workspace_members(ws.id)
+            else:
+                members = await store.list_workspace_members(ws.id)
+                member_count = len(members)
             campaigns, campaign_count = await store.list_workspace_campaigns(ws.id)
-            member_count = len(members)
             if ws.owner_id:
                 owner_user = await store.get_user(ws.owner_id)
                 owner_display_name = (
@@ -339,33 +345,68 @@ async def get_workspace_calendar(
     month_start = date(year, month_num, 1)
     month_end = date(year, month_num, days_in_month)
 
-    # Collect all campaigns in the workspace (no pagination limit needed here)
-    campaigns, _total = await store.list_workspace_campaigns(
-        workspace_id, include_drafts=True, limit=10_000, offset=0
-    )
-
+    # Collect calendar data for all campaigns in the workspace.
+    # Prefer the dedicated calendar projection to avoid full JSON deserialization.
     scheduled_by_day: dict[date, list[WorkspaceCalendarPiece]] = defaultdict(list)
 
-    for campaign in campaigns:
-        if campaign.content is None:
-            continue
-        campaign_name = (
-            campaign.brief.product_or_service
-            if campaign.brief and campaign.brief.product_or_service
-            else campaign.id
-        )
-        for idx, piece in enumerate(campaign.content.pieces):
-            if piece.scheduled_date is None:
+    if hasattr(store, "list_workspace_campaign_calendar_data"):
+        calendar_rows = await store.list_workspace_campaign_calendar_data(workspace_id)
+        for row in calendar_rows:
+            content_json = row.get("content_json")
+            if not content_json:
                 continue
-            if month_start <= piece.scheduled_date <= month_end:
-                scheduled_by_day[piece.scheduled_date].append(
-                    WorkspaceCalendarPiece(
-                        campaign_id=campaign.id,
-                        campaign_name=campaign_name,
-                        piece_index=idx,
-                        piece=piece,
+            campaign_name = row.get("campaign_name") or row["id"]
+            try:
+                content_data = _json.loads(content_json)
+                pieces_data = content_data.get("pieces", [])
+            except Exception:
+                continue
+            for idx, piece_data in enumerate(pieces_data):
+                scheduled_date_raw = piece_data.get("scheduled_date")
+                if not scheduled_date_raw:
+                    continue
+                try:
+                    piece_date = date.fromisoformat(scheduled_date_raw)
+                except (ValueError, TypeError):
+                    continue
+                if month_start <= piece_date <= month_end:
+                    try:
+                        piece = ContentPiece.model_validate(piece_data)
+                    except Exception:
+                        continue
+                    scheduled_by_day[piece_date].append(
+                        WorkspaceCalendarPiece(
+                            campaign_id=row["id"],
+                            campaign_name=campaign_name,
+                            piece_index=idx,
+                            piece=piece,
+                        )
                     )
-                )
+    else:
+        # Fallback: full campaign deserialization (used by InMemoryCampaignStore in tests)
+        campaigns, _total = await store.list_workspace_campaigns(
+            workspace_id, include_drafts=True, limit=10_000, offset=0
+        )
+        for campaign in campaigns:
+            if campaign.content is None:
+                continue
+            campaign_name = (
+                campaign.brief.product_or_service
+                if campaign.brief and campaign.brief.product_or_service
+                else campaign.id
+            )
+            for idx, piece in enumerate(campaign.content.pieces):
+                if piece.scheduled_date is None:
+                    continue
+                if month_start <= piece.scheduled_date <= month_end:
+                    scheduled_by_day[piece.scheduled_date].append(
+                        WorkspaceCalendarPiece(
+                            campaign_id=campaign.id,
+                            campaign_name=campaign_name,
+                            piece_index=idx,
+                            piece=piece,
+                        )
+                    )
 
     scheduled = [
         WorkspaceCalendarDayGroup(date=d, pieces=scheduled_by_day[d])

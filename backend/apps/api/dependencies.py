@@ -30,7 +30,14 @@ class Action(str, Enum):
     MANAGE_MEMBERS = "manage_members"
 
 
-async def _authorize(campaign_id: str, user: Optional[User], action: Action, store: Any) -> None:
+async def _authorize(
+    campaign_id: str,
+    user: Optional[User],
+    action: Action,
+    store: Any,
+    *,
+    campaign: Optional[Campaign] = None,
+) -> None:
     """Enforce RBAC for campaign access.
 
     Authorization matrix:
@@ -51,6 +58,10 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
     Raises 403 when authenticated but the action exceeds the user's permission.
 
     Note: Platform VIEWER role never gets write access regardless of workspace role.
+
+    The optional *campaign* parameter accepts an already-loaded Campaign object so
+    that callers which have already fetched the campaign (e.g. ``get_campaign_for_read``)
+    can pass it in and avoid a redundant ``store.get()`` round-trip.
     """
     if user is None:
         return  # auth disabled — allow everything
@@ -73,8 +84,10 @@ async def _authorize(campaign_id: str, user: Optional[User], action: Action, sto
         else:  # pure viewer platform role
             allowed = action == Action.READ
     else:
-        # No direct campaign membership — check workspace fallback
-        campaign = await store.get(campaign_id)
+        # No direct campaign membership — check workspace fallback.
+        # Use the pre-loaded campaign if provided to avoid an extra DB round-trip.
+        if campaign is None:
+            campaign = await store.get(campaign_id)
         if campaign is not None and campaign.workspace_id is not None:
             ws_role = await store.get_workspace_member_role(campaign.workspace_id, user.id)
             if ws_role is not None:
@@ -111,7 +124,7 @@ async def get_campaign_for_read(
     campaign = await store.get(campaign_id)
     if campaign is None or campaign.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.READ, store)
+    await _authorize(campaign_id, user, Action.READ, store, campaign=campaign)
     return campaign
 
 
@@ -125,5 +138,5 @@ async def get_campaign_for_write(
     campaign = await store.get(campaign_id)
     if campaign is None or campaign.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.WRITE, store)
+    await _authorize(campaign_id, user, Action.WRITE, store, campaign=campaign)
     return campaign

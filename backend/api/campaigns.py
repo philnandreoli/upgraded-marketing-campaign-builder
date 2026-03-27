@@ -265,7 +265,7 @@ async def update_draft_campaign(
         raise HTTPException(status_code=409, detail="Only draft campaigns can be updated via this endpoint")
 
     # RBAC: only owner, workspace CREATOR or admin may update
-    await _authorize(campaign_id, user, Action.WRITE, store)
+    await _authorize(campaign_id, user, Action.WRITE, store, campaign=campaign)
 
     # Apply partial updates to the brief
     brief_data = campaign.brief.model_dump()
@@ -388,7 +388,7 @@ async def delete_campaign(
     campaign = await store.get(campaign_id)
     if campaign is None or campaign.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.DELETE, store)
+    await _authorize(campaign_id, user, Action.DELETE, store, campaign=campaign)
     await store.delete(campaign_id)
     return Response(status_code=204)
 

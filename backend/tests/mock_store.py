@@ -54,6 +54,30 @@ class InMemoryCampaignStore:
     async def list_all(self) -> list[Campaign]:
         return list(self._campaigns.values())
 
+    async def list_all_paginated(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Return paginated campaign summaries without full JSON deserialization."""
+        all_campaigns = sorted(self._campaigns.values(), key=lambda c: c.created_at, reverse=True)
+        total = len(all_campaigns)
+        page = all_campaigns[offset:offset + limit]
+        return [
+            {
+                "id": c.id,
+                "status": c.status,
+                "owner_id": c.owner_id,
+                "workspace_id": c.workspace_id,
+                "created_at": c.created_at,
+                "updated_at": c.updated_at,
+                "product_or_service": c.brief.product_or_service if c.brief else None,
+                "goal": c.brief.goal if c.brief else None,
+            }
+            for c in page
+        ], total
+
     async def list_by_owner(self, owner_id: str) -> list[Campaign]:
         return [c for c in self._campaigns.values() if c.owner_id == owner_id]
 
@@ -395,6 +419,32 @@ class InMemoryCampaignStore:
             for (ws_id, uid), role_str in self._workspace_members.items()
             if ws_id == workspace_id
         ]
+
+    async def count_workspace_members(self, workspace_id: str) -> int:
+        """Return the number of members in *workspace_id* using a COUNT query."""
+        return sum(1 for (ws_id, _) in self._workspace_members if ws_id == workspace_id)
+
+    async def list_workspace_campaign_calendar_data(
+        self,
+        workspace_id: str,
+    ) -> list[dict]:
+        """Return minimal calendar data for campaigns in *workspace_id*."""
+        result = []
+        for campaign in self._campaigns.values():
+            if campaign.workspace_id != workspace_id:
+                continue
+            campaign_name = (
+                campaign.brief.product_or_service
+                if campaign.brief and campaign.brief.product_or_service
+                else campaign.id
+            )
+            content_json = campaign.content.model_dump_json() if campaign.content is not None else None
+            result.append({
+                "id": campaign.id,
+                "campaign_name": campaign_name,
+                "content_json": content_json,
+            })
+        return result
 
 
 class InMemoryCommentStore:
