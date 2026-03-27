@@ -693,3 +693,105 @@ class TestResolveComment:
                 f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments/{comment.id}/resolve"
             )
         assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# WebSocket broadcast events
+# ---------------------------------------------------------------------------
+
+class TestCommentWebSocketBroadcasts:
+    """Tests that comment mutations broadcast the correct WebSocket events."""
+
+    def test_create_comment_broadcasts_comment_added(self):
+        """Creating a comment broadcasts a comment_added event."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        with _as_user(_OWNER, store, comment_store) as client:
+            with patch("backend.api.campaign_comments.ws_manager") as mock_ws:
+                mock_ws.broadcast = AsyncMock()
+                r = client.post(
+                    f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments",
+                    json={"body": "Hello!", "section": "strategy"},
+                )
+        assert r.status_code == 201
+        mock_ws.broadcast.assert_awaited_once()
+        payload = mock_ws.broadcast.call_args[0][0]
+        assert payload["type"] == "comment_added"
+        assert payload["campaign_id"] == campaign.id
+        assert payload["comment"]["body"] == "Hello!"
+
+    def test_update_comment_broadcasts_comment_updated(self):
+        """Editing a comment broadcasts a comment_updated event."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        comment = asyncio.get_event_loop().run_until_complete(
+            comment_store.create(campaign.id, _OWNER.id, "Original", CommentSection.STRATEGY)
+        )
+        with _as_user(_OWNER, store, comment_store) as client:
+            with patch("backend.api.campaign_comments.ws_manager") as mock_ws:
+                mock_ws.broadcast = AsyncMock()
+                r = client.patch(
+                    f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments/{comment.id}",
+                    json={"body": "Updated text"},
+                )
+        assert r.status_code == 200
+        mock_ws.broadcast.assert_awaited_once()
+        payload = mock_ws.broadcast.call_args[0][0]
+        assert payload["type"] == "comment_updated"
+        assert payload["campaign_id"] == campaign.id
+        assert payload["comment"]["body"] == "Updated text"
+
+    def test_delete_comment_broadcasts_comment_deleted(self):
+        """Deleting a comment broadcasts a comment_deleted event."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        comment = asyncio.get_event_loop().run_until_complete(
+            comment_store.create(campaign.id, _OWNER.id, "To delete", CommentSection.STRATEGY)
+        )
+        with _as_user(_OWNER, store, comment_store) as client:
+            with patch("backend.api.campaign_comments.ws_manager") as mock_ws:
+                mock_ws.broadcast = AsyncMock()
+                r = client.delete(
+                    f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments/{comment.id}"
+                )
+        assert r.status_code == 204
+        mock_ws.broadcast.assert_awaited_once()
+        payload = mock_ws.broadcast.call_args[0][0]
+        assert payload["type"] == "comment_deleted"
+        assert payload["campaign_id"] == campaign.id
+        assert payload["comment_id"] == comment.id
+
+    def test_resolve_comment_broadcasts_comment_resolved(self):
+        """Resolving a comment broadcasts a comment_resolved event."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        comment = asyncio.get_event_loop().run_until_complete(
+            comment_store.create(campaign.id, _OWNER.id, "Fix this", CommentSection.STRATEGY)
+        )
+        with _as_user(_OWNER, store, comment_store) as client:
+            with patch("backend.api.campaign_comments.ws_manager") as mock_ws:
+                mock_ws.broadcast = AsyncMock()
+                r = client.patch(
+                    f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments/{comment.id}/resolve"
+                )
+        assert r.status_code == 200
+        mock_ws.broadcast.assert_awaited_once()
+        payload = mock_ws.broadcast.call_args[0][0]
+        assert payload["type"] == "comment_resolved"
+        assert payload["campaign_id"] == campaign.id
+        assert payload["comment_id"] == comment.id
+        assert payload["is_resolved"] is True
+
+    def test_no_broadcast_when_create_fails_authorization(self):
+        """No WebSocket broadcast when comment creation is rejected (viewer)."""
+        store, campaign = _make_store_with_campaign()
+        comment_store = InMemoryCommentStore()
+        with _as_user(_VIEWER, store, comment_store) as client:
+            with patch("backend.api.campaign_comments.ws_manager") as mock_ws:
+                mock_ws.broadcast = AsyncMock()
+                r = client.post(
+                    f"/api/workspaces/{TEST_WS_ID}/campaigns/{campaign.id}/comments",
+                    json={"body": "Should not broadcast", "section": "strategy"},
+                )
+        assert r.status_code == 403
+        mock_ws.broadcast.assert_not_awaited()
