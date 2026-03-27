@@ -5,11 +5,28 @@ function platformBudget(totalBudget, channelPct, platformPct, currency) {
   return `${currency || "USD"} ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-export default function ChannelPlanSection({ data, error }) {
+export default function ChannelPlanSection({ data, error, onOpenComments, unresolvedCount = 0 }) {
+  const commentButton = onOpenComments ? (
+    <button
+      className="section-comment-btn"
+      onClick={onOpenComments}
+      aria-label="Open channel plan comments"
+      title="Comments on channel plan"
+    >
+      💬
+      {unresolvedCount > 0 && (
+        <span className="section-comment-count" data-testid="channel_plan-comment-count">{unresolvedCount}</span>
+      )}
+    </button>
+  ) : null;
+
   if (!data && error) {
     return (
       <div className="card stage-error-card">
-        <h2>📡 Channel Plan</h2>
+        <div className="section-header-row">
+          <h2>📡 Channel Plan</h2>
+          {commentButton}
+        </div>
         <div className="stage-error-message">
           <span className="stage-error-icon">⚠️</span>
           <div>
@@ -24,7 +41,10 @@ export default function ChannelPlanSection({ data, error }) {
   if (!data) {
     return (
       <div className="card">
-        <h2>📡 Channel Plan</h2>
+        <div className="section-header-row">
+          <h2>📡 Channel Plan</h2>
+          {commentButton}
+        </div>
         <div className="loading"><span className="spinner" /> Planning channels…</div>
       </div>
     );
@@ -32,7 +52,10 @@ export default function ChannelPlanSection({ data, error }) {
 
   return (
     <div className="card">
-      <h2>📡 Channel Plan</h2>
+      <div className="section-header-row">
+        <h2>📡 Channel Plan</h2>
+        {commentButton}
+      </div>
 
       {data.total_budget > 0 && (
         <p className="channel-budget">
