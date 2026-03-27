@@ -227,6 +227,42 @@ export const updateWorkspaceMemberRole = (id, userId, role) =>
 export const removeWorkspaceMember = (id, userId) =>
   request("DELETE", `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`);
 
+// ---------------------------------------------------------------------------
+// Budget API
+// ---------------------------------------------------------------------------
+
+export const createBudgetEntry = (workspaceId, campaignId, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/budget-entries`, {
+    body,
+  });
+
+export const listBudgetEntries = (workspaceId, campaignId, { entryType } = {}) => {
+  const params = new URLSearchParams();
+  if (entryType) params.set("entry_type", entryType);
+  const qs = params.toString();
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/budget-entries${qs ? `?${qs}` : ""}`);
+};
+
+export const updateBudgetEntry = (workspaceId, campaignId, entryId, body) =>
+  request("PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/budget-entries/${encodeURIComponent(entryId)}`, {
+    body,
+  });
+
+export const deleteBudgetEntry = (workspaceId, campaignId, entryId) =>
+  request("DELETE", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/budget-entries/${encodeURIComponent(entryId)}`);
+
+export const getCampaignBudgetSummary = (workspaceId, campaignId, { alertThresholdPct = 0.8 } = {}) => {
+  const params = new URLSearchParams();
+  params.set("alert_threshold_pct", alertThresholdPct);
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/budget-summary?${params}`);
+};
+
+export const getWorkspaceBudgetOverview = (workspaceId, { alertThresholdPct = 0.8 } = {}) => {
+  const params = new URLSearchParams();
+  params.set("alert_threshold_pct", alertThresholdPct);
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/budget-overview?${params}`);
+};
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

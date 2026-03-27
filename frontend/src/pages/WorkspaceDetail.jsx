@@ -12,6 +12,7 @@ import StatusBadge from "../components/StatusBadge.jsx";
 import FilterTabs from "../components/FilterTabs.jsx";
 import SearchBar from "../components/SearchBar.jsx";
 import Toast from "../components/Toast.jsx";
+import WorkspaceBudgetOverview from "../components/WorkspaceBudgetOverview.jsx";
 import { applyFilter, matchesSearch } from "../lib/campaignFilters";
 import usePolling from "../hooks/usePolling";
 
@@ -291,6 +292,9 @@ export default function WorkspaceDetail({ events = [] }) {
           </p>
         )}
       </div>
+
+      {/* ── Budget Overview ─────────────────────────────────────────── */}
+      <WorkspaceBudgetOverview workspaceId={id} />
 
       {/* ── Campaigns Section ─────────────────────────────────────────── */}
       <div className="section-header" style={{ marginTop: "1.5rem" }}>

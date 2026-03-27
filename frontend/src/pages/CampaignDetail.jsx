@@ -11,6 +11,7 @@ import ReviewSection from "../components/ReviewSection.jsx";
 import ClarificationSection from "../components/ClarificationSection.jsx";
 import ImageGallerySection from "../components/ImageGallerySection.jsx";
 import CalendarView from "../components/CalendarView.jsx";
+import BudgetSection from "../components/BudgetSection.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import ProgressIndicator from "../components/ProgressIndicator.jsx";
 import Toast from "../components/Toast.jsx";
@@ -312,6 +313,8 @@ export default function CampaignDetail() {
         tabs.push("calendar");
       }
     }
+    // Budget tab is always available
+    tabs.push("budget");
     return tabs;
   }, [clickableTabs, showImagesTab]);
 
@@ -319,8 +322,8 @@ export default function CampaignDetail() {
   const activeTab = useMemo(() => {
     if (allTabs.length === 0) return null;
     if (userTab && allTabs.includes(userTab)) return userTab;
-    // Auto-select the last *pipeline* tab (not images or calendar)
-    const pipelineTabs = allTabs.filter(t => t !== "images" && t !== "calendar");
+    // Auto-select the last *pipeline* tab (not images, calendar, or budget)
+    const pipelineTabs = allTabs.filter(t => t !== "images" && t !== "calendar" && t !== "budget");
     return pipelineTabs[pipelineTabs.length - 1] ?? allTabs[0];
   }, [allTabs, userTab]);
 
@@ -475,6 +478,14 @@ export default function CampaignDetail() {
             endDate={campaign.brief?.end_date}
           />
         );
+      case "budget":
+        return (
+          <BudgetSection
+            workspaceId={effectiveWorkspaceId}
+            campaignId={campaign.id}
+            isViewer={isViewer}
+          />
+        );
       default:
         return (
           <div className="card empty-state">
@@ -542,6 +553,16 @@ export default function CampaignDetail() {
           >
             <span className="pipeline-tab-icon" aria-hidden="true">📅</span>
             Calendar
+          </button>
+        )}
+        {/* Budget tab — always available */}
+        {allTabs.includes("budget") && (
+          <button
+            className={`pipeline-tab completed${activeTab === "budget" ? " selected" : ""}`}
+            onClick={() => setUserTab("budget")}
+          >
+            <span className="pipeline-tab-icon" aria-hidden="true">💰</span>
+            Budget
           </button>
         )}
       </div>
@@ -761,6 +782,16 @@ export default function CampaignDetail() {
                   >
                     <span className="sidebar-stage-dot" />
                     <span className="sidebar-stage-label">Calendar</span>
+                  </button>
+                )}
+                {/* Budget tab — always available */}
+                {allTabs.includes("budget") && (
+                  <button
+                    className={`sidebar-stage sidebar-stage-completed${activeTab === "budget" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
+                    onClick={() => setUserTab("budget")}
+                  >
+                    <span className="sidebar-stage-dot" />
+                    <span className="sidebar-stage-label">Budget</span>
                   </button>
                 )}
               </div>
