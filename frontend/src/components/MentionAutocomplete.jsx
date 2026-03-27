@@ -46,8 +46,10 @@ export default function MentionAutocomplete({
     <div
       className="mention-autocomplete"
       style={{
-        top: anchorPosition?.top ?? 0,
+        ...(anchorPosition?.top != null ? { top: anchorPosition.top } : {}),
+        ...(anchorPosition?.bottom != null ? { bottom: anchorPosition.bottom } : {}),
         left: anchorPosition?.left ?? 0,
+        ...(anchorPosition?.marginBottom != null ? { marginBottom: anchorPosition.marginBottom } : {}),
       }}
       role="listbox"
       aria-label="Mention suggestions"
