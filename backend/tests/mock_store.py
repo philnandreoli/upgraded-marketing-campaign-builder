@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
+from backend.models.campaign import Campaign, CampaignBrief, CampaignComment, CampaignStatus, CommentSection
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 
@@ -395,3 +395,76 @@ class InMemoryCampaignStore:
             for (ws_id, uid), role_str in self._workspace_members.items()
             if ws_id == workspace_id
         ]
+
+
+class InMemoryCommentStore:
+    """Async-compatible in-memory comment store for testing."""
+
+    def __init__(self) -> None:
+        self._comments: dict[str, CampaignComment] = {}
+
+    async def create(
+        self,
+        campaign_id: str,
+        author_id: str,
+        body: str,
+        section: CommentSection,
+        parent_id: Optional[str] = None,
+        content_piece_index: Optional[int] = None,
+    ) -> CampaignComment:
+        comment = CampaignComment(
+            campaign_id=campaign_id,
+            author_id=author_id,
+            body=body,
+            section=section,
+            parent_id=parent_id,
+            content_piece_index=content_piece_index,
+        )
+        self._comments[comment.id] = comment
+        return comment
+
+    async def get(self, comment_id: str) -> Optional[CampaignComment]:
+        return self._comments.get(comment_id)
+
+    async def list_by_campaign(
+        self,
+        campaign_id: str,
+        section: Optional[CommentSection] = None,
+        content_piece_index: Optional[int] = None,
+    ) -> list[CampaignComment]:
+        results = [c for c in self._comments.values() if c.campaign_id == campaign_id]
+        if section is not None:
+            results = [c for c in results if c.section == section]
+        if content_piece_index is not None:
+            results = [c for c in results if c.content_piece_index == content_piece_index]
+        return results
+
+    async def update(self, comment_id: str, body: str) -> CampaignComment:
+        comment = self._comments.get(comment_id)
+        if comment is None:
+            raise ValueError(f"Comment {comment_id!r} not found")
+        comment.body = body
+        comment.updated_at = datetime.utcnow()
+        return comment
+
+    async def delete(self, comment_id: str) -> None:
+        # Cascade-delete replies.
+        reply_ids = [c.id for c in self._comments.values() if c.parent_id == comment_id]
+        for rid in reply_ids:
+            self._comments.pop(rid, None)
+        self._comments.pop(comment_id, None)
+
+    async def resolve(self, comment_id: str, resolved: bool = True) -> CampaignComment:
+        comment = self._comments.get(comment_id)
+        if comment is None:
+            raise ValueError(f"Comment {comment_id!r} not found")
+        comment.is_resolved = resolved
+        comment.updated_at = datetime.utcnow()
+        return comment
+
+    async def count_unresolved(self, campaign_id: str) -> int:
+        return sum(
+            1
+            for c in self._comments.values()
+            if c.campaign_id == campaign_id and not c.is_resolved
+        )
