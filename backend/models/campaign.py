@@ -61,6 +61,16 @@ class SocialMediaPlatform(str, Enum):
     LINKEDIN = "linkedin"
 
 
+class CommentSection(str, Enum):
+    """Campaign sections that a comment can target."""
+
+    STRATEGY = "strategy"
+    CONTENT = "content"
+    CHANNEL_PLAN = "channel_plan"
+    ANALYTICS = "analytics"
+    GENERAL = "general"
+
+
 # ---------------------------------------------------------------------------
 # Sub-models
 # ---------------------------------------------------------------------------
@@ -251,6 +261,27 @@ class ImageAsset(BaseModel):
     dimensions: str = Field(default="1024x1024", description="WxH in pixels")
     format: str = Field(default="png")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CampaignComment(BaseModel):
+    """A comment attached to a specific section of a campaign."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    campaign_id: str
+    parent_id: Optional[str] = Field(
+        default=None,
+        description="ID of the parent comment. None indicates a top-level comment.",
+    )
+    section: CommentSection = Field(description="Campaign section this comment targets.")
+    content_piece_index: Optional[int] = Field(
+        default=None,
+        description="Index into CampaignContent.pieces. Only relevant when section=content.",
+    )
+    body: str = Field(min_length=1, description="Comment text content.")
+    author_id: str = Field(description="User ID of the comment author.")
+    is_resolved: bool = Field(default=False, description="Whether the comment thread is resolved.")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Campaign(BaseModel):
