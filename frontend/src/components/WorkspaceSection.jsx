@@ -38,6 +38,7 @@ const STATUS_GROUPS = [
 export default function WorkspaceSection({
   workspace,
   campaigns = [],
+  commentCounts = {},
   userRole,
   onCreateCampaign,
   collapsed: controlledCollapsed,
@@ -175,6 +176,7 @@ export default function WorkspaceSection({
                   workspaces={allWorkspaces}
                   onMove={handleMove}
                   deletingId={deletingId}
+                  unresolvedCount={commentCounts[c.id]}
                 />
               ))}
             </div>
@@ -199,6 +201,7 @@ export default function WorkspaceSection({
                           workspaces={allWorkspaces}
                           onMove={handleMove}
                           deletingId={deletingId}
+                          unresolvedCount={commentCounts[c.id]}
                         />
                       ))}
                     </div>
@@ -239,7 +242,7 @@ function getInitials(name) {
     .join("");
 }
 
-function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign, workspaces, onMove, deletingId }) {
+function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign, workspaces, onMove, deletingId, unresolvedCount }) {
   const [assigning, setAssigning] = useState(false);
   const isDraft = c.status === "draft";
   const campaignUrl = isDraft
@@ -267,6 +270,11 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
       </div>
       <div className="campaign-card-meta">
         <StatusBadge status={c.status} />
+        {unresolvedCount > 0 && (
+          <span className="badge badge-comments" aria-label={`${unresolvedCount} unresolved comment${unresolvedCount !== 1 ? "s" : ""}`}>
+            💬 {unresolvedCount}
+          </span>
+        )}
         {isDraft && (
           <Link
             to={campaignUrl}

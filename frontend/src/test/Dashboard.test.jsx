@@ -52,6 +52,7 @@ async function renderDashboard(
   { isViewer = false, isAdmin = false, userId = 'user-1' } = {},
   campaigns = [],
   workspaces = [],
+  { skipCommentCountMock = false } = {},
 ) {
   api.getMe.mockResolvedValue(makeMeResponse({ isViewer, isAdmin, userId }));
   api.listCampaigns.mockResolvedValue({
@@ -65,6 +66,9 @@ async function renderDashboard(
     },
   });
   api.deleteCampaign.mockResolvedValue(undefined);
+  if (!skipCommentCountMock) {
+    api.getUnresolvedCommentCount.mockResolvedValue({ unresolved: 0 });
+  }
   api.listWorkspaces.mockResolvedValue(workspaces);
 
   render(
@@ -1149,6 +1153,7 @@ async function renderDashboardWithPages({ page1 = page1Campaigns, page2 = page2C
   });
   api.listWorkspaces.mockResolvedValue(workspaces);
   api.deleteCampaign.mockResolvedValue(undefined);
+  api.getUnresolvedCommentCount.mockResolvedValue({ unresolved: 0 });
 
   // First call: page 1 (has_more: true). Subsequent call: page 2 (has_more: false).
   api.listCampaigns
@@ -1227,6 +1232,7 @@ describe('Dashboard – Pagination', () => {
     });
     api.listWorkspaces.mockResolvedValue([WS_PAGE]);
     api.deleteCampaign.mockResolvedValue(undefined);
+    api.getUnresolvedCommentCount.mockResolvedValue({ unresolved: 0 });
     api.listCampaigns.mockResolvedValue({
       items: page1Campaigns,
       pagination: {
@@ -1347,6 +1353,7 @@ describe('Dashboard – Pagination', () => {
     });
     api.listWorkspaces.mockResolvedValue([WS_PAGE]);
     api.deleteCampaign.mockResolvedValue(undefined);
+    api.getUnresolvedCommentCount.mockResolvedValue({ unresolved: 0 });
 
     const firstPageLimit = 2;
     // First response: no returned_count — Dashboard should fall back to limit
@@ -1400,5 +1407,140 @@ describe('Dashboard – Pagination', () => {
       'ws-page',
       expect.objectContaining({ offset: firstPageLimit }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Unresolved comment count badge
+// ---------------------------------------------------------------------------
+
+const WS_COMMENTS = { id: 'ws-comments', name: 'Comment Workspace', is_personal: true, role: 'creator' };
+
+const campaignWithComments = {
+  id: 'camp-c1',
+  product_or_service: 'CommentProduct',
+  goal: 'Test comments',
+  status: 'strategy',
+  owner_id: 'user-1',
+  workspace_id: 'ws-comments',
+};
+
+const campaignNoComments = {
+  id: 'camp-c2',
+  product_or_service: 'NoCommentProduct',
+  goal: 'No comments here',
+  status: 'content',
+  owner_id: 'user-1',
+  workspace_id: 'ws-comments',
+};
+
+describe('Dashboard – Unresolved comment count badge', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('shows comment badge with count when campaign has unresolved comments', async () => {
+    api.getUnresolvedCommentCount.mockImplementation((_wsId, campaignId) => {
+      if (campaignId === 'camp-c1') return Promise.resolve({ unresolved: 3 });
+      return Promise.resolve({ unresolved: 0 });
+    });
+
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWithComments],
+      [WS_COMMENTS],
+      { skipCommentCountMock: true },
+    );
+    await waitFor(() => screen.getByText('CommentProduct'));
+
+    const badge = await waitFor(() => screen.getByText((content) => content.includes('💬') && content.includes('3')));
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveClass('badge-comments');
+  });
+
+  it('does not show comment badge when campaign has zero unresolved comments', async () => {
+    api.getUnresolvedCommentCount.mockResolvedValue({ unresolved: 0 });
+
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignNoComments],
+      [WS_COMMENTS],
+    );
+    await waitFor(() => screen.getByText('NoCommentProduct'));
+
+    // Ensure no comment badge is rendered
+    expect(screen.queryByText(/💬/)).not.toBeInTheDocument();
+  });
+
+  it('shows badge only on campaigns with unresolved comments in a multi-campaign list', async () => {
+    api.getUnresolvedCommentCount.mockImplementation((_wsId, campaignId) => {
+      if (campaignId === 'camp-c1') return Promise.resolve({ unresolved: 5 });
+      return Promise.resolve({ unresolved: 0 });
+    });
+
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWithComments, campaignNoComments],
+      [WS_COMMENTS],
+      { skipCommentCountMock: true },
+    );
+    await waitFor(() => screen.getByText('CommentProduct'));
+    await waitFor(() => screen.getByText('NoCommentProduct'));
+
+    // Only one badge should be present
+    const badges = await waitFor(() => screen.getAllByText((content) => content.includes('💬')));
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toContain('5');
+  });
+
+  it('badge has accessible label describing comment count', async () => {
+    api.getUnresolvedCommentCount.mockImplementation((_wsId, campaignId) => {
+      if (campaignId === 'camp-c1') return Promise.resolve({ unresolved: 1 });
+      return Promise.resolve({ unresolved: 0 });
+    });
+
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWithComments],
+      [WS_COMMENTS],
+      { skipCommentCountMock: true },
+    );
+    await waitFor(() => screen.getByText('CommentProduct'));
+
+    const badge = await waitFor(() => screen.getByLabelText('1 unresolved comment'));
+    expect(badge).toBeInTheDocument();
+  });
+
+  it('uses plural label for multiple unresolved comments', async () => {
+    api.getUnresolvedCommentCount.mockImplementation((_wsId, campaignId) => {
+      if (campaignId === 'camp-c1') return Promise.resolve({ unresolved: 7 });
+      return Promise.resolve({ unresolved: 0 });
+    });
+
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWithComments],
+      [WS_COMMENTS],
+      { skipCommentCountMock: true },
+    );
+    await waitFor(() => screen.getByText('CommentProduct'));
+
+    const badge = await waitFor(() => screen.getByLabelText('7 unresolved comments'));
+    expect(badge).toBeInTheDocument();
+  });
+
+  it('gracefully handles API errors when fetching comment counts', async () => {
+    api.getUnresolvedCommentCount.mockRejectedValue(new Error('API error'));
+
+    await renderDashboard(
+      { userId: 'user-1' },
+      [campaignWithComments],
+      [WS_COMMENTS],
+      { skipCommentCountMock: true },
+    );
+    await waitFor(() => screen.getByText('CommentProduct'));
+
+    // No badge should appear when the API fails
+    expect(screen.queryByText(/💬/)).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { listCampaigns, deleteCampaign } from "../api";
+import { listCampaigns, deleteCampaign, getUnresolvedCommentCount } from "../api";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
 import { useConfirm } from "../ConfirmDialogContext";
@@ -28,6 +28,7 @@ const PAGE_SIZE = 50;
 export default function Dashboard({ events }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [campaigns, setCampaigns] = useState([]);
+  const [commentCounts, setCommentCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState({});
   const [deleting, setDeleting] = useState(null);
@@ -116,6 +117,18 @@ export default function Dashboard({ events }) {
     };
   }, []);
 
+  const fetchCommentCounts = useCallback(async (campaignList) => {
+    const counts = {};
+    await Promise.all(
+      campaignList.map((c) =>
+        getUnresolvedCommentCount(c.workspace_id, c.id)
+          .then((res) => { counts[c.id] = res.unresolved ?? 0; })
+          .catch(() => { /* silent — leave count absent */ })
+      )
+    );
+    setCommentCounts((prev) => ({ ...prev, ...counts }));
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -139,14 +152,17 @@ export default function Dashboard({ events }) {
       paginationRef.current = newPagination;
       // Filter out campaigns currently in the soft-delete undo window
       const allItems = results.flatMap((r) => r.items);
-      setCampaigns(allItems.filter((c) => !pendingDeletesRef.current.has(c.id)));
+      const visible = allItems.filter((c) => !pendingDeletesRef.current.has(c.id));
+      setCampaigns(visible);
+
+      // Fetch unresolved comment counts (non-blocking)
+      fetchCommentCounts(visible);
     } catch {
       /* silent */
     } finally {
       setLoading(false);
     }
-  }, [workspaces]);
-
+  }, [workspaces, fetchCommentCounts]);
   const loadMore = useCallback(async (workspaceId) => {
     const pg = paginationRef.current[workspaceId];
     if (!pg || !pg.hasMore) return;
@@ -166,16 +182,17 @@ export default function Dashboard({ events }) {
           totalCount: res.pagination.total_count,
         },
       };
-      setCampaigns((prev) => [
-        ...prev,
-        ...res.items.filter((c) => !pendingDeletesRef.current.has(c.id)),
-      ]);
+      const newItems = res.items.filter((c) => !pendingDeletesRef.current.has(c.id));
+      setCampaigns((prev) => [...prev, ...newItems]);
+
+      // Fetch unresolved comment counts for the new page
+      fetchCommentCounts(newItems.map((c) => ({ ...c, workspace_id: workspaceId })));
     } catch {
       /* silent */
     } finally {
       setLoadingMore((prev) => ({ ...prev, [workspaceId]: false }));
     }
-  }, []);
+  }, [fetchCommentCounts]);
 
   useEffect(() => {
     load();
@@ -477,6 +494,7 @@ export default function Dashboard({ events }) {
                 key={ws.id}
                 workspace={ws}
                 campaigns={campaignsByWorkspace[ws.id] ?? []}
+                commentCounts={commentCounts}
                 isAdmin={isAdmin}
                 isViewer={isViewer}
                 user={user}
@@ -493,6 +511,7 @@ export default function Dashboard({ events }) {
               <WorkspaceSection
                 workspace={{ id: "__orphaned__", name: "Orphaned Campaigns", is_personal: false, role: "creator" }}
                 campaigns={orphanedCampaigns}
+                commentCounts={commentCounts}
                 isAdmin={isAdmin}
                 isViewer={isViewer}
                 user={user}
