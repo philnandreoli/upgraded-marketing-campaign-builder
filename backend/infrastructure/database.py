@@ -389,6 +389,33 @@ class CampaignEventRow(Base):
     )
 
 
+class CampaignCommentRow(Base):
+    """Persists a threaded, section-scoped comment on a campaign."""
+
+    __tablename__ = "campaign_comments"
+
+    id = Column(String, primary_key=True)          # UUID
+    campaign_id = Column(
+        String, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_id = Column(
+        String, ForeignKey("campaign_comments.id"), nullable=True
+    )
+    section = Column(String, nullable=False)       # e.g. "strategy", "content", "channel_plan"
+    content_piece_index = Column(Integer, nullable=True)  # for content-specific comments
+    body = Column(Text, nullable=False)
+    author_id = Column(String, ForeignKey("users.id"), nullable=False)
+    is_resolved = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_campaign_comments_campaign_id", "campaign_id"),
+        Index("ix_campaign_comments_campaign_section", "campaign_id", "section"),
+        Index("ix_campaign_comments_parent_id", "parent_id"),
+    )
+
+
 class UserSettingsRow(Base):
     """Durable per-user settings persisted across sessions and devices."""
 
