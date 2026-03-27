@@ -1,8 +1,25 @@
-export default function StrategySection({ data, error }) {
+export default function StrategySection({ data, error, onOpenComments, unresolvedCount = 0 }) {
+  const commentButton = onOpenComments ? (
+    <button
+      className="section-comment-btn"
+      onClick={onOpenComments}
+      aria-label="Open strategy comments"
+      title="Comments on strategy"
+    >
+      💬
+      {unresolvedCount > 0 && (
+        <span className="section-comment-count" data-testid="strategy-comment-count">{unresolvedCount}</span>
+      )}
+    </button>
+  ) : null;
+
   if (!data && error) {
     return (
       <div className="card stage-error-card">
-        <h2>📋 Strategy</h2>
+        <div className="section-header-row">
+          <h2>📋 Strategy</h2>
+          {commentButton}
+        </div>
         <div className="stage-error-message">
           <span className="stage-error-icon">⚠️</span>
           <div>
@@ -17,7 +34,10 @@ export default function StrategySection({ data, error }) {
   if (!data) {
     return (
       <div className="card">
-        <h2>📋 Strategy</h2>
+        <div className="section-header-row">
+          <h2>📋 Strategy</h2>
+          {commentButton}
+        </div>
         <div className="loading"><span className="spinner" /> Generating strategy…</div>
       </div>
     );
@@ -27,7 +47,10 @@ export default function StrategySection({ data, error }) {
 
   return (
     <div className="card">
-      <h2>📋 Strategy</h2>
+      <div className="section-header-row">
+        <h2>📋 Strategy</h2>
+        {commentButton}
+      </div>
 
       {data.value_proposition && (
         <div className="strategy-section">

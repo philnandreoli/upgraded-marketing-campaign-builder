@@ -59,6 +59,10 @@ export default function ContentSection({
   isViewer = false,
   onImageGenerated,
   onViewGallery,
+  onOpenComments,
+  unresolvedCount = 0,
+  onOpenPieceComments,
+  pieceCommentCounts = {},
 }) {
   const confirm = useConfirm();
   const { addToast } = useToast();
@@ -185,10 +189,27 @@ export default function ContentSection({
     }
   };
 
+  const contentCommentButton = onOpenComments ? (
+    <button
+      className="section-comment-btn"
+      onClick={onOpenComments}
+      aria-label="Open content comments"
+      title="Comments on content"
+    >
+      💬
+      {unresolvedCount > 0 && (
+        <span className="section-comment-count" data-testid="content-comment-count">{unresolvedCount}</span>
+      )}
+    </button>
+  ) : null;
+
   if (!data && error) {
     return (
       <div className="card stage-error-card">
-        <h2>✍️ Content</h2>
+        <div className="section-header-row">
+          <h2>✍️ Content</h2>
+          {contentCommentButton}
+        </div>
         <div className="stage-error-message">
           <span className="stage-error-icon">⚠️</span>
           <div>
@@ -203,7 +224,10 @@ export default function ContentSection({
   if (!data) {
     return (
       <div className="card">
-        <h2>✍️ Content</h2>
+        <div className="section-header-row">
+          <h2>✍️ Content</h2>
+          {contentCommentButton}
+        </div>
         <div className="loading"><span className="spinner" /> Generating content…</div>
       </div>
     );
@@ -211,7 +235,10 @@ export default function ContentSection({
 
   return (
     <div className="card">
-      <h2>✍️ {isApprovalMode ? "Content Approval" : "Content"}</h2>
+      <div className="section-header-row">
+        <h2>✍️ {isApprovalMode ? "Content Approval" : "Content"}</h2>
+        {contentCommentButton}
+      </div>
 
       {isApprovalMode && (
         <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
@@ -279,11 +306,29 @@ export default function ContentSection({
                         </span>
                       )}
                     </div>
-                    {isApprovalMode && (
-                      <span className={`badge badge-${effectiveApproved ? "approved" : effectiveRejected ? "rejected" : "pending"}`}>
-                        {effectiveApproved ? "🔒 Approved" : effectiveRejected ? "❌ Rejected" : "⏳ Pending"}
-                      </span>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      {isApprovalMode && (
+                        <span className={`badge badge-${effectiveApproved ? "approved" : effectiveRejected ? "rejected" : "pending"}`}>
+                          {effectiveApproved ? "🔒 Approved" : effectiveRejected ? "❌ Rejected" : "⏳ Pending"}
+                        </span>
+                      )}
+                      {onOpenPieceComments && (
+                        <button
+                          className="piece-comment-btn"
+                          onClick={() => onOpenPieceComments(i)}
+                          aria-label={`Open comments for content piece ${i + 1}`}
+                          title={`Comments on piece ${i + 1}`}
+                          data-testid={`piece-comment-btn-${i}`}
+                        >
+                          💬
+                          {(pieceCommentCounts[i] ?? 0) > 0 && (
+                            <span className="piece-comment-count" data-testid={`piece-comment-count-${i}`}>
+                              {pieceCommentCounts[i]}
+                            </span>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {piece.channel && <div className="piece-channel">📢 {piece.channel}</div>}
                   {isSocialPost && socialPlatformLabel && (

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getCampaign, listImageAssets } from "../api";
+import { getCampaign, listImageAssets, listComments } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import usePolling from "../hooks/usePolling";
 import StrategySection from "../components/StrategySection.jsx";
@@ -65,7 +65,13 @@ export default function CampaignDetail() {
   );
   const [badgePulse, setBadgePulse] = useState(false);
   const [imageAssets, setImageAssets] = useState([]);
-  const [commentPanelOpen, setCommentPanelOpen] = useState(false);
+  const [commentPanelState, setCommentPanelState] = useState({
+    isOpen: false,
+    section: null,
+    contentPieceIndex: null,
+  });
+  const [sectionCommentCounts, setSectionCommentCounts] = useState({});
+  const [pieceCommentCounts, setPieceCommentCounts] = useState({});
   const { events, connected, connectionFailed } = useWebSocket(id);
   const { isViewer, isAdmin, user, imageGenerationAvailable } = useUser();
   const prevStatusRef = useRef(null);
@@ -207,6 +213,56 @@ export default function CampaignDetail() {
 
   const handleViewGallery = useCallback(() => setUserTab("images"), []);
 
+  // Fetch all comments for the campaign and compute per-section/per-piece unresolved counts
+  const loadCommentCounts = useCallback(async () => {
+    if (!effectiveWorkspaceId || !id) return;
+    try {
+      const allComments = await listComments(effectiveWorkspaceId, id);
+      const sectionCounts = {};
+      const pieceCounts = {};
+      for (const c of allComments) {
+        if (c.is_resolved || c.parent_id) continue;
+        const sec = c.section || "general";
+        sectionCounts[sec] = (sectionCounts[sec] || 0) + 1;
+        if (c.content_piece_index != null) {
+          pieceCounts[c.content_piece_index] = (pieceCounts[c.content_piece_index] || 0) + 1;
+        }
+      }
+      setSectionCommentCounts(sectionCounts);
+      setPieceCommentCounts(pieceCounts);
+    } catch {
+      // silently ignore — comment counts are non-critical
+    }
+  }, [effectiveWorkspaceId, id]);
+
+  useEffect(() => {
+    loadCommentCounts();
+  }, [loadCommentCounts]);
+
+  // Re-fetch comment counts when comment-related WebSocket events arrive
+  useEffect(() => {
+    const commentEventTypes = ["comment_added", "comment_updated", "comment_resolved", "comment_deleted"];
+    const hasCommentEvent = events.some((e) => commentEventTypes.includes(e.event ?? e.type));
+    if (hasCommentEvent) loadCommentCounts();
+  }, [events, loadCommentCounts]);
+
+  // Handlers for opening the comment panel scoped to a section or piece
+  const openSectionComments = useCallback((section) => {
+    setCommentPanelState({ isOpen: true, section, contentPieceIndex: null });
+  }, []);
+
+  const openPieceComments = useCallback((pieceIndex) => {
+    setCommentPanelState({ isOpen: true, section: "content", contentPieceIndex: pieceIndex });
+  }, []);
+
+  const openGeneralComments = useCallback(() => {
+    setCommentPanelState({ isOpen: true, section: "general", contentPieceIndex: null });
+  }, []);
+
+  const closeCommentPanel = useCallback(() => {
+    setCommentPanelState((prev) => ({ ...prev, isOpen: false }));
+  }, []);
+
   // Clickable tabs: completed stages + the currently active stage
   const clickableTabs = useMemo(() => {
     const t = [];
@@ -304,7 +360,14 @@ export default function CampaignDetail() {
           />
         );
       case "strategy":
-        return <StrategySection data={campaign.strategy} error={errors.strategy} />;
+        return (
+          <StrategySection
+            data={campaign.strategy}
+            error={errors.strategy}
+            onOpenComments={() => openSectionComments("strategy")}
+            unresolvedCount={sectionCommentCounts.strategy || 0}
+          />
+        );
       case "content":
         return (
           <ContentSection
@@ -319,12 +382,30 @@ export default function CampaignDetail() {
             isViewer={isViewer}
             onImageGenerated={loadImageAssets}
             onViewGallery={showImagesTab ? handleViewGallery : undefined}
+            onOpenComments={() => openSectionComments("content")}
+            unresolvedCount={sectionCommentCounts.content || 0}
+            onOpenPieceComments={openPieceComments}
+            pieceCommentCounts={pieceCommentCounts}
           />
         );
       case "channel_plan":
-        return <ChannelPlanSection data={campaign.channel_plan} error={errors.channel_plan} />;
+        return (
+          <ChannelPlanSection
+            data={campaign.channel_plan}
+            error={errors.channel_plan}
+            onOpenComments={() => openSectionComments("channel_plan")}
+            unresolvedCount={sectionCommentCounts.channel_plan || 0}
+          />
+        );
       case "analytics":
-        return <AnalyticsSection data={campaign.analytics_plan} error={errors.analytics_plan} />;
+        return (
+          <AnalyticsSection
+            data={campaign.analytics_plan}
+            error={errors.analytics_plan}
+            onOpenComments={() => openSectionComments("analytics")}
+            unresolvedCount={sectionCommentCounts.analytics || 0}
+          />
+        );
       case "review":
         return (
           <ReviewSection
@@ -348,6 +429,10 @@ export default function CampaignDetail() {
             isViewer={isViewer}
             onImageGenerated={loadImageAssets}
             onViewGallery={showImagesTab ? handleViewGallery : undefined}
+            onOpenComments={() => openSectionComments("content")}
+            unresolvedCount={sectionCommentCounts.content || 0}
+            onOpenPieceComments={openPieceComments}
+            pieceCommentCounts={pieceCommentCounts}
           />
         );
       case "content_approval":
@@ -366,6 +451,10 @@ export default function CampaignDetail() {
             isViewer={isViewer}
             onImageGenerated={loadImageAssets}
             onViewGallery={showImagesTab ? handleViewGallery : undefined}
+            onOpenComments={() => openSectionComments("content")}
+            unresolvedCount={sectionCommentCounts.content || 0}
+            onOpenPieceComments={openPieceComments}
+            pieceCommentCounts={pieceCommentCounts}
           />
         );
       case "images":
@@ -530,12 +619,24 @@ export default function CampaignDetail() {
             </button>
           </div>
           <button
-            className={`comment-toggle-btn${commentPanelOpen ? " comment-toggle-btn--active" : ""}`}
-            onClick={() => setCommentPanelOpen((o) => !o)}
-            aria-pressed={commentPanelOpen}
+            className={`comment-toggle-btn${commentPanelState.isOpen && commentPanelState.section === "general" ? " comment-toggle-btn--active" : ""}`}
+            onClick={openGeneralComments}
+            aria-pressed={commentPanelState.isOpen && commentPanelState.section === "general"}
+            aria-label="Open general comments"
+            title="General comments"
+          >
+            💬 General
+            {(sectionCommentCounts.general || 0) > 0 && (
+              <span className="section-comment-count" data-testid="general-comment-count">{sectionCommentCounts.general}</span>
+            )}
+          </button>
+          <button
+            className={`comment-toggle-btn${commentPanelState.isOpen ? " comment-toggle-btn--active" : ""}`}
+            onClick={() => commentPanelState.isOpen ? closeCommentPanel() : setCommentPanelState({ isOpen: true, section: null, contentPieceIndex: null })}
+            aria-pressed={commentPanelState.isOpen}
             title="Toggle comments panel"
           >
-            💬 Comments
+            💬 All Comments
           </button>
         </div>
       </div>
@@ -680,10 +781,12 @@ export default function CampaignDetail() {
       <CommentPanel
         campaignId={id}
         workspaceId={effectiveWorkspaceId}
+        section={commentPanelState.section}
+        contentPieceIndex={commentPanelState.contentPieceIndex}
         isReadOnly={isViewer}
         events={events}
-        isOpen={commentPanelOpen}
-        onClose={() => setCommentPanelOpen(false)}
+        isOpen={commentPanelState.isOpen}
+        onClose={closeCommentPanel}
       />
     </div>
   );

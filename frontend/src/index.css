@@ -5206,3 +5206,89 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   border-color: var(--color-primary);
 }
 
+/* ------------------------------------------------------------------ */
+/* Section comment icons & badges                                      */
+/* ------------------------------------------------------------------ */
+
+.section-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.section-header-row h2 {
+  margin-bottom: 0;
+}
+
+.section-comment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.section-comment-btn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3B82F6;
+}
+
+.section-comment-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: #3B82F6;
+  border-radius: 9999px;
+}
+
+.piece-comment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.piece-comment-btn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3B82F6;
+}
+
+.piece-comment-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0.95rem;
+  height: 0.95rem;
+  padding: 0 0.2rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: #3B82F6;
+  border-radius: 9999px;
+}
+

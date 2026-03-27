@@ -1,8 +1,25 @@
-export default function AnalyticsSection({ data, error }) {
+export default function AnalyticsSection({ data, error, onOpenComments, unresolvedCount = 0 }) {
+  const commentButton = onOpenComments ? (
+    <button
+      className="section-comment-btn"
+      onClick={onOpenComments}
+      aria-label="Open analytics comments"
+      title="Comments on analytics"
+    >
+      💬
+      {unresolvedCount > 0 && (
+        <span className="section-comment-count" data-testid="analytics-comment-count">{unresolvedCount}</span>
+      )}
+    </button>
+  ) : null;
+
   if (!data && error) {
     return (
       <div className="card stage-error-card">
-        <h2>📊 Analytics Plan</h2>
+        <div className="section-header-row">
+          <h2>📊 Analytics Plan</h2>
+          {commentButton}
+        </div>
         <div className="stage-error-message">
           <span className="stage-error-icon">⚠️</span>
           <div>
@@ -17,7 +34,10 @@ export default function AnalyticsSection({ data, error }) {
   if (!data) {
     return (
       <div className="card">
-        <h2>📊 Analytics Plan</h2>
+        <div className="section-header-row">
+          <h2>📊 Analytics Plan</h2>
+          {commentButton}
+        </div>
         <div className="loading"><span className="spinner" /> Setting up analytics…</div>
       </div>
     );
@@ -25,7 +45,10 @@ export default function AnalyticsSection({ data, error }) {
 
   return (
     <div className="card">
-      <h2>📊 Analytics Plan</h2>
+      <div className="section-header-row">
+        <h2>📊 Analytics Plan</h2>
+        {commentButton}
+      </div>
 
       <div className="analytics-meta">
         {data.reporting_cadence && (
