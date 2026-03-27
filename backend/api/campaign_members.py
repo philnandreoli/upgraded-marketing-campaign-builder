@@ -72,7 +72,7 @@ async def add_campaign_member(
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store)
+    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store, campaign=campaign)
 
     target_user = await store.get_user(body.user_id)
     if target_user is None or not target_user.is_active:
@@ -108,7 +108,7 @@ async def update_campaign_member_role(
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store)
+    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store, campaign=campaign)
 
     target_user = await store.get_user(target_user_id)
     if target_user is None or not target_user.is_active:
@@ -141,7 +141,7 @@ async def remove_campaign_member(
     campaign = await store.get(campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store)
+    await _authorize(campaign_id, user, Action.MANAGE_MEMBERS, store, campaign=campaign)
 
     members = await store.list_members(campaign_id)
     member = next((m for m in members if m.user_id == target_user_id), None)

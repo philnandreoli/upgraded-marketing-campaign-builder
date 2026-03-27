@@ -329,6 +329,16 @@ class WorkflowSignalRow(Base):
 
     __table_args__ = (
         Index("ix_workflow_signals_campaign_id", "campaign_id"),
+        # Composite index covering the full poll_signal() predicate:
+        # WHERE campaign_id = ? AND signal_type = ? AND consumed_at IS NULL
+        # ORDER BY created_at — avoids a full table scan on every poll cycle.
+        Index(
+            "ix_workflow_signals_poll",
+            "campaign_id",
+            "signal_type",
+            "consumed_at",
+            "created_at",
+        ),
     )
 
 

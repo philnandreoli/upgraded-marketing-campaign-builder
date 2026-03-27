@@ -437,14 +437,37 @@ async def provision_user(
 async def list_all_campaigns(
     request: Request,
     response: Response,
+    limit: int = Query(default=50, ge=1, le=200, description="Max number of campaigns to return (1–200)."),
+    offset: int = Query(default=0, ge=0, description="Number of campaigns to skip before returning results."),
     _: User = Depends(require_admin),
 ) -> list[dict[str, Any]]:
-    """List all campaigns across all users (admin view)."""
+    """List all campaigns across all users (admin view) with pagination."""
     store = get_campaign_store()
-    campaigns = await store.list_all()
+
+    # Use paginated summary projection to avoid full JSON deserialization.
+    # Falls back to list_all() for store implementations that don't have the method.
+    if hasattr(store, "list_all_paginated"):
+        summaries, total = await store.list_all_paginated(limit=limit, offset=offset)
+    else:
+        all_campaigns = await store.list_all()
+        total = len(all_campaigns)
+        all_campaigns = all_campaigns[offset:offset + limit]
+        summaries = [
+            {
+                "id": c.id,
+                "status": c.status.value,
+                "product_or_service": c.brief.product_or_service if c.brief else None,
+                "goal": c.brief.goal if c.brief else None,
+                "owner_id": c.owner_id,
+                "workspace_id": c.workspace_id,
+                "created_at": c.created_at,
+                "updated_at": c.updated_at,
+            }
+            for c in all_campaigns
+        ]
 
     # Resolve workspace info in a single batch (one lookup per unique workspace_id)
-    unique_ws_ids = {c.workspace_id for c in campaigns if c.workspace_id is not None}
+    unique_ws_ids = {s["workspace_id"] for s in summaries if s.get("workspace_id") is not None}
     ws_map: dict[str, Any] = {}
     if unique_ws_ids:
         results = await asyncio.gather(
@@ -457,19 +480,27 @@ async def list_all_campaigns(
             elif result is not None:
                 ws_map[result.id] = {"id": result.id, "name": result.name, "is_personal": result.is_personal}
 
+    returned_count = len(summaries)
+    has_more = offset + returned_count < total
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Offset"] = str(offset)
+    response.headers["X-Limit"] = str(limit)
+    response.headers["X-Returned-Count"] = str(returned_count)
+    response.headers["X-Has-More"] = str(has_more).lower()
+
     return [
         {
-            "id": c.id,
-            "status": c.status.value,
-            "product_or_service": c.brief.product_or_service,
-            "goal": c.brief.goal,
-            "owner_id": c.owner_id,
-            "workspace_id": c.workspace_id,
-            "workspace": ws_map.get(c.workspace_id) if c.workspace_id else None,
-            "created_at": c.created_at.isoformat(),
-            "updated_at": c.updated_at.isoformat(),
+            "id": s["id"],
+            "status": s["status"].value if hasattr(s["status"], "value") else s["status"],
+            "product_or_service": s.get("product_or_service"),
+            "goal": s.get("goal"),
+            "owner_id": s["owner_id"],
+            "workspace_id": s["workspace_id"],
+            "workspace": ws_map.get(s["workspace_id"]) if s.get("workspace_id") else None,
+            "created_at": s["created_at"].isoformat() if hasattr(s["created_at"], "isoformat") else s["created_at"],
+            "updated_at": s["updated_at"].isoformat() if hasattr(s["updated_at"], "isoformat") else s["updated_at"],
         }
-        for c in campaigns
+        for s in summaries
     ]
 
 
