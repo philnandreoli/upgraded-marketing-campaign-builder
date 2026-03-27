@@ -405,6 +405,32 @@ class UserSettingsRow(Base):
     updated_at = Column(DateTime, nullable=False)
 
 
+class CampaignCommentRow(Base):
+    """Persists a comment thread entry on a campaign section."""
+
+    __tablename__ = "campaign_comments"
+
+    id = Column(String, primary_key=True)                           # UUID
+    campaign_id = Column(
+        String, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    parent_id = Column(
+        String, ForeignKey("campaign_comments.id", ondelete="SET NULL"), nullable=True
+    )
+    section = Column(String, nullable=False)                        # CommentSection value
+    content_piece_index = Column(Integer, nullable=True)
+    body = Column(Text, nullable=False)
+    author_id = Column(String, nullable=False)
+    is_resolved = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_campaign_comments_campaign_id", "campaign_id"),
+        Index("ix_campaign_comments_parent_id", "parent_id"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Session dependency
 # ---------------------------------------------------------------------------
