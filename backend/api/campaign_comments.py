@@ -27,6 +27,7 @@ from backend.models.user import User, UserRole
 from backend.infrastructure.auth import get_current_user
 from backend.infrastructure.comment_store import get_comment_store
 
+from backend.api.websocket import manager as ws_manager
 from backend.apps.api.dependencies import get_campaign_for_read, get_campaign_for_write
 from backend.apps.api.schemas.comments import (
     CommentResponse,
@@ -62,7 +63,7 @@ async def create_comment(
         parent_id=body.parent_id,
         content_piece_index=body.content_piece_index,
     )
-    return CommentResponse(
+    response = CommentResponse(
         id=comment.id,
         campaign_id=comment.campaign_id,
         parent_id=comment.parent_id,
@@ -74,6 +75,12 @@ async def create_comment(
         created_at=comment.created_at,
         updated_at=comment.updated_at,
     )
+    await ws_manager.broadcast({
+        "type": "comment_added",
+        "campaign_id": campaign.id,
+        "comment": response.model_dump(mode="json"),
+    })
+    return response
 
 
 @router.get(
@@ -143,7 +150,7 @@ async def update_comment(
     if not _is_admin(user) and comment.author_id != user.id:
         raise HTTPException(status_code=403, detail="You can only edit your own comments")
     updated = await store.update(comment_id, body.body)
-    return CommentResponse(
+    response = CommentResponse(
         id=updated.id,
         campaign_id=updated.campaign_id,
         parent_id=updated.parent_id,
@@ -155,6 +162,12 @@ async def update_comment(
         created_at=updated.created_at,
         updated_at=updated.updated_at,
     )
+    await ws_manager.broadcast({
+        "type": "comment_updated",
+        "campaign_id": updated.campaign_id,
+        "comment": response.model_dump(mode="json"),
+    })
+    return response
 
 
 @router.delete(
@@ -176,6 +189,11 @@ async def delete_comment(
     if not _is_admin(user) and comment.author_id != user.id:
         raise HTTPException(status_code=403, detail="You can only delete your own comments")
     await store.delete(comment_id)
+    await ws_manager.broadcast({
+        "type": "comment_deleted",
+        "campaign_id": campaign.id,
+        "comment_id": comment_id,
+    })
     return Response(status_code=204)
 
 
@@ -195,7 +213,7 @@ async def resolve_comment(
     if comment is None or comment.campaign_id != campaign.id:
         raise HTTPException(status_code=404, detail="Comment not found")
     updated = await store.resolve(comment_id, resolved=resolved)
-    return CommentResponse(
+    response = CommentResponse(
         id=updated.id,
         campaign_id=updated.campaign_id,
         parent_id=updated.parent_id,
@@ -207,3 +225,10 @@ async def resolve_comment(
         created_at=updated.created_at,
         updated_at=updated.updated_at,
     )
+    await ws_manager.broadcast({
+        "type": "comment_resolved",
+        "campaign_id": updated.campaign_id,
+        "comment_id": comment_id,
+        "is_resolved": updated.is_resolved,
+    })
+    return response
