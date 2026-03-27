@@ -2,12 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createComment,
   deleteComment,
+  listCampaignMembers,
   listComments,
+  listWorkspaceMembers,
   resolveComment,
   updateComment,
 } from "../api";
 import { useToast } from "../ToastContext";
 import { useUser } from "../UserContext";
+import CommentBody from "./CommentBody";
+import MentionAutocomplete from "./MentionAutocomplete";
+import { useMentionAutocomplete } from "../hooks/useMentionAutocomplete";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,7 +61,7 @@ function CommentItem({
         )}
       </div>
 
-      <div className="comment-item-body">{comment.body}</div>
+      <div className="comment-item-body"><CommentBody text={comment.body} /></div>
 
       <div className="comment-item-actions">
         {isTopLevel && !isReadOnly && (
@@ -209,9 +214,11 @@ export default function CommentPanel({
   const [replySubmitting, setReplySubmitting] = useState(false);
   const [editingComment, setEditingComment] = useState(null); // { id, body }
   const [editSaving, setEditSaving] = useState(false);
+  const [members, setMembers] = useState([]);
   const { addToast } = useToast();
   const { user } = useUser();
   const listEndRef = useRef(null);
+  const composeTextareaRef = useRef(null);
   const processedEventsRef = useRef(new Set());
 
   // ---------------------------------------------------------------------------
@@ -238,6 +245,58 @@ export default function CommentPanel({
   useEffect(() => {
     fetchComments();
   }, [fetchComments]);
+
+  // ---------------------------------------------------------------------------
+  // Fetch campaign members for @mention autocomplete
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!workspaceId || !campaignId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [campaignMembers, workspaceMembers] = await Promise.all([
+          listCampaignMembers(workspaceId, campaignId),
+          listWorkspaceMembers(workspaceId),
+        ]);
+        if (cancelled) return;
+        // Build a lookup from workspace members (which have display_name / email)
+        const wsMap = {};
+        workspaceMembers.forEach((wm) => {
+          wsMap[wm.user_id] = wm;
+        });
+        // Map campaign member IDs to enriched objects
+        const enriched = campaignMembers.map((cm) => {
+          const ws = wsMap[cm.user_id];
+          return {
+            user_id: cm.user_id,
+            display_name: ws?.display_name || cm.user_id,
+            email: ws?.email || "",
+          };
+        });
+        setMembers(enriched);
+      } catch {
+        // Non-critical — mention autocomplete just won't have data
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [workspaceId, campaignId]);
+
+  // ---------------------------------------------------------------------------
+  // Mention autocomplete hook for the compose textarea
+  // ---------------------------------------------------------------------------
+
+  const {
+    mentionState,
+    handleChange: handleMentionChange,
+    handleKeyDown: handleMentionKeyDown,
+    insertMention,
+  } = useMentionAutocomplete({
+    members,
+    textareaRef: composeTextareaRef,
+    value: newBody,
+    onChange: setNewBody,
+  });
 
   // ---------------------------------------------------------------------------
   // WebSocket real-time updates
@@ -491,13 +550,26 @@ export default function CommentPanel({
       {/* New comment form */}
       {!isReadOnly && (
         <form className="comment-panel-compose" onSubmit={handleCreate}>
-          <textarea
-            className="comment-textarea"
-            placeholder="Add a comment…"
-            value={newBody}
-            onChange={(e) => setNewBody(e.target.value)}
-            rows={3}
-          />
+          <div className="comment-textarea-wrap">
+            <textarea
+              ref={composeTextareaRef}
+              className="comment-textarea"
+              placeholder="Add a comment… (type @ to mention)"
+              value={newBody}
+              onChange={handleMentionChange}
+              onKeyDown={handleMentionKeyDown}
+              rows={3}
+            />
+            {mentionState.active && (
+              <MentionAutocomplete
+                members={members}
+                query={mentionState.query}
+                onSelect={insertMention}
+                anchorPosition={mentionState.anchorPosition}
+                activeIndex={mentionState.activeIndex}
+              />
+            )}
+          </div>
           <div className="comment-form-actions">
             <button
               type="submit"

@@ -95,6 +95,10 @@ function renderPanel(props = {}) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Default: member-related APIs resolve to empty arrays so existing tests
+  // don't break due to the new member-fetch side-effect.
+  api.listCampaignMembers.mockResolvedValue([]);
+  api.listWorkspaceMembers.mockResolvedValue([]);
 });
 
 // ---------------------------------------------------------------------------
@@ -366,5 +370,124 @@ describe("CommentPanel – close button", () => {
     await waitFor(() => screen.getByText(/no comments yet/i));
     fireEvent.click(screen.getByRole("button", { name: /close comments panel/i }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// @mention autocomplete
+// ---------------------------------------------------------------------------
+
+const CAMPAIGN_MEMBERS = [
+  { campaign_id: "camp-456", user_id: "u-alice", role: "editor", added_at: "2024-01-01T00:00:00Z" },
+  { campaign_id: "camp-456", user_id: "u-bob", role: "viewer", added_at: "2024-01-01T00:00:00Z" },
+];
+
+const WORKSPACE_MEMBERS = [
+  { workspace_id: "ws-123", user_id: "u-alice", role: "admin", added_at: "2024-01-01T00:00:00Z", display_name: "Alice Smith", email: "alice@example.com" },
+  { workspace_id: "ws-123", user_id: "u-bob", role: "member", added_at: "2024-01-01T00:00:00Z", display_name: "Bob Jones", email: "bob@example.com" },
+  { workspace_id: "ws-123", user_id: "u-charlie", role: "member", added_at: "2024-01-01T00:00:00Z", display_name: "Charlie", email: "charlie@example.com" },
+];
+
+function renderPanelWithMembers(props = {}) {
+  api.listComments.mockResolvedValue([]);
+  api.listCampaignMembers.mockResolvedValue(CAMPAIGN_MEMBERS);
+  api.listWorkspaceMembers.mockResolvedValue(WORKSPACE_MEMBERS);
+  return renderPanel(props);
+}
+
+describe("CommentPanel – @mention autocomplete", () => {
+  it("fetches campaign members and workspace members on mount", async () => {
+    renderPanelWithMembers();
+    await waitFor(() => {
+      expect(api.listCampaignMembers).toHaveBeenCalledWith("ws-123", "camp-456");
+      expect(api.listWorkspaceMembers).toHaveBeenCalledWith("ws-123");
+    });
+  });
+
+  it("shows autocomplete dropdown when @ is typed", async () => {
+    renderPanelWithMembers();
+    await waitFor(() => screen.getByText(/no comments yet/i));
+    // Wait for members to load
+    await waitFor(() => expect(api.listCampaignMembers).toHaveBeenCalled());
+
+    const textarea = screen.getByPlaceholderText(/add a comment/i);
+    fireEvent.change(textarea, { target: { value: "@", selectionStart: 1 } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("listbox", { name: /mention suggestions/i })).toBeInTheDocument();
+    });
+    // Only campaign members should appear (Alice and Bob, not Charlie)
+    expect(screen.getByText("Alice Smith")).toBeInTheDocument();
+    expect(screen.getByText("Bob Jones")).toBeInTheDocument();
+    expect(screen.queryByText("Charlie")).not.toBeInTheDocument();
+  });
+
+  it("filters members as the user types after @", async () => {
+    renderPanelWithMembers();
+    await waitFor(() => screen.getByText(/no comments yet/i));
+    await waitFor(() => expect(api.listCampaignMembers).toHaveBeenCalled());
+
+    const textarea = screen.getByPlaceholderText(/add a comment/i);
+    fireEvent.change(textarea, { target: { value: "@ali", selectionStart: 4 } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Alice Smith")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Bob Jones")).not.toBeInTheDocument();
+  });
+
+  it("inserts mention token when a member is selected", async () => {
+    renderPanelWithMembers();
+    await waitFor(() => screen.getByText(/no comments yet/i));
+    await waitFor(() => expect(api.listCampaignMembers).toHaveBeenCalled());
+
+    const textarea = screen.getByPlaceholderText(/add a comment/i);
+    fireEvent.change(textarea, { target: { value: "@", selectionStart: 1 } });
+
+    await waitFor(() => screen.getByText("Alice Smith"));
+    fireEvent.mouseDown(screen.getByText("Alice Smith"));
+
+    // Textarea should now contain the mention token
+    await waitFor(() => {
+      expect(textarea.value).toContain("@[u-alice:Alice Smith]");
+    });
+  });
+
+  it("dismisses autocomplete when Escape is pressed", async () => {
+    renderPanelWithMembers();
+    await waitFor(() => screen.getByText(/no comments yet/i));
+    await waitFor(() => expect(api.listCampaignMembers).toHaveBeenCalled());
+
+    const textarea = screen.getByPlaceholderText(/add a comment/i);
+    fireEvent.change(textarea, { target: { value: "@", selectionStart: 1 } });
+
+    await waitFor(() => screen.getByRole("listbox", { name: /mention suggestions/i }));
+
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(screen.queryByRole("listbox", { name: /mention suggestions/i })).not.toBeInTheDocument();
+  });
+
+  it("renders mentions in comment bodies as highlighted spans", async () => {
+    const commentWithMention = {
+      ...TOP_COMMENT,
+      body: "Hey @[u-alice:Alice Smith] check this out",
+    };
+    api.listComments.mockResolvedValue([commentWithMention]);
+    api.listCampaignMembers.mockResolvedValue(CAMPAIGN_MEMBERS);
+    api.listWorkspaceMembers.mockResolvedValue(WORKSPACE_MEMBERS);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByText("@Alice Smith")).toBeInTheDocument();
+    });
+    const mentionSpan = screen.getByText("@Alice Smith");
+    expect(mentionSpan).toHaveClass("mention-highlight");
+    // Verify surrounding text renders alongside the mention
+    const body = screen.getByText((_, el) =>
+      el?.classList?.contains("comment-item-body") &&
+      el.textContent.includes("Hey") &&
+      el.textContent.includes("check this out")
+    );
+    expect(body).toBeInTheDocument();
   });
 });

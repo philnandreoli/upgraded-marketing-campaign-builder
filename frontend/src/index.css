@@ -5207,6 +5207,91 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
 }
 
 /* ------------------------------------------------------------------ */
+/* @mention autocomplete                                               */
+/* ------------------------------------------------------------------ */
+
+.comment-textarea-wrap {
+  position: relative;
+}
+
+.mention-autocomplete {
+  position: fixed;
+  z-index: 400;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 200px;
+  max-width: 320px;
+}
+
+[data-theme="light"] .mention-autocomplete {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.mention-autocomplete-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.mention-autocomplete-item:hover,
+.mention-autocomplete-item--active {
+  background: rgba(13, 148, 136, 0.12);
+}
+
+.mention-autocomplete-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.mention-autocomplete-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mention-autocomplete-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-autocomplete-email {
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mention highlights in comment body */
+.mention-highlight {
+  color: var(--color-primary-hover);
+  font-weight: 600;
+  background: rgba(13, 148, 136, 0.1);
+  border-radius: 3px;
+  padding: 0 0.15rem;
+}
+
+/* ------------------------------------------------------------------ */
 /* Section comment icons & badges                                      */
 /* ------------------------------------------------------------------ */
 
