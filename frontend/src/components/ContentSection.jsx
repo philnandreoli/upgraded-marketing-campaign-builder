@@ -266,7 +266,30 @@ export default function ContentSection({
               .filter(({ piece }) => piece.content_type === "social_post")
               .map(({ idx }) => idx);
 
+            // Build email subject→body pairings so they render as one combined card.
+            // Match by channel + variant; each subject pairs with the nearest following body.
+            const emailBodyConsumed = new Set();
+            const emailPairMap = {}; // subjectIndex → bodyIndex
+            visiblePieces.forEach((piece, i) => {
+              if (piece.content_type !== "email_subject") return;
+              for (let j = i + 1; j < visiblePieces.length; j++) {
+                if (emailBodyConsumed.has(j)) continue;
+                const candidate = visiblePieces[j];
+                if (
+                  candidate.content_type === "email_body" &&
+                  candidate.channel === piece.channel &&
+                  (candidate.variant || "A") === (piece.variant || "A")
+                ) {
+                  emailPairMap[i] = j;
+                  emailBodyConsumed.add(j);
+                  break;
+                }
+              }
+            });
+
             return visiblePieces.map((piece, i) => {
+              // Skip email_body pieces that are rendered inside a combined card
+              if (emailBodyConsumed.has(i)) return null;
               const isSocialPost = piece.content_type === "social_post";
               const socialPlatformKey = isSocialPost
                 ? detectSocialPlatform(piece, i, socialPlatforms, socialPostIndexMap)
@@ -290,6 +313,262 @@ export default function ContentSection({
                 : effectiveRejected
                   ? "var(--color-danger)"
                   : "var(--color-border)";
+
+              // ── Combined Email Subject + Body card ──
+              const pairedBodyIndex = emailPairMap[i];
+              if (pairedBodyIndex !== undefined) {
+                const bodyPiece = visiblePieces[pairedBodyIndex];
+                const bodyApprovalStatus = bodyPiece.approval_status || "pending";
+                const bodyIsPending = bodyApprovalStatus === "pending";
+                const bodyIsAlreadyApproved = bodyApprovalStatus === "approved";
+                const bodyIsAlreadyRejected = bodyApprovalStatus === "rejected";
+                const bodyCurrentDecision = decisions[pairedBodyIndex];
+                const bodyEffectiveApproved = bodyIsAlreadyApproved || bodyCurrentDecision === "approved";
+                const bodyEffectiveRejected = bodyIsAlreadyRejected || bodyCurrentDecision === "rejected";
+
+                // Combined card is approved only when both are approved
+                const combinedApproved = effectiveApproved && bodyEffectiveApproved;
+                const combinedRejected = effectiveRejected || bodyEffectiveRejected;
+                const combinedBorderColor = combinedApproved
+                  ? "var(--color-success)"
+                  : combinedRejected
+                    ? "var(--color-danger)"
+                    : "var(--color-border)";
+
+                const handleCombinedDecision = async (approved) => {
+                  // Fire decisions for both subject and body
+                  await Promise.all([
+                    handleDecision(i, approved),
+                    handleDecision(pairedBodyIndex, approved),
+                  ]);
+                };
+                const combinedSaving = savingDecision[i] || savingDecision[pairedBodyIndex];
+                const combinedDecision = currentDecision || bodyCurrentDecision;
+                const combinedIsPending = isPending && bodyIsPending;
+
+                return (
+                  <div
+                    key={i}
+                    className="content-piece content-piece-email-combined"
+                    style={isApprovalMode ? { borderColor: combinedBorderColor, borderWidth: "2px" } : {}}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div className="piece-type">
+                        📧 Email
+                        {piece.variant && piece.variant !== "A" && (
+                          <span style={{ marginLeft: "0.4rem", opacity: 0.7 }}>
+                            (Variant {piece.variant})
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        {isApprovalMode && (
+                          <span className={`badge badge-${combinedApproved ? "approved" : combinedRejected ? "rejected" : "pending"}`}>
+                            {combinedApproved ? "🔒 Approved" : combinedRejected ? "❌ Rejected" : "⏳ Pending"}
+                          </span>
+                        )}
+                        {onOpenPieceComments && (
+                          <button
+                            className="piece-comment-btn"
+                            onClick={() => onOpenPieceComments(i)}
+                            aria-label={`Open comments for content piece ${i + 1}`}
+                            title={`Comments on piece ${i + 1}`}
+                            data-testid={`piece-comment-btn-${i}`}
+                          >
+                            💬
+                            {((pieceCommentCounts[i] ?? 0) + (pieceCommentCounts[pairedBodyIndex] ?? 0)) > 0 && (
+                              <span className="piece-comment-count" data-testid={`piece-comment-count-${i}`}>
+                                {(pieceCommentCounts[i] ?? 0) + (pieceCommentCounts[pairedBodyIndex] ?? 0)}
+                              </span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {piece.channel && <div className="piece-channel">📢 {piece.channel}</div>}
+
+                    {/* Subject field */}
+                    <div className="email-combined-field">
+                      <label className="email-combined-label">Subject</label>
+                      {isApprovalMode ? (
+                        <input
+                          type="text"
+                          className={`email-combined-subject-input${(!isPending || effectiveApproved) ? " piece-edit-textarea-locked" : ""}`}
+                          value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
+                          onChange={isPending && !effectiveApproved ? (e) => setEdit(i, e.target.value) : noop}
+                          readOnly={!isPending || effectiveApproved}
+                        />
+                      ) : (
+                        <div className="email-combined-subject-display">{piece.human_edited_content || piece.content}</div>
+                      )}
+                    </div>
+
+                    {/* Body field */}
+                    <div className="email-combined-field">
+                      <label className="email-combined-label">Body</label>
+                      {isApprovalMode ? (
+                        <textarea
+                          className={`piece-edit-textarea${(!bodyIsPending || bodyEffectiveApproved) ? " piece-edit-textarea-locked" : ""}`}
+                          value={editing[pairedBodyIndex] !== undefined ? editing[pairedBodyIndex] : (bodyPiece.human_edited_content || bodyPiece.content)}
+                          onChange={bodyIsPending && !bodyEffectiveApproved ? (e) => setEdit(pairedBodyIndex, e.target.value) : noop}
+                          readOnly={!bodyIsPending || bodyEffectiveApproved}
+                        />
+                      ) : (
+                        <div className="piece-body">{bodyPiece.human_edited_content || bodyPiece.content}</div>
+                      )}
+                    </div>
+
+                    {/* Notes from either piece */}
+                    {(piece.notes || bodyPiece.notes) && (
+                      <p style={{ fontSize: "0.75rem", color: "var(--color-text-dim)", marginTop: "0.5rem" }}>
+                        💡 {piece.notes || bodyPiece.notes}
+                      </p>
+                    )}
+
+                    {/* Post-approval notes */}
+                    {isApprovalMode && (isAlreadyApproved && bodyIsAlreadyApproved) ? (
+                      <div style={{ marginTop: "0.75rem" }}>
+                        <div style={{ marginBottom: "0.25rem", fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+                          📝 Reviewer notes
+                        </div>
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                          <input
+                            type="text"
+                            placeholder="Add post-approval notes…"
+                            value={notes[i] !== undefined ? notes[i] : (piece.human_notes || "")}
+                            onChange={(e) => setNote(i, e.target.value)}
+                            style={{
+                              flex: 1,
+                              padding: "0.3rem 0.5rem",
+                              fontSize: "0.8rem",
+                              border: "1px solid var(--color-border)",
+                              borderRadius: "var(--radius)",
+                              background: "var(--color-bg)",
+                              color: "var(--color-text)",
+                            }}
+                          />
+                          <button
+                            className="btn btn-sm btn-outline"
+                            disabled={savingNotes[i]}
+                            onClick={() => handleSaveNotes(i)}
+                          >
+                            {savingNotes[i] ? "Saving…" : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      (piece.human_notes || bodyPiece.human_notes) && (
+                        <p style={{ fontSize: "0.75rem", color: "var(--color-warning)", marginTop: "0.25rem" }}>
+                          📝 Reviewer: {piece.human_notes || bodyPiece.human_notes}
+                        </p>
+                      )
+                    )}
+
+                    {/* Combined approval buttons */}
+                    {isApprovalMode && combinedIsPending && (
+                      <div style={{ marginTop: "0.75rem" }}>
+                        <div style={{ marginBottom: "0.5rem" }}>
+                          <input
+                            type="text"
+                            placeholder="Notes (optional)…"
+                            value={notes[i] || ""}
+                            onChange={(e) => {
+                              setNote(i, e.target.value);
+                              setNote(pairedBodyIndex, e.target.value);
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "0.3rem 0.5rem",
+                              fontSize: "0.8rem",
+                              border: "1px solid var(--color-border)",
+                              borderRadius: "var(--radius)",
+                              background: "var(--color-bg)",
+                              color: "var(--color-text)",
+                            }}
+                          />
+                        </div>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button
+                            className={`btn btn-sm ${combinedDecision === "approved" ? "btn-success" : "btn-outline"}`}
+                            disabled={combinedSaving}
+                            onClick={() => handleCombinedDecision(true)}
+                          >
+                            {combinedSaving ? "Saving…" : "✅ Approve"}
+                          </button>
+                          <button
+                            className={`btn btn-sm ${combinedDecision === "rejected" ? "btn-danger" : "btn-outline"}`}
+                            disabled={combinedSaving}
+                            onClick={() => handleCombinedDecision(false)}
+                          >
+                            {combinedSaving ? "Saving…" : "❌ Reject"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Image generation — use body piece's image_brief */}
+                    {imageGenerationEnabled && (() => {
+                      const imgIdx = pairedBodyIndex;
+                      const imgPiece = bodyPiece;
+                      const pieceImages = imageAssets.filter((a) => a.content_piece_index === imgIdx);
+                      const hasPieceImage = pieceImages.length > 0;
+                      const latestImage = hasPieceImage ? pieceImages[pieceImages.length - 1] : null;
+                      return (
+                        <div style={{ marginTop: "0.75rem" }}>
+                          {imgPiece.image_brief && (
+                            <details style={{ marginBottom: "0.5rem", fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                              <summary style={{ cursor: "pointer" }}>🎨 Image Brief</summary>
+                              <p style={{ marginTop: "0.25rem", paddingLeft: "0.75rem" }}>
+                                {imgPiece.image_brief?.prompt || (typeof imgPiece.image_brief === "string" ? imgPiece.image_brief : null)}
+                              </p>
+                            </details>
+                          )}
+                          {hasPieceImage ? (
+                            <div className="piece-image-preview" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                              <ImageAssetCard
+                                asset={latestImage}
+                                workspaceId={workspaceId}
+                                campaignId={campaignId}
+                                canEdit={!isViewer && !(imgPiece.approval_status === "approved" && status === "approved")}
+                                compact
+                                onRegenerated={onImageGenerated}
+                              />
+                              {onViewGallery && (
+                                <button
+                                  className="btn btn-sm btn-outline"
+                                  onClick={onViewGallery}
+                                  style={{ alignSelf: "flex-start" }}
+                                >
+                                  🖼️ View in Gallery
+                                </button>
+                              )}
+                            </div>
+                          ) : imgPiece.image_brief ? (
+                            <button
+                              className="btn btn-sm btn-outline"
+                              disabled={isViewer || !!generatingImages[imgIdx] || (imgPiece.approval_status === "approved" && status === "approved")}
+                              onClick={() => handleGenerateImage(imgIdx)}
+                              aria-label={generatingImages[imgIdx] ? `Generating image for piece ${imgIdx + 1}` : `Generate image for piece ${imgIdx + 1}`}
+                            >
+                              {generatingImages[imgIdx] ? (
+                                <><span className="spinner" aria-hidden="true" /> Generating…</>
+                              ) : (
+                                <>🖼️ Generate Image</>
+                              )}
+                            </button>
+                          ) : null}
+                          {imageErrors[imgIdx] && (
+                            <p style={{ fontSize: "0.75rem", color: "var(--color-danger)", marginTop: "0.25rem" }}>
+                              ⚠️ {imageErrors[imgIdx]}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              }
+              // ── End combined email card ──
 
               return (
                 <div
@@ -488,7 +767,7 @@ export default function ContentSection({
                               </button>
                             )}
                           </div>
-                        ) : (
+                        ) : piece.image_brief ? (
                           <button
                             className="btn btn-sm btn-outline"
                             disabled={isViewer || !!generatingImages[i] || (piece.approval_status === "approved" && status === "approved")}
@@ -501,7 +780,7 @@ export default function ContentSection({
                               <>🖼️ Generate Image</>
                             )}
                           </button>
-                        )}
+                        ) : null}
                         {imageErrors[i] && (
                           <p style={{ fontSize: "0.75rem", color: "var(--color-danger)", marginTop: "0.25rem" }}>
                             ⚠️ {imageErrors[i]}

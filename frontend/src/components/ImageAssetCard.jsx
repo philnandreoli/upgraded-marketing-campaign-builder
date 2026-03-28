@@ -67,6 +67,7 @@ export default function ImageAssetCard({
   compact = false,
   onOpenLightbox,
   onRegenerated,
+  pieceLabel,
 }) {
   const [showModal, setShowModal] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState("");
@@ -209,18 +210,23 @@ export default function ImageAssetCard({
 
   return (
     <div className="image-gallery-card">
-      <button
-        className="image-gallery-thumb-btn"
-        onClick={() => onOpenLightbox?.(asset)}
-        aria-label={`View full image: ${asset.prompt ? truncatePrompt(asset.prompt, 60) : "generated image"}`}
-      >
-        <img
-          src={imageUrl}
-          alt={asset.prompt ? truncatePrompt(asset.prompt, 80) : "Generated image"}
-          className="image-gallery-thumb"
-          loading="lazy"
-        />
-      </button>
+      <div className="image-gallery-thumb-wrapper">
+        {pieceLabel && (
+          <span className="image-gallery-piece-label">{pieceLabel}</span>
+        )}
+        <button
+          className="image-gallery-thumb-btn"
+          onClick={() => onOpenLightbox?.(asset)}
+          aria-label={`View full image: ${asset.prompt ? truncatePrompt(asset.prompt, 60) : "generated image"}`}
+        >
+          <img
+            src={imageUrl}
+            alt={asset.prompt ? truncatePrompt(asset.prompt, 80) : "Generated image"}
+            className="image-gallery-thumb"
+            loading="lazy"
+          />
+        </button>
+      </div>
       <div className="image-gallery-card-meta">
         {asset.prompt && (
           <p className="image-gallery-prompt" title={asset.prompt}>

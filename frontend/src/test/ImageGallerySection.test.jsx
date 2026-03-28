@@ -43,7 +43,7 @@ function renderGallery({ assets = [], error = null, events = [] } = {}) {
   if (error) {
     api.listImageAssets.mockRejectedValue(new Error(error));
   } else {
-    api.listImageAssets.mockResolvedValue({ assets });
+    api.listImageAssets.mockResolvedValue({ items: assets });
   }
   return render(
     <ImageGallerySection
@@ -111,11 +111,11 @@ describe('ImageGallerySection – populated state', () => {
     });
   });
 
-  it('groups images by content piece with section headers', async () => {
+  it('labels images with their content piece number', async () => {
     renderGallery({ assets: [ASSET_1, ASSET_2] });
     await waitFor(() => {
-      expect(screen.getByText('Content Piece 1')).toBeInTheDocument();
-      expect(screen.getByText('Content Piece 2')).toBeInTheDocument();
+      expect(screen.getByText('Piece 1')).toBeInTheDocument();
+      expect(screen.getByText('Piece 2')).toBeInTheDocument();
     });
   });
 
@@ -163,7 +163,7 @@ describe('ImageGallerySection – lightbox', () => {
 
 describe('ImageGallerySection – refresh on WebSocket events', () => {
   it('reloads assets when image_generated event arrives', async () => {
-    api.listImageAssets.mockResolvedValue({ assets: [] });
+    api.listImageAssets.mockResolvedValue({ items: [] });
     const { rerender } = render(
       <ImageGallerySection
         workspaceId={WORKSPACE_ID}
@@ -174,7 +174,7 @@ describe('ImageGallerySection – refresh on WebSocket events', () => {
     await waitFor(() => screen.getByText(/no images generated yet/i));
 
     // Simulate a new image_generated WebSocket event
-    api.listImageAssets.mockResolvedValue({ assets: [ASSET_1] });
+    api.listImageAssets.mockResolvedValue({ items: [ASSET_1] });
     rerender(
       <ImageGallerySection
         workspaceId={WORKSPACE_ID}

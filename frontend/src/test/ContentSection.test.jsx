@@ -27,6 +27,9 @@ vi.mock('../ConfirmDialogContext', () => ({
 vi.mock('../ToastContext', () => ({
   useToast: () => ({ addToast: vi.fn() }),
 }));
+vi.mock('../NotificationContext', () => ({
+  useNotifications: () => ({ notifications: [], dismiss: vi.fn(), dismissAll: vi.fn() }),
+}));
 
 const WORKSPACE_ID = 'ws-1';
 const CAMPAIGN_ID = 'camp-1';
@@ -87,20 +90,28 @@ describe('ContentSection – image generation hidden by default', () => {
 });
 
 describe('ContentSection – Generate Image button visible', () => {
-  it('shows Generate Image button for each piece when imageGenerationEnabled=true and no assets', () => {
+  it('shows Generate Image button only for pieces with image_brief when imageGenerationEnabled=true and no assets', () => {
     renderSection({ imageGenerationEnabled: true, imageAssets: [] });
     const buttons = screen.getAllByRole('button', { name: /generate image for piece/i });
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(1);
+  });
+
+  it('does not show Generate Image button for pieces without image_brief', () => {
+    const dataOnlyNoBrief = { theme: null, tone_of_voice: null, pieces: [PIECE_NO_BRIEF] };
+    renderSection({ imageGenerationEnabled: true, imageAssets: [], data: dataOnlyNoBrief });
+    expect(screen.queryByRole('button', { name: /generate image/i })).not.toBeInTheDocument();
   });
 
   it('button is disabled for viewer-role users', () => {
-    renderSection({ imageGenerationEnabled: true, isViewer: true, imageAssets: [] });
+    const dataWithBrief = { theme: null, tone_of_voice: null, pieces: [PIECE_WITH_BRIEF] };
+    renderSection({ imageGenerationEnabled: true, isViewer: true, imageAssets: [], data: dataWithBrief });
     const buttons = screen.getAllByRole('button', { name: /generate image for piece/i });
     buttons.forEach((btn) => expect(btn).toBeDisabled());
   });
 
   it('button is enabled for non-viewer users', () => {
-    renderSection({ imageGenerationEnabled: true, isViewer: false, imageAssets: [] });
+    const dataWithBrief = { theme: null, tone_of_voice: null, pieces: [PIECE_WITH_BRIEF] };
+    renderSection({ imageGenerationEnabled: true, isViewer: false, imageAssets: [], data: dataWithBrief });
     const buttons = screen.getAllByRole('button', { name: /generate image for piece/i });
     buttons.forEach((btn) => expect(btn).not.toBeDisabled());
   });
@@ -169,10 +180,9 @@ describe('ContentSection – image preview', () => {
 
   it('hides Generate Image button for pieces that already have an image', () => {
     renderSection({ imageGenerationEnabled: true, imageAssets: [ASSET_PIECE_0] });
-    // Piece 0 has an image → button should NOT appear for piece 0
-    // Piece 1 still has no image → button should appear for piece 1
-    const buttons = screen.getAllByRole('button', { name: /generate image for piece/i });
-    expect(buttons).toHaveLength(1);
+    // Piece 0 has an image → shows ImageAssetCard, no Generate button
+    // Piece 1 has no image_brief → no Generate button shown
+    expect(screen.queryByRole('button', { name: /generate image for piece/i })).not.toBeInTheDocument();
   });
 
   it('shows View in Gallery button when onViewGallery is provided and image exists', () => {
@@ -203,5 +213,102 @@ describe('ContentSection – image brief', () => {
     };
     renderSection({ imageGenerationEnabled: true, imageAssets: [], data: dataOnlyNoBrief });
     expect(screen.queryByText(/image brief/i)).not.toBeInTheDocument();
+  });
+});
+
+/* ───── Combined Email Subject + Body card ───── */
+
+const EMAIL_SUBJECT_PIECE = {
+  content_type: 'email_subject',
+  content: 'Don\'t miss our summer sale!',
+  channel: 'email',
+  variant: 'A',
+};
+
+const EMAIL_BODY_PIECE = {
+  content_type: 'email_body',
+  content: 'Shop now and save 30% on all items this weekend only.',
+  channel: 'email',
+  variant: 'A',
+  image_brief: { prompt: 'Email hero banner' },
+};
+
+const EMAIL_DATA = {
+  theme: 'Summer Sale',
+  tone_of_voice: 'Energetic',
+  pieces: [EMAIL_SUBJECT_PIECE, EMAIL_BODY_PIECE],
+};
+
+describe('ContentSection – combined email card', () => {
+  it('renders Email Subject and Email Body as a single combined card', () => {
+    renderSection({ data: EMAIL_DATA });
+    // The combined card shows "Email" as the type, not separate "Email Subject" / "Email Body"
+    expect(screen.getByText(/📧 Email/)).toBeInTheDocument();
+    expect(screen.queryByText('Email Subject')).not.toBeInTheDocument();
+    expect(screen.queryByText('Email Body')).not.toBeInTheDocument();
+  });
+
+  it('shows Subject and Body labels inside the combined card', () => {
+    renderSection({ data: EMAIL_DATA });
+    expect(screen.getByText('Subject')).toBeInTheDocument();
+    expect(screen.getByText('Body')).toBeInTheDocument();
+  });
+
+  it('renders subject content and body content together', () => {
+    renderSection({ data: EMAIL_DATA });
+    expect(screen.getByText(EMAIL_SUBJECT_PIECE.content)).toBeInTheDocument();
+    expect(screen.getByText(EMAIL_BODY_PIECE.content)).toBeInTheDocument();
+  });
+
+  it('shows editable subject and body in approval mode', () => {
+    renderSection({ data: EMAIL_DATA, isApprovalMode: true, status: 'content_approval' });
+    // Subject input
+    const subjectInput = screen.getByDisplayValue(EMAIL_SUBJECT_PIECE.content);
+    expect(subjectInput).toBeInTheDocument();
+    expect(subjectInput.tagName).toBe('INPUT');
+    // Body textarea
+    const bodyTextarea = screen.getByDisplayValue(EMAIL_BODY_PIECE.content);
+    expect(bodyTextarea).toBeInTheDocument();
+    expect(bodyTextarea.tagName).toBe('TEXTAREA');
+  });
+
+  it('shows single set of approve/reject buttons for combined card', () => {
+    renderSection({ data: EMAIL_DATA, isApprovalMode: true, status: 'content_approval' });
+    const approveButtons = screen.getAllByRole('button', { name: /approve/i });
+    const rejectButtons = screen.getAllByRole('button', { name: /reject/i });
+    // One pair of approve/reject for the combined card (plus the "Reject Entire Campaign" button)
+    expect(approveButtons).toHaveLength(1);
+    expect(rejectButtons).toHaveLength(2); // piece reject + campaign reject
+  });
+
+  it('calls updatePieceDecision for both subject and body when approving', async () => {
+    api.updatePieceDecision.mockResolvedValue({});
+    renderSection({ data: EMAIL_DATA, isApprovalMode: true, status: 'content_approval' });
+
+    fireEvent.click(screen.getByRole('button', { name: /approve/i }));
+
+    await waitFor(() => {
+      // Called for subject (index 0) and body (index 1)
+      expect(api.updatePieceDecision).toHaveBeenCalledTimes(2);
+      expect(api.updatePieceDecision).toHaveBeenCalledWith(WORKSPACE_ID, CAMPAIGN_ID, 0, expect.objectContaining({ approved: true }));
+      expect(api.updatePieceDecision).toHaveBeenCalledWith(WORKSPACE_ID, CAMPAIGN_ID, 1, expect.objectContaining({ approved: true }));
+    });
+  });
+
+  it('still renders non-email pieces normally alongside combined card', () => {
+    const mixedData = {
+      theme: 'Mixed',
+      tone_of_voice: 'Casual',
+      pieces: [
+        PIECE_WITH_BRIEF,
+        EMAIL_SUBJECT_PIECE,
+        EMAIL_BODY_PIECE,
+      ],
+    };
+    renderSection({ data: mixedData });
+    // Should see: social_post card + combined email card (not 3 separate cards)
+    expect(screen.getByText(PIECE_WITH_BRIEF.content)).toBeInTheDocument();
+    expect(screen.getByText(/📧 Email/)).toBeInTheDocument();
+    expect(screen.getByText('Subject')).toBeInTheDocument();
   });
 });
