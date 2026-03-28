@@ -33,3 +33,17 @@ class CreatePersonaRequest(BaseModel):
 class UpdatePersonaRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, min_length=1, max_length=4000)
+
+
+class ParsePersonaRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=4000)
+
+
+class ParsePersonaResponse(BaseModel):
+    name: str
+    demographics: str
+    psychographics: str
+    pain_points: str
+    behaviors: str
+    channels: str

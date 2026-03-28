@@ -1,23 +1,29 @@
 """Workspace persona REST API."""
 
-from __future__ import annotations
-
+import json
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
 from backend.api.workspaces import WorkspaceAction, _authorize_workspace
 from backend.apps.api.schemas.common import PaginationMeta
 from backend.apps.api.schemas.personas import (
     CreatePersonaRequest,
+    ParsePersonaRequest,
+    ParsePersonaResponse,
     PersonaListResponse,
     PersonaResponse,
     UpdatePersonaRequest,
 )
+from backend.core.rate_limit import limiter
 from backend.infrastructure.auth import get_current_user
 from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.llm_service import get_llm_service
 from backend.infrastructure.persona_store import get_persona_store
 from backend.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["personas"])
 
@@ -32,6 +38,73 @@ def _to_response(persona) -> PersonaResponse:
         created_at=persona.created_at,
         updated_at=persona.updated_at,
     )
+
+
+_PARSE_SYSTEM_PROMPT = """You are a marketing persona expert. Parse the given freeform persona description into structured fields.
+Return a JSON object with exactly these keys:
+- demographics: demographic information (age range, gender, location, income, education level)
+- psychographics: personality traits, values, interests, lifestyle
+- pain_points: key challenges, frustrations, and problems they face
+- behaviors: purchasing patterns, media consumption, brand interactions
+- channels: preferred communication and marketing channels
+
+If information for a field is not present in the description, return an empty string for that field.
+Always return valid JSON with all five keys."""
+
+
+@router.post("/personas/parse", response_model=ParsePersonaResponse)
+@limiter.limit("10/minute")
+async def parse_persona(
+    workspace_id: str,
+    request: Request,
+    response: Response,
+    body: ParsePersonaRequest = Body(),
+    user: Optional[User] = Depends(get_current_user),
+) -> ParsePersonaResponse:
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    campaign_store = get_campaign_store()
+    workspace = await campaign_store.get_workspace(workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    await _authorize_workspace(workspace_id, user, WorkspaceAction.WRITE, campaign_store)
+
+    messages = [
+        {"role": "system", "content": _PARSE_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Parse this persona description into structured fields:\n\n"
+                f"Name: {body.name}\n\nDescription: {body.description}"
+            ),
+        },
+    ]
+
+    try:
+        raw = await get_llm_service().chat_json(messages, max_tokens=1024)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Persona parse: LLM returned non-JSON response: %r", raw[:200])
+            parsed = {}
+        return ParsePersonaResponse(
+            name=body.name,
+            demographics=str(parsed.get("demographics", "")),
+            psychographics=str(parsed.get("psychographics", "")),
+            pain_points=str(parsed.get("pain_points", "")),
+            behaviors=str(parsed.get("behaviors", "")),
+            channels=str(parsed.get("channels", "")),
+        )
+    except Exception:
+        logger.warning("Persona parse LLM call failed; returning empty structured fields", exc_info=True)
+        return ParsePersonaResponse(
+            name=body.name,
+            demographics="",
+            psychographics="",
+            pain_points="",
+            behaviors="",
+            channels="",
+        )
 
 
 @router.post("/personas", status_code=201, response_model=PersonaResponse)

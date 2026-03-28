@@ -299,6 +299,11 @@ export const updatePersona = (workspaceId, personaId, { name, description }) =>
 export const deletePersona = (workspaceId, personaId) =>
   request("DELETE", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas/${encodeURIComponent(personaId)}`);
 
+export const parsePersona = (workspaceId, { name, description }) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas/parse`, {
+    body: { name, description },
+  });
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

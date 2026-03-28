@@ -6,11 +6,13 @@ import {
   createPersona,
   updatePersona,
   deletePersona,
+  parsePersona,
 } from "../api";
 import { useUser } from "../UserContext";
 import { useConfirm } from "../ConfirmDialogContext";
 import { SkeletonCard } from "../components/Skeleton";
 import PersonaForm from "../components/PersonaForm";
+import PersonaEditor, { parseDescriptionToFields } from "../components/PersonaEditor";
 
 function formatDate(iso) {
   if (!iso) return "";
@@ -29,9 +31,13 @@ export default function PersonaLibrary() {
   const [loadingPersonas, setLoadingPersonas] = useState(true);
   const [error, setError] = useState(null);
 
-  // Modal state
-  const [formOpen, setFormOpen] = useState(false);
+  // Modal state — phase 1: freeform describe, phase 2: structured editor
+  const [phase, setPhase] = useState(null); // null | 'freeform' | 'editor'
   const [editTarget, setEditTarget] = useState(null); // persona being edited
+  const [freeformInput, setFreeformInput] = useState({ name: "", description: "" });
+  const [parsedFields, setParsedFields] = useState(null);
+  const [parseLoading, setParseLoading] = useState(false);
+  const [parseError, setParseError] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState(null);
 
@@ -68,20 +74,53 @@ export default function PersonaLibrary() {
   // Create / Edit handlers
   const handleOpenCreate = () => {
     setEditTarget(null);
+    setFreeformInput({ name: "", description: "" });
+    setParsedFields(null);
+    setParseError(null);
     setFormError(null);
-    setFormOpen(true);
+    setPhase("freeform");
   };
 
   const handleOpenEdit = (persona) => {
     setEditTarget(persona);
+    setParsedFields(parseDescriptionToFields(persona.description));
     setFormError(null);
-    setFormOpen(true);
+    setPhase("editor");
   };
 
-  const handleFormClose = () => {
-    setFormOpen(false);
+  const handleCloseAll = () => {
+    setPhase(null);
     setEditTarget(null);
+    setParsedFields(null);
+    setParseError(null);
     setFormError(null);
+    setFreeformInput({ name: "", description: "" });
+  };
+
+  // "✨ Structure with AI" — call parse endpoint, transition to editor
+  const handleStructureWithAI = async ({ name, description }) => {
+    setParseLoading(true);
+    setParseError(null);
+    try {
+      const result = await parsePersona(workspaceId, { name, description });
+      setParsedFields(result);
+      setPhase("editor");
+    } catch (err) {
+      // Log for developer visibility; user sees a friendly message
+      console.warn("AI persona parse failed:", err);
+      setParseError("AI structuring failed. You can fill the fields manually.");
+      setParsedFields({ name, demographics: description, psychographics: "", pain_points: "", behaviors: "", channels: "" });
+      setPhase("editor");
+    } finally {
+      setParseLoading(false);
+    }
+  };
+
+  // Skip AI — open PersonaEditor directly for manual creation
+  const handleSkipAI = ({ name, description }) => {
+    setParsedFields({ name, demographics: description, psychographics: "", pain_points: "", behaviors: "", channels: "" });
+    setParseError(null);
+    setPhase("editor");
   };
 
   const handleFormSubmit = async ({ name, description }) => {
@@ -95,7 +134,7 @@ export default function PersonaLibrary() {
         const created = await createPersona(workspaceId, { name, description });
         setPersonas((prev) => [created, ...prev]);
       }
-      handleFormClose();
+      handleCloseAll();
     } catch (err) {
       setFormError(err.message || "Failed to save persona.");
     } finally {
@@ -249,14 +288,31 @@ export default function PersonaLibrary() {
         </div>
       )}
 
-      {/* Create/Edit modal */}
+      {/* Phase 1: Freeform describe modal */}
       <PersonaForm
-        open={formOpen}
-        onClose={handleFormClose}
+        open={phase === "freeform"}
+        onClose={handleCloseAll}
+        onSubmit={handleStructureWithAI}
+        onSkip={handleSkipAI}
+        initial={freeformInput}
+        loading={parseLoading}
+        title="Describe Your Persona"
+        error={parseError}
+        submitLabel="✨ Structure with AI"
+      />
+
+      {/* Phase 2: Structured editor modal (create or edit) */}
+      <PersonaEditor
+        open={phase === "editor"}
+        onClose={handleCloseAll}
+        onBack={editTarget ? undefined : () => setPhase("freeform")}
         onSubmit={handleFormSubmit}
-        initial={editTarget ? { name: editTarget.name, description: editTarget.description } : {}}
+        initial={editTarget
+          ? { name: editTarget.name, ...parseDescriptionToFields(editTarget.description) }
+          : (parsedFields ?? {})
+        }
         loading={formLoading}
-        title={editTarget ? "Edit Persona" : "Create Persona"}
+        title={editTarget ? "Edit Persona" : "Review & Save Persona"}
         error={formError}
       />
     </div>

@@ -2383,6 +2383,69 @@ class TestPersonaApi:
             assert list_response.status_code == 200
             assert list_response.json()["items"] == []
 
+    def test_parse_persona_returns_structured_fields(self, authed_client):
+        mock_raw = (
+            '{"demographics": "Ages 25-40, urban professionals",'
+            ' "psychographics": "Values productivity",'
+            ' "pain_points": "Lack of time",'
+            ' "behaviors": "Mobile-first",'
+            ' "channels": "LinkedIn, email"}'
+        )
+        with patch("backend.api.personas.get_llm_service") as mock_get_llm:
+            mock_llm = AsyncMock()
+            mock_llm.chat_json = AsyncMock(return_value=mock_raw)
+            mock_get_llm.return_value = mock_llm
+
+            response = authed_client.post(
+                f"/api/workspaces/{TEST_WS_ID}/personas/parse",
+                json={"name": "IT Manager Maria", "description": "A 30-year-old IT manager in New York."},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "IT Manager Maria"
+        assert data["demographics"] == "Ages 25-40, urban professionals"
+        assert data["psychographics"] == "Values productivity"
+        assert data["pain_points"] == "Lack of time"
+        assert data["behaviors"] == "Mobile-first"
+        assert data["channels"] == "LinkedIn, email"
+
+    def test_parse_persona_requires_authentication(self, client):
+        response = client.post(
+            f"/api/workspaces/{TEST_WS_ID}/personas/parse",
+            json={"name": "Persona", "description": "A description."},
+        )
+        assert response.status_code == 401
+
+    def test_parse_persona_writer_only(self, _isolated_store):
+        _isolated_store._workspace_members[(TEST_WS_ID, _VIEWER_USER.id)] = "viewer"
+        with _as_user(_VIEWER_USER) as c:
+            response = c.post(
+                f"/api/workspaces/{TEST_WS_ID}/personas/parse",
+                json={"name": "Persona", "description": "A description."},
+            )
+        assert response.status_code == 403
+
+    def test_parse_persona_graceful_fallback_on_llm_failure(self, authed_client):
+        with patch("backend.api.personas.get_llm_service") as mock_get_llm:
+            mock_llm = AsyncMock()
+            mock_llm.chat_json = AsyncMock(side_effect=Exception("LLM unavailable"))
+            mock_get_llm.return_value = mock_llm
+
+            response = authed_client.post(
+                f"/api/workspaces/{TEST_WS_ID}/personas/parse",
+                json={"name": "Fallback Persona", "description": "Some description."},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "Fallback Persona"
+        assert data["demographics"] == ""
+        assert data["psychographics"] == ""
+        assert data["pain_points"] == ""
+        assert data["behaviors"] == ""
+        assert data["channels"] == ""
+
 
 # ---- GET /api/campaigns/{id}/events ----
 
