@@ -198,6 +198,21 @@ class TestStrategyAgent:
         prompt = agent.build_user_prompt(task, SAMPLE_CAMPAIGN_DATA)
         assert "Selected Channels" not in prompt
 
+    def test_prompt_includes_selected_workspace_personas(self, mock_llm):
+        agent = StrategyAgent(llm_service=mock_llm)
+        task = _make_task(AgentType.STRATEGY)
+        data = {
+            **SAMPLE_CAMPAIGN_DATA,
+            "selected_personas": [
+                {"id": "p1", "name": "IT Manager Maria", "description": "Leads SaaS tooling at a 200-person company"},
+                {"id": "p2", "name": "Founder Felix", "description": "Bootstrapped startup founder focused on growth"},
+            ],
+        }
+        prompt = agent.build_user_prompt(task, data)
+        assert "Selected Workspace Personas" in prompt
+        assert "IT Manager Maria" in prompt
+        assert "Founder Felix" in prompt
+
 
 # ---- Content Creator Agent ----
 

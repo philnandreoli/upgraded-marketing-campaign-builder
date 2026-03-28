@@ -232,6 +232,10 @@ class CampaignBrief(BaseModel):
         default=False,
         description="Whether the user opted in to AI image generation for this campaign.",
     )
+    persona_ids: list[str] = Field(
+        default_factory=list,
+        description="Workspace persona IDs selected to guide strategy generation.",
+    )
 
     @model_validator(mode="after")
     def _validate_date_range(self) -> "CampaignBrief":

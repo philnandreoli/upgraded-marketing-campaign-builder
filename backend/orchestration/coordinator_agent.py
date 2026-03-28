@@ -60,6 +60,7 @@ from backend.models.messages import (
 from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
 from backend.infrastructure.budget_entry_store import BudgetEntryStore, get_budget_entry_store
 from backend.infrastructure.campaign_store import CampaignStore, get_campaign_store
+from backend.infrastructure.persona_store import PersonaStore, get_persona_store
 from backend.core.exceptions import ConcurrentUpdateError, WorkflowConflictError
 from backend.infrastructure.workflow_checkpoint_store import (
     WorkflowCheckpointStore,
@@ -150,11 +151,13 @@ class CoordinatorAgent:
         signal_store: WorkflowSignalStore | None = None,
         poll_interval_seconds: float = 2.0,
         budget_entry_store: BudgetEntryStore | None = None,
+        persona_store: PersonaStore | None = None,
     ) -> None:
         self._store = store or get_campaign_store()
         self._checkpoint_store = checkpoint_store or get_workflow_checkpoint_store()
         self._signal_store = signal_store or get_workflow_signal_store()
         self._budget_entry_store = budget_entry_store or get_budget_entry_store()
+        self._persona_store = persona_store or get_persona_store()
 
         # Seconds to wait for human input before escalating to MANUAL_REVIEW_REQUIRED.
         # Defaults to the module-level constant (derived from PIPELINE_IDLE_TIMEOUT_DAYS).
@@ -520,6 +523,7 @@ class CoordinatorAgent:
     async def _run_strategy_stage(
         self, campaign: Campaign, campaign_data: dict[str, Any]
     ) -> StageExecutionResult:
+        campaign_data = await self._enrich_with_selected_personas(campaign, campaign_data)
         campaign = await self._run_stage(
             agent=self._strategy,
             campaign=campaign,
@@ -530,6 +534,31 @@ class CoordinatorAgent:
         )
         action = WorkflowAction.FAIL if "strategy" in campaign.stage_errors else WorkflowAction.CONTINUE
         return StageExecutionResult(action=action, campaign=campaign)
+
+    async def _enrich_with_selected_personas(
+        self,
+        campaign: Campaign,
+        campaign_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        persona_ids = campaign.brief.persona_ids
+        if not persona_ids or campaign.workspace_id is None:
+            return campaign_data
+        personas = await self._persona_store.list_for_campaign(
+            workspace_id=campaign.workspace_id,
+            persona_ids=persona_ids,
+        )
+        if not personas:
+            return campaign_data
+        enriched = dict(campaign_data)
+        enriched["selected_personas"] = [
+            {
+                "id": persona.id,
+                "name": persona.name,
+                "description": persona.description,
+            }
+            for persona in personas
+        ]
+        return enriched
 
     async def _run_content_stage(
         self, campaign: Campaign, campaign_data: dict[str, Any]
@@ -1469,6 +1498,7 @@ class CoordinatorAgent:
         If it does, pause the pipeline and wait for the user to answer.
         """
         await self._emit("clarification_started", {"campaign_id": campaign.id})
+        campaign_data = await self._enrich_with_selected_personas(campaign, campaign_data)
 
         if campaign.clarification_questions:
             # Questions already exist from a prior run — skip the LLM call.

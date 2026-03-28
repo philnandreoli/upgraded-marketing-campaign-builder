@@ -92,6 +92,7 @@ class UpdateDraftRequest(BaseModel):
     selected_channels: Optional[list[ChannelType]] = None
     social_media_platforms: Optional[list[SocialMediaPlatform]] = None
     generate_images: Optional[bool] = None
+    persona_ids: Optional[list[str]] = None
     wizard_step: Optional[int] = None
 
 

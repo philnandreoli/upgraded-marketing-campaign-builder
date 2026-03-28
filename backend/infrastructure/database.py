@@ -466,6 +466,30 @@ class UserSettingsRow(Base):
     updated_at = Column(DateTime, nullable=False)
 
 
+class PersonaRow(Base):
+    """Workspace-scoped persona definition used by strategy generation."""
+
+    __tablename__ = "personas"
+
+    id = Column(String, primary_key=True)
+    workspace_id = Column(
+        String,
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_personas_workspace_created", "workspace_id", "created_at"),
+        Index("ix_personas_workspace_name", "workspace_id", "name"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Session dependency
 # ---------------------------------------------------------------------------
