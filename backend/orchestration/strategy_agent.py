@@ -89,6 +89,17 @@ SECURITY RULES:
         if brief.get("additional_context"):
             parts.append(f"**Additional Context:** {brief['additional_context']}")
         parts.append("</USER_BRIEF>")
+        selected_personas = campaign_data.get("selected_personas", [])
+        if selected_personas:
+            parts.append("\n**Selected Workspace Personas:**")
+            for persona in selected_personas:
+                name = str(persona.get("name", "")).strip() or "Unnamed Persona"
+                description = str(persona.get("description", "")).strip()
+                if description:
+                    parts.append(f"- {name}: {description}")
+                else:
+                    parts.append(f"- {name}")
+            parts.append("Use these personas as authoritative audience context.")
         selected = brief.get("selected_channels", [])
         if selected:
             labels = [ch.replace("_", " ").title() for ch in selected]
@@ -186,6 +197,17 @@ SECURITY RULES:
         if brief.get("additional_context"):
             parts.append(f"**Additional Context:** {brief['additional_context']}")
         parts.append("</USER_BRIEF>")
+        selected_personas = campaign_data.get("selected_personas", [])
+        if selected_personas:
+            parts.append("\n**Selected Workspace Personas:**")
+            for persona in selected_personas:
+                name = str(persona.get("name", "")).strip() or "Unnamed Persona"
+                description = str(persona.get("description", "")).strip()
+                if description:
+                    parts.append(f"- {name}: {description}")
+                else:
+                    parts.append(f"- {name}")
+            parts.append("Anchor the strategy and target audience in these selected personas.")
         selected = brief.get("selected_channels", [])
         if selected:
             labels = [ch.replace("_", " ").title() for ch in selected]

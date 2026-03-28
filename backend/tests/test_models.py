@@ -162,6 +162,18 @@ class TestCampaignBrief:
         b = CampaignBrief.model_validate(payload)
         assert b.generate_images is False
 
+    def test_persona_ids_default_empty(self):
+        b = CampaignBrief(product_or_service="Widget", goal="Sell more")
+        assert b.persona_ids == []
+
+    def test_persona_ids_accepts_values(self):
+        b = CampaignBrief(
+            product_or_service="Widget",
+            goal="Sell more",
+            persona_ids=["persona-1", "persona-2"],
+        )
+        assert b.persona_ids == ["persona-1", "persona-2"]
+
 
 # ---- Campaign ----
 

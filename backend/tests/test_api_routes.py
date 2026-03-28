@@ -58,11 +58,65 @@ class InMemoryUserSettingsStore:
         return updated
 
 
+class InMemoryPersonaStore:
+    def __init__(self):
+        self._personas: dict[str, dict] = {}
+        self._counter = 0
+
+    async def create(self, *, workspace_id: str, name: str, description: str, created_by: str):
+        from datetime import datetime
+
+        self._counter += 1
+        persona_id = f"persona-{self._counter}"
+        now = datetime.utcnow()
+        row = {
+            "id": persona_id,
+            "workspace_id": workspace_id,
+            "name": name,
+            "description": description,
+            "created_by": created_by,
+            "created_at": now,
+            "updated_at": now,
+        }
+        self._personas[persona_id] = row
+        return type("PersonaObj", (), row)()
+
+    async def get(self, persona_id: str):
+        row = self._personas.get(persona_id)
+        if row is None:
+            return None
+        return type("PersonaObj", (), row)()
+
+    async def list_by_workspace(self, workspace_id: str, *, limit: int = 50, offset: int = 0):
+        filtered = [p for p in self._personas.values() if p["workspace_id"] == workspace_id]
+        filtered.sort(key=lambda p: p["created_at"], reverse=True)
+        total = len(filtered)
+        page = filtered[offset:offset + limit]
+        return [type("PersonaObj", (), p)() for p in page], total
+
+    async def update(self, persona_id: str, *, name: str | None = None, description: str | None = None):
+        from datetime import datetime
+
+        row = self._personas.get(persona_id)
+        if row is None:
+            raise ValueError(f"Persona {persona_id!r} not found")
+        if name is not None:
+            row["name"] = name
+        if description is not None:
+            row["description"] = description
+        row["updated_at"] = datetime.utcnow()
+        return type("PersonaObj", (), row)()
+
+    async def delete(self, persona_id: str) -> bool:
+        return self._personas.pop(persona_id, None) is not None
+
+
 @pytest.fixture(autouse=True)
 def _isolated_store():
     """Give each test a fresh InMemoryCampaignStore and mock the pipeline."""
     fresh_store = InMemoryCampaignStore()
     fresh_user_settings_store = InMemoryUserSettingsStore()
+    fresh_persona_store = InMemoryPersonaStore()
     mock_executor = MagicMock()
     mock_executor.dispatch = AsyncMock()
 
@@ -82,9 +136,11 @@ def _isolated_store():
     # Mock get_executor so pipeline dispatch is a no-op in route tests
     with patch("backend.api.campaigns.get_campaign_store", return_value=fresh_store), \
          patch("backend.apps.api.dependencies.get_campaign_store", return_value=fresh_store), \
+         patch("backend.api.personas.get_campaign_store", return_value=fresh_store), \
          patch("backend.api.campaign_schedule.get_campaign_store", return_value=fresh_store), \
          patch("backend.api.campaign_members.get_campaign_store", return_value=fresh_store), \
          patch("backend.api.campaigns.get_user_settings_store", return_value=fresh_user_settings_store), \
+         patch("backend.api.personas.get_persona_store", return_value=fresh_persona_store), \
          patch("backend.application.campaign_workflow_service.get_campaign_store", return_value=fresh_store), \
          patch("backend.application.campaign_workflow_service._workflow_service", None), \
          patch("backend.api.campaigns.get_executor", return_value=mock_executor), \
@@ -402,6 +458,17 @@ class TestCreateCampaign:
         detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
         assert detail["brief"]["selected_channels"] == ["email", "paid_ads"]
 
+    def test_create_with_persona_ids(self, authed_client):
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
+            "product_or_service": "PersonaTest",
+            "goal": "Test persona wiring",
+            "persona_ids": ["persona-1", "persona-2"],
+        })
+        assert r.status_code == 201
+        cid = r.json()["id"]
+        detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
+        assert detail["brief"]["persona_ids"] == ["persona-1", "persona-2"]
+
     def test_create_with_invalid_channel_returns_422(self, authed_client):
         r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
             "product_or_service": "BadChannel",
@@ -709,6 +776,23 @@ class TestUpdateDraftCampaign:
         assert r.status_code == 200
         detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
         assert detail["wizard_step"] == 3
+
+    def test_patch_updates_persona_ids(self, authed_client):
+        r = authed_client.post(f"/api/workspaces/{TEST_WS_ID}/campaigns", json={
+            "product_or_service": "PatchPersona",
+            "goal": "Patch persona ids",
+        })
+        assert r.status_code == 201
+        cid = r.json()["id"]
+
+        patch_response = authed_client.patch(
+            f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}",
+            json={"persona_ids": ["persona-a", "persona-b"]},
+        )
+        assert patch_response.status_code == 200
+
+        detail = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/campaigns/{cid}").json()
+        assert detail["brief"]["persona_ids"] == ["persona-a", "persona-b"]
 
     def test_patch_non_draft_returns_409(self, authed_client, _isolated_store):
         """PATCH on a non-draft campaign returns 409."""
@@ -2236,6 +2320,68 @@ class TestAssignCampaignWorkspace:
         with _as_user(_ADMIN_USER) as c:
             r = c.patch(f"/api/campaigns/{campaign.id}/workspace", json={"workspace_id": None})
         assert r.status_code == 404
+
+
+# ---- Persona API ----
+
+class TestPersonaApi:
+    def test_create_list_get_update_delete_persona(self, authed_client):
+        create_response = authed_client.post(
+            f"/api/workspaces/{TEST_WS_ID}/personas",
+            json={
+                "name": "IT Manager Maria",
+                "description": "Leads SaaS tooling decisions at a mid-market company",
+            },
+        )
+        assert create_response.status_code == 201
+        created = create_response.json()
+        persona_id = created["id"]
+        assert created["workspace_id"] == TEST_WS_ID
+        assert created["name"] == "IT Manager Maria"
+
+        list_response = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/personas")
+        assert list_response.status_code == 200
+        list_payload = list_response.json()
+        assert list_payload["pagination"]["total_count"] == 1
+        assert len(list_payload["items"]) == 1
+        assert list_payload["items"][0]["id"] == persona_id
+
+        get_response = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/personas/{persona_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["name"] == "IT Manager Maria"
+
+        update_response = authed_client.patch(
+            f"/api/workspaces/{TEST_WS_ID}/personas/{persona_id}",
+            json={"description": "Updated persona description"},
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["description"] == "Updated persona description"
+
+        delete_response = authed_client.delete(f"/api/workspaces/{TEST_WS_ID}/personas/{persona_id}")
+        assert delete_response.status_code == 204
+
+        get_deleted_response = authed_client.get(f"/api/workspaces/{TEST_WS_ID}/personas/{persona_id}")
+        assert get_deleted_response.status_code == 404
+
+    def test_persona_api_requires_authentication(self, client):
+        create_response = client.post(
+            f"/api/workspaces/{TEST_WS_ID}/personas",
+            json={"name": "Persona", "description": "Description"},
+        )
+        assert create_response.status_code == 401
+
+    def test_viewer_can_list_but_cannot_mutate_personas(self, _isolated_store):
+        _isolated_store._workspace_members[(TEST_WS_ID, _VIEWER_USER.id)] = "viewer"
+        with _as_user(_VIEWER_USER) as c:
+            create_response = c.post(
+                f"/api/workspaces/{TEST_WS_ID}/personas",
+                json={"name": "Persona", "description": "Description"},
+            )
+            assert create_response.status_code == 403
+
+            list_response = c.get(f"/api/workspaces/{TEST_WS_ID}/personas")
+            assert list_response.status_code == 200
+            assert list_response.json()["items"] == []
 
 
 # ---- GET /api/campaigns/{id}/events ----

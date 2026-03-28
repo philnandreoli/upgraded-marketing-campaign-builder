@@ -22,6 +22,23 @@ from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
 from backend.tests.mock_store import InMemoryCampaignStore, InMemoryBudgetEntryStore
 
 
+# ---- Simple in-memory persona store for coordinator tests ----
+
+class InMemoryPersonaStore:
+    def __init__(self):
+        self._personas: dict[str, dict] = {}
+
+    async def list_for_campaign(self, *, workspace_id: str | None, persona_ids: list[str]):
+        if workspace_id is None:
+            return []
+        matched = []
+        for pid in persona_ids:
+            row = self._personas.get(pid)
+            if row is not None and row["workspace_id"] == workspace_id:
+                matched.append(type("PersonaObj", (), row)())
+        return matched
+
+
 # ---- Mock LLM responses for each stage ----
 
 STRATEGY_RESPONSE = json.dumps({
@@ -243,6 +260,49 @@ class TestCoordinatorPipeline:
         # Persisted in store
         stored = await store.get(campaign.id)
         assert stored.status == CampaignStatus.APPROVED
+
+    @pytest.mark.asyncio
+    async def test_strategy_stage_injects_selected_personas_context(self, store, events_log, mock_on_event):
+        campaign = await store.create(
+            CampaignBrief(
+                product_or_service="CloudSync",
+                goal="Grow signups",
+                persona_ids=["persona-1"],
+            ),
+            workspace_id="ws-1",
+        )
+        persona_store = InMemoryPersonaStore()
+        persona_store._personas["persona-1"] = {
+            "id": "persona-1",
+            "workspace_id": "ws-1",
+            "name": "IT Manager Maria",
+            "description": "Leads SaaS tooling decisions",
+        }
+
+        captured_data = {}
+
+        async def _fake_run_stage(self, agent, campaign, campaign_data, **kwargs):
+            captured_data.update(campaign_data)
+            return campaign
+
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm, \
+             patch.object(CoordinatorAgent, "_run_stage", new=_fake_run_stage):
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(return_value=STRATEGY_RESPONSE)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(
+                store=store,
+                on_event=mock_on_event,
+                persona_store=persona_store,
+            )
+            campaign_data = campaign.model_dump(mode="json")
+            result = await coordinator._run_strategy_stage(campaign, campaign_data)
+
+        assert result.action.name == "CONTINUE"
+        assert "selected_personas" in captured_data
+        assert captured_data["selected_personas"][0]["id"] == "persona-1"
+        assert captured_data["selected_personas"][0]["name"] == "IT Manager Maria"
 
     @pytest.mark.asyncio
     async def test_full_pipeline_with_campaign_rejection(self, store, brief, events_log, mock_on_event):
