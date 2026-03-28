@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Coroutine, Optional
 
 from backend.orchestration.base_agent import BaseAgent
@@ -58,6 +58,7 @@ from backend.models.messages import (
     ContentApprovalResponse,
 )
 from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
+from backend.infrastructure.budget_entry_store import BudgetEntryStore, get_budget_entry_store
 from backend.infrastructure.campaign_store import CampaignStore, get_campaign_store
 from backend.core.exceptions import ConcurrentUpdateError, WorkflowConflictError
 from backend.infrastructure.workflow_checkpoint_store import (
@@ -148,10 +149,12 @@ class CoordinatorAgent:
         idle_timeout_seconds: float | None = None,
         signal_store: WorkflowSignalStore | None = None,
         poll_interval_seconds: float = 2.0,
+        budget_entry_store: BudgetEntryStore | None = None,
     ) -> None:
         self._store = store or get_campaign_store()
         self._checkpoint_store = checkpoint_store or get_workflow_checkpoint_store()
         self._signal_store = signal_store or get_workflow_signal_store()
+        self._budget_entry_store = budget_entry_store or get_budget_entry_store()
 
         # Seconds to wait for human input before escalating to MANUAL_REVIEW_REQUIRED.
         # Defaults to the module-level constant (derived from PIPELINE_IDLE_TIMEOUT_DAYS).
@@ -556,9 +559,64 @@ class CoordinatorAgent:
         if "channel_plan" in campaign.stage_errors:
             return StageExecutionResult(action=WorkflowAction.FAIL, campaign=campaign)
 
+        # Auto-create planned budget entries from channel breakdown
+        await self._seed_budget_entries_from_channel_plan(campaign)
+
         # Sub-step: scheduling (runs silently within this stage, no new CampaignStatus)
         campaign = await self._run_scheduling_substep(campaign, campaign.model_dump(mode="json"))
         return StageExecutionResult(action=WorkflowAction.CONTINUE, campaign=campaign)
+
+    async def _seed_budget_entries_from_channel_plan(self, campaign: Campaign) -> None:
+        """Create planned budget entries from the channel plan breakdown.
+
+        For each channel recommendation, a planned budget entry is created.
+        Social-media channels with a platform breakdown get one entry per
+        platform instead of a single channel-level entry.
+        """
+        from backend.models.budget import BudgetEntry, BudgetEntryType
+        from decimal import Decimal
+
+        plan = campaign.channel_plan
+        if plan is None or not plan.recommendations:
+            return
+
+        total_budget = Decimal(str(plan.total_budget))
+        currency = plan.currency or "USD"
+        entry_date = campaign.brief.start_date or date.today()
+
+        for rec in plan.recommendations:
+            channel_budget = total_budget * Decimal(str(rec.budget_pct)) / Decimal("100")
+
+            # Social media with platform breakdown → one entry per platform
+            if rec.channel == "social_media" and rec.platform_breakdown:
+                for plat in rec.platform_breakdown:
+                    plat_budget = channel_budget * Decimal(str(plat.budget_pct)) / Decimal("100")
+                    entry = BudgetEntry(
+                        campaign_id=campaign.id,
+                        entry_type=BudgetEntryType.PLANNED,
+                        amount=plat_budget.quantize(Decimal("0.01")),
+                        currency=currency,
+                        category=f"social_media:{plat.platform}",
+                        description=f"Planned budget for {plat.platform} ({plat.budget_pct}% of social media)",
+                        entry_date=entry_date,
+                    )
+                    await self._budget_entry_store.create(entry)
+            else:
+                entry = BudgetEntry(
+                    campaign_id=campaign.id,
+                    entry_type=BudgetEntryType.PLANNED,
+                    amount=channel_budget.quantize(Decimal("0.01")),
+                    currency=currency,
+                    category=rec.channel.value if hasattr(rec.channel, "value") else str(rec.channel),
+                    description=f"Planned budget for {rec.channel} ({rec.budget_pct}% of total)",
+                    entry_date=entry_date,
+                )
+                await self._budget_entry_store.create(entry)
+
+        logger.info(
+            "Seeded planned budget entries from channel plan for campaign %s",
+            campaign.id,
+        )
 
     async def _run_analytics_stage(
         self, campaign: Campaign, campaign_data: dict[str, Any]
@@ -1027,6 +1085,22 @@ class CoordinatorAgent:
                 piece["human_notes"] = ""
 
             revised_content = CampaignContent.model_validate(result_data)
+
+            # Carry over scheduling fields from original pieces to revised
+            # pieces. The LLM revision doesn't produce scheduling data, so
+            # without this the dates assigned by the scheduling sub-step
+            # would be lost.
+            old_pieces = campaign.content.pieces if campaign.content else []
+            for idx, revised_piece in enumerate(revised_content.pieces):
+                if idx < len(old_pieces):
+                    old = old_pieces[idx]
+                    if revised_piece.scheduled_date is None and old.scheduled_date is not None:
+                        revised_piece.scheduled_date = old.scheduled_date
+                    if revised_piece.scheduled_time is None and old.scheduled_time is not None:
+                        revised_piece.scheduled_time = old.scheduled_time
+                    if revised_piece.platform_target is None and old.platform_target is not None:
+                        revised_piece.platform_target = old.platform_target
+
             campaign.content = revised_content
             campaign.content_revision_count += 1
             await self._persist_and_emit(campaign, "stage_completed", StageCompletedEvent(

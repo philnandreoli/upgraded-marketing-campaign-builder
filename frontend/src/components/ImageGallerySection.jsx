@@ -109,32 +109,28 @@ export default function ImageGallerySection({ workspaceId, campaignId, events, i
     <div className="card">
       <h2>🖼️ Images</h2>
 
-      {sortedKeys.map((pieceIndex) => {
-        const groupAssets = groups.get(pieceIndex);
-        const label = pieceIndex >= 0 ? `Content Piece ${pieceIndex + 1}` : "Ungrouped";
-        return (
-          <div key={pieceIndex} className="image-gallery-group">
-            <h3 className="image-gallery-group-header">{label}</h3>
-            <div className="image-gallery-grid">
-              {groupAssets.map((asset) => {
-                const pieceApproved = contentPieces?.[asset.content_piece_index]?.approval_status === "approved";
-                const locked = pieceApproved && status === "approved";
-                return (
-                  <ImageAssetCard
-                    key={asset.id}
-                    asset={asset}
-                    workspaceId={workspaceId}
-                    campaignId={campaignId}
-                    canEdit={!isViewer && !locked}
-                    onOpenLightbox={setLightbox}
-                    onRegenerated={load}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+      <div className="image-gallery-grid">
+        {sortedKeys.flatMap((pieceIndex) => {
+          const groupAssets = groups.get(pieceIndex);
+          return groupAssets.map((asset) => {
+            const pieceApproved = contentPieces?.[asset.content_piece_index]?.approval_status === "approved";
+            const locked = pieceApproved && status === "approved";
+            const label = pieceIndex >= 0 ? `Piece ${pieceIndex + 1}` : null;
+            return (
+              <ImageAssetCard
+                key={asset.id}
+                asset={asset}
+                workspaceId={workspaceId}
+                campaignId={campaignId}
+                canEdit={!isViewer && !locked}
+                onOpenLightbox={setLightbox}
+                onRegenerated={load}
+                pieceLabel={label}
+              />
+            );
+          });
+        })}
+      </div>
 
       {/* Lightbox */}
       {lightbox && (

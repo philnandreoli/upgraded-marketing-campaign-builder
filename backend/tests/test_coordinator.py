@@ -19,7 +19,7 @@ from backend.agents.coordinator_agent import CoordinatorAgent
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, ContentApprovalStatus
 from backend.models.messages import ClarificationResponse, ContentApprovalResponse, ContentPieceApproval
 from backend.models.workflow import WorkflowCheckpoint, WorkflowWaitType
-from backend.tests.mock_store import InMemoryCampaignStore
+from backend.tests.mock_store import InMemoryCampaignStore, InMemoryBudgetEntryStore
 
 
 # ---- Mock LLM responses for each stage ----
@@ -135,6 +135,20 @@ def _stage_responses():
 @pytest.fixture
 def store():
     return InMemoryCampaignStore()
+
+
+@pytest.fixture
+def budget_store():
+    return InMemoryBudgetEntryStore()
+
+
+@pytest.fixture(autouse=True)
+def _patch_budget_store(budget_store, monkeypatch):
+    """Replace the budget entry store singleton with the in-memory version."""
+    monkeypatch.setattr(
+        "backend.orchestration.coordinator_agent.get_budget_entry_store",
+        lambda: budget_store,
+    )
 
 
 @pytest.fixture
@@ -1857,3 +1871,188 @@ class TestCoordinatorResume:
         coordinator = CoordinatorAgent(store=store)
         with pytest.raises(ValueError, match="not found"):
             await coordinator.resume_pipeline("nonexistent-id")
+
+
+class TestBudgetEntriesFromChannelPlan:
+    """Verify that planned budget entries are auto-created from the channel plan."""
+
+    @pytest.mark.asyncio
+    async def test_channel_plan_seeds_planned_budget_entries(self, store, brief, budget_store, events_log, mock_on_event):
+        """After channel planning, planned budget entries should match the channel breakdown."""
+        campaign = await store.create(brief)
+
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event, budget_entry_store=budget_store)
+
+            # Auto-approve all pieces
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+
+        # Budget entries should have been seeded
+        from backend.models.budget import BudgetEntryType
+        entries = await budget_store.list_by_campaign(campaign.id, BudgetEntryType.PLANNED)
+        assert len(entries) == 4  # email(25%), paid_ads(40%), content_marketing(20%), social_media(15%)
+
+        # Verify total amounts match total_budget
+        from decimal import Decimal
+        total = sum(e.amount for e in entries)
+        assert total == Decimal("50000.00")
+
+        # Verify categories
+        categories = sorted(e.category for e in entries)
+        assert categories == ["content_marketing", "email", "paid_ads", "social_media"]
+
+    @pytest.mark.asyncio
+    async def test_social_media_platform_breakdown_creates_per_platform_entries(self, store, budget_store, events_log, mock_on_event):
+        """Social media with platform breakdown should create per-platform budget entries."""
+        brief_with_social = CampaignBrief(
+            product_or_service="TestProduct",
+            goal="Brand awareness",
+            budget=10000,
+            currency="USD",
+            start_date="2026-05-01",
+            end_date="2026-12-31",
+        )
+        campaign = await store.create(brief_with_social)
+
+        channel_response_with_platforms = json.dumps({
+            "total_budget": 10000,
+            "currency": "USD",
+            "recommendations": [
+                {"channel": "email", "rationale": "Direct", "budget_pct": 30, "timing": "Week 1-4", "tactics": ["Newsletter"]},
+                {
+                    "channel": "social_media",
+                    "rationale": "Reach",
+                    "budget_pct": 70,
+                    "timing": "Ongoing",
+                    "tactics": ["Posts"],
+                    "platform_breakdown": [
+                        {"platform": "facebook", "budget_pct": 50, "tactics": ["Reels"], "timing": "Daily"},
+                        {"platform": "instagram", "budget_pct": 30, "tactics": ["Stories"], "timing": "Daily"},
+                        {"platform": "linkedin", "budget_pct": 20, "tactics": ["Articles"], "timing": "Weekly"},
+                    ],
+                },
+            ],
+            "timeline_summary": "6-month campaign",
+        })
+
+        responses = [
+            CLARIFICATION_RESPONSE,
+            STRATEGY_RESPONSE,
+            CONTENT_RESPONSE,
+            channel_response_with_platforms,
+            SCHEDULING_RESPONSE,
+            ANALYTICS_RESPONSE,
+            REVIEW_RESPONSE,
+            CONTENT_REVISION_RESPONSE,
+        ]
+
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=responses)
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event, budget_entry_store=budget_store)
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        from backend.models.budget import BudgetEntryType
+        entries = await budget_store.list_by_campaign(campaign.id, BudgetEntryType.PLANNED)
+
+        # email(1) + social_media platforms(3) = 4 entries
+        assert len(entries) == 4
+
+        categories = sorted(e.category for e in entries)
+        assert categories == ["email", "social_media:facebook", "social_media:instagram", "social_media:linkedin"]
+
+        # Verify amounts
+        from decimal import Decimal
+        amounts_by_cat = {e.category: e.amount for e in entries}
+        assert amounts_by_cat["email"] == Decimal("3000.00")              # 30% of 10000
+        assert amounts_by_cat["social_media:facebook"] == Decimal("3500.00")   # 50% of 7000
+        assert amounts_by_cat["social_media:instagram"] == Decimal("2100.00")  # 30% of 7000
+        assert amounts_by_cat["social_media:linkedin"] == Decimal("1400.00")   # 20% of 7000
+
+
+class TestSchedulingSurvivesRevision:
+    """Verify that scheduling data is not lost during content revision."""
+
+    @pytest.mark.asyncio
+    async def test_scheduled_dates_preserved_after_content_revision(self, store, brief, events_log, mock_on_event):
+        """Scheduling sub-step sets dates; content revision must preserve them."""
+        campaign = await store.create(brief)
+
+        with patch("backend.orchestration.base_agent.get_llm_service") as mock_get_llm:
+            mock_llm = MagicMock()
+            mock_llm.chat_json = AsyncMock(side_effect=_stage_responses())
+            mock_get_llm.return_value = mock_llm
+
+            coordinator = CoordinatorAgent(store=store, on_event=mock_on_event)
+
+            async def _auto_approve():
+                await asyncio.sleep(0.3)
+                await coordinator.submit_content_approval(
+                    ContentApprovalResponse(
+                        campaign_id=campaign.id,
+                        pieces=[
+                            ContentPieceApproval(piece_index=0, approved=True),
+                            ContentPieceApproval(piece_index=1, approved=True),
+                        ],
+                        reject_campaign=False,
+                    )
+                )
+
+            approve_task = asyncio.create_task(_auto_approve())
+            result = await coordinator.run_pipeline(campaign)
+            await approve_task
+
+        assert result.status == CampaignStatus.APPROVED
+        # Content revision happened
+        assert result.content_revision_count >= 1
+
+        # Scheduling dates from SCHEDULING_RESPONSE must still be present
+        from datetime import date
+        for piece in result.content.pieces:
+            assert piece.scheduled_date is not None, (
+                f"Piece '{piece.content_type}' lost scheduled_date after content revision"
+            )
+            assert isinstance(piece.scheduled_date, date)
+
+        # Verify the specific dates from SCHEDULING_RESPONSE
+        assert result.content.pieces[0].scheduled_date == date.fromisoformat("2026-04-07")
+        assert result.content.pieces[1].scheduled_date == date.fromisoformat("2026-04-14")

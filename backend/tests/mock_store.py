@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Optional
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignComment, CampaignStatus, CommentSection
+from backend.models.budget import BudgetEntry, BudgetEntryType
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 
@@ -518,3 +519,24 @@ class InMemoryCommentStore:
             for c in self._comments.values()
             if c.campaign_id == campaign_id and not c.is_resolved
         )
+
+
+class InMemoryBudgetEntryStore:
+    """Async-compatible in-memory budget entry store for testing."""
+
+    def __init__(self) -> None:
+        self._entries: dict[str, BudgetEntry] = {}
+
+    async def create(self, entry: BudgetEntry) -> BudgetEntry:
+        self._entries[entry.id] = entry
+        return entry
+
+    async def list_by_campaign(
+        self,
+        campaign_id: str,
+        entry_type: BudgetEntryType | None = None,
+    ) -> list[BudgetEntry]:
+        result = [e for e in self._entries.values() if e.campaign_id == campaign_id]
+        if entry_type is not None:
+            result = [e for e in result if e.entry_type == entry_type]
+        return result
