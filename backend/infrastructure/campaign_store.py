@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import case, delete as sa_delete, exists, func, or_, select, update as sa_update
+from sqlalchemy import JSON as SA_JSON, case, delete as sa_delete, exists, func, or_, select, update as sa_update
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
@@ -177,10 +177,10 @@ class CampaignStore:
                     CampaignRow.created_at,
                     CampaignRow.updated_at,
                     func.json_extract_path_text(
-                        CampaignRow.data, "brief", "product_or_service"
+                        CampaignRow.data.cast(SA_JSON), "brief", "product_or_service"
                     ).label("product_or_service"),
                     func.json_extract_path_text(
-                        CampaignRow.data, "brief", "goal"
+                        CampaignRow.data.cast(SA_JSON), "brief", "goal"
                     ).label("goal"),
                 )
                 .order_by(CampaignRow.created_at.desc())
