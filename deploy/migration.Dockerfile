@@ -1,5 +1,5 @@
 # ---------- Migration ----------
-FROM mcr.microsoft.com/mirror/docker/library/python:3.12-slim AS base
+FROM python:3.12-slim AS base
 
 ENV PYTHONUNBUFFERED=1
 
