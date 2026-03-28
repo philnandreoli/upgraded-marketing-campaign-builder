@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON as SA_JSON, case, delete as sa_delete, exists, func, or_, select, update as sa_update
+from sqlalchemy import JSON as SA_JSON, case, cast, delete as sa_delete, exists, func, or_, select, update as sa_update
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
@@ -828,14 +828,15 @@ class CampaignStore:
           ``id``, ``campaign_name``, ``content_json`` (raw JSON string or None).
         """
         async with async_session() as session:
+            data_as_json = cast(CampaignRow.data, SA_JSON)
             result = await session.execute(
                 select(
                     CampaignRow.id,
                     func.json_extract_path_text(
-                        CampaignRow.data, "brief", "product_or_service"
+                        data_as_json, "brief", "product_or_service"
                     ).label("campaign_name"),
                     func.json_extract_path_text(
-                        CampaignRow.data, "content"
+                        data_as_json, "content"
                     ).label("content_json"),
                 )
                 .where(CampaignRow.workspace_id == workspace_id)
