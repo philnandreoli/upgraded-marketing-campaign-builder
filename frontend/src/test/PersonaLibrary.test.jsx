@@ -195,12 +195,35 @@ describe('PersonaLibrary — create', () => {
     });
   });
 
-  it('opens create modal and creates persona on submit', async () => {
+  it('opens freeform modal on New Persona click', async () => {
+    await renderPersonaLibrary({ personas: [] });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /New Persona/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Create your first persona/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Describe Your Persona/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /Structure with AI/i })).toBeInTheDocument();
+  });
+
+  it('structures with AI and creates persona via PersonaEditor', async () => {
+    api.parsePersona.mockResolvedValue({
+      name: 'New Persona',
+      demographics: 'Ages 25-40',
+      psychographics: 'Values convenience',
+      pain_points: 'Limited time',
+      behaviors: 'Mobile-first',
+      channels: 'Social media',
+    });
     api.createPersona.mockResolvedValue({
       ...PERSONA_1,
       id: 'p-new',
       name: 'New Persona',
-      description: 'Fresh persona',
+      description: 'Demographics: Ages 25-40\n\nPsychographics: Values convenience',
     });
 
     await renderPersonaLibrary({ personas: [] });
@@ -209,10 +232,8 @@ describe('PersonaLibrary — create', () => {
       expect(screen.getByRole('button', { name: /New Persona/i })).toBeInTheDocument();
     });
 
-    // Click "Create your first persona" in empty state
     fireEvent.click(screen.getByRole('button', { name: /Create your first persona/i }));
 
-    // Fill form
     await waitFor(() => {
       expect(screen.getByLabelText(/Name \*/i)).toBeInTheDocument();
     });
@@ -221,21 +242,66 @@ describe('PersonaLibrary — create', () => {
       target: { value: 'New Persona' },
     });
     fireEvent.change(screen.getByLabelText(/Description \*/i), {
-      target: { value: 'Fresh persona' },
+      target: { value: 'A tech-savvy millennial.' },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Structure with AI/i }));
+
+    // PersonaEditor should appear with pre-filled structured fields
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Demographics/i)).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/Demographics/i)).toHaveValue('Ages 25-40');
+
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
 
     await waitFor(() => {
-      expect(api.createPersona).toHaveBeenCalledWith('ws-1', {
+      expect(api.createPersona).toHaveBeenCalledWith('ws-1', expect.objectContaining({
         name: 'New Persona',
-        description: 'Fresh persona',
-      });
+      }));
+    });
+  });
+
+  it('allows skipping AI and filling fields manually', async () => {
+    api.createPersona.mockResolvedValue({
+      ...PERSONA_1,
+      id: 'p-new',
+      name: 'Manual Persona',
+      description: 'Demographics: Manual description',
     });
 
-    // Persona should appear in the list
+    await renderPersonaLibrary({ personas: [] });
+
     await waitFor(() => {
-      expect(screen.getByText('New Persona')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /New Persona/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Create your first persona/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Name \*/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Name \*/i), {
+      target: { value: 'Manual Persona' },
+    });
+    fireEvent.change(screen.getByLabelText(/Description \*/i), {
+      target: { value: 'Manual description' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Fill manually/i }));
+
+    // PersonaEditor should open with description in demographics field
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Demographics/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(api.createPersona).toHaveBeenCalledWith('ws-1', expect.objectContaining({
+        name: 'Manual Persona',
+      }));
     });
   });
 });
@@ -245,10 +311,12 @@ describe('PersonaLibrary — edit', () => {
     vi.resetAllMocks();
   });
 
-  it('opens edit modal with current values and updates on submit', async () => {
+  it('opens PersonaEditor for editing and updates on submit', async () => {
+    const updatedDescription = 'Demographics: Ages 25-35, digital native, values convenience.';
     api.updatePersona.mockResolvedValue({
       ...PERSONA_1,
       name: 'Updated Name',
+      description: updatedDescription,
     });
 
     await renderPersonaLibrary({ personas: [PERSONA_1] });
@@ -259,20 +327,21 @@ describe('PersonaLibrary — edit', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
 
+    // PersonaEditor should open — check demographics field is pre-filled from description
     await waitFor(() => {
-      expect(screen.getByLabelText(/Name \*/i)).toHaveValue('Tech-Savvy Millennial');
+      expect(screen.getByLabelText(/Demographics/i)).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText(/Name \*/i), {
+    // Update the name
+    fireEvent.change(screen.getByLabelText(/^Name \*/i), {
       target: { value: 'Updated Name' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
 
     await waitFor(() => {
-      expect(api.updatePersona).toHaveBeenCalledWith('ws-1', 'p-1', {
+      expect(api.updatePersona).toHaveBeenCalledWith('ws-1', 'p-1', expect.objectContaining({
         name: 'Updated Name',
-        description: PERSONA_1.description,
-      });
+      }));
     });
   });
 });

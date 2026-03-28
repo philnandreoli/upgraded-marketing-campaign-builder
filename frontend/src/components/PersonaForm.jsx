@@ -7,18 +7,23 @@ import { useEffect, useState, useRef } from "react";
  *   open        {boolean}   Whether the modal is visible
  *   onClose     {Function}  Called when the user cancels / closes the modal
  *   onSubmit    {Function}  Called with { name, description } on save
+ *   onSkip      {Function}  Optional — if provided, shows a "Skip AI" button
+ *                           to go directly to the structured editor
  *   initial     {{ name?: string, description?: string }}  Pre-fill values for edit mode
  *   loading     {boolean}   Disables the submit button while saving
  *   title       {string}    Modal title (e.g. "Create Persona" or "Edit Persona")
+ *   submitLabel {string}    Label for the primary action button (default: "Save")
  *   error       {string|null}  Error message to display
  */
 export default function PersonaForm({
   open,
   onClose,
   onSubmit,
+  onSkip,
   initial = {},
   loading = false,
   title = "Create Persona",
+  submitLabel = "Save",
   error = null,
 }) {
   if (!open) return null;
@@ -28,15 +33,17 @@ export default function PersonaForm({
       key={`${initial.name ?? ""}-${initial.description ?? ""}`}
       onClose={onClose}
       onSubmit={onSubmit}
+      onSkip={onSkip}
       initial={initial}
       loading={loading}
       title={title}
+      submitLabel={submitLabel}
       error={error}
     />
   );
 }
 
-function PersonaFormInner({ onClose, onSubmit, initial, loading, title, error }) {
+function PersonaFormInner({ onClose, onSubmit, onSkip, initial, loading, title, submitLabel, error }) {
   const [name, setName] = useState(initial.name ?? "");
   const [description, setDescription] = useState(initial.description ?? "");
   const nameRef = useRef(null);
@@ -106,8 +113,18 @@ function PersonaFormInner({ onClose, onSubmit, initial, loading, title, error })
             <button type="button" className="btn btn-outline" onClick={onClose} disabled={loading}>
               Cancel
             </button>
+            {onSkip && (
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => onSkip({ name: name.trim(), description: description.trim() })}
+                disabled={loading || name.trim().length === 0}
+              >
+                Fill manually →
+              </button>
+            )}
             <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
-              {loading ? <><span className="spinner" /> Saving…</> : "Save"}
+              {loading ? <><span className="spinner" /> Processing…</> : (submitLabel || "Save")}
             </button>
           </div>
         </form>
