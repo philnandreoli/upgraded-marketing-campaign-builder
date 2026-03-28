@@ -329,7 +329,6 @@ export default function ContentSection({
                 // Combined card is approved only when both are approved
                 const combinedApproved = effectiveApproved && bodyEffectiveApproved;
                 const combinedRejected = effectiveRejected || bodyEffectiveRejected;
-                const combinedPending = !combinedApproved && !combinedRejected;
                 const combinedBorderColor = combinedApproved
                   ? "var(--color-success)"
                   : combinedRejected

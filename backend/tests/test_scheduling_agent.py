@@ -38,7 +38,7 @@ from backend.models.messages import (
     ContentApprovalResponse,
     ContentPieceApproval,
 )
-from backend.tests.mock_store import InMemoryCampaignStore
+from backend.tests.mock_store import InMemoryCampaignStore, InMemoryBudgetEntryStore
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +330,10 @@ class TestSchedulingCoordinatorIntegration:
         return InMemoryCampaignStore()
 
     @pytest.fixture
+    def budget_store(self):
+        return InMemoryBudgetEntryStore()
+
+    @pytest.fixture
     def brief_with_dates(self):
         return CampaignBrief(
             product_or_service="CloudSync",
@@ -351,7 +355,7 @@ class TestSchedulingCoordinatorIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_valid_agent_output_applies_dates(self, store, brief_with_dates):
+    async def test_valid_agent_output_applies_dates(self, store, budget_store, brief_with_dates):
         """Valid LLM scheduling output is applied to content pieces."""
         campaign = await store.create(brief_with_dates)
 
@@ -369,7 +373,7 @@ class TestSchedulingCoordinatorIntegration:
             ])
             mock_get_llm.return_value = mock_llm
 
-            coordinator = CoordinatorAgent(store=store)
+            coordinator = CoordinatorAgent(store=store, budget_entry_store=budget_store)
             approve = _auto_approve_fn(coordinator, campaign.id)
             approve_task = asyncio.create_task(approve())
             result = await coordinator.run_pipeline(campaign)
@@ -385,7 +389,7 @@ class TestSchedulingCoordinatorIntegration:
         assert result.status == CampaignStatus.APPROVED
 
     @pytest.mark.asyncio
-    async def test_llm_failure_falls_back_to_heuristic(self, store, brief_with_dates):
+    async def test_llm_failure_falls_back_to_heuristic(self, store, budget_store, brief_with_dates):
         """When the scheduling LLM call raises an exception, heuristic seed_schedule runs."""
         campaign = await store.create(brief_with_dates)
 
@@ -403,7 +407,7 @@ class TestSchedulingCoordinatorIntegration:
             ])
             mock_get_llm.return_value = mock_llm
 
-            coordinator = CoordinatorAgent(store=store)
+            coordinator = CoordinatorAgent(store=store, budget_entry_store=budget_store)
             approve = _auto_approve_fn(coordinator, campaign.id)
             approve_task = asyncio.create_task(approve())
             result = await coordinator.run_pipeline(campaign)
@@ -415,7 +419,7 @@ class TestSchedulingCoordinatorIntegration:
         assert result.analytics_plan is not None
 
     @pytest.mark.asyncio
-    async def test_hallucinated_date_falls_back_to_heuristic(self, store, brief_with_dates):
+    async def test_hallucinated_date_falls_back_to_heuristic(self, store, budget_store, brief_with_dates):
         """Scheduling output with an out-of-range date fails validation and falls back."""
         campaign = await store.create(brief_with_dates)
 
@@ -439,7 +443,7 @@ class TestSchedulingCoordinatorIntegration:
             ])
             mock_get_llm.return_value = mock_llm
 
-            coordinator = CoordinatorAgent(store=store)
+            coordinator = CoordinatorAgent(store=store, budget_entry_store=budget_store)
             approve = _auto_approve_fn(coordinator, campaign.id)
             approve_task = asyncio.create_task(approve())
             result = await coordinator.run_pipeline(campaign)
@@ -449,7 +453,7 @@ class TestSchedulingCoordinatorIntegration:
         assert result.status == CampaignStatus.APPROVED
 
     @pytest.mark.asyncio
-    async def test_scheduling_skipped_when_no_dates_in_brief(self, store, brief_no_dates):
+    async def test_scheduling_skipped_when_no_dates_in_brief(self, store, budget_store, brief_no_dates):
         """Scheduling sub-step is skipped entirely when start_date/end_date are absent."""
         campaign = await store.create(brief_no_dates)
 
@@ -469,7 +473,7 @@ class TestSchedulingCoordinatorIntegration:
             ])
             mock_get_llm.return_value = mock_llm
 
-            coordinator = CoordinatorAgent(store=store)
+            coordinator = CoordinatorAgent(store=store, budget_entry_store=budget_store)
             approve = _auto_approve_fn(coordinator, campaign.id)
             approve_task = asyncio.create_task(approve())
             result = await coordinator.run_pipeline(campaign)
@@ -480,14 +484,14 @@ class TestSchedulingCoordinatorIntegration:
         assert mock_llm.chat_json.call_count == 7
 
     @pytest.mark.asyncio
-    async def test_scheduling_skipped_when_channel_plan_missing(self, store, brief_with_dates):
+    async def test_scheduling_skipped_when_channel_plan_missing(self, store, budget_store, brief_with_dates):
         """Scheduling sub-step is skipped when there is no channel plan."""
         campaign = await store.create(brief_with_dates)
 
         # Manually populate content but leave channel_plan = None
         # to simulate a mid-pipeline scenario.
         # We test this directly on the coordinator method.
-        coordinator = CoordinatorAgent(store=store)
+        coordinator = CoordinatorAgent(store=store, budget_entry_store=budget_store)
         campaign.content = CampaignContent(
             theme="Test",
             tone_of_voice="Professional",
@@ -505,10 +509,10 @@ class TestSchedulingCoordinatorIntegration:
         assert result is campaign  # same object returned (no error)
 
     @pytest.mark.asyncio
-    async def test_scheduling_skipped_when_no_content(self, store, brief_with_dates):
+    async def test_scheduling_skipped_when_no_content(self, store, budget_store, brief_with_dates):
         """Scheduling sub-step is skipped when content pieces are absent."""
         campaign = await store.create(brief_with_dates)
-        coordinator = CoordinatorAgent(store=store)
+        coordinator = CoordinatorAgent(store=store, budget_entry_store=budget_store)
 
         campaign.content = None
         campaign.channel_plan = ChannelPlan(
