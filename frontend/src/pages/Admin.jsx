@@ -122,10 +122,15 @@ export default function Admin() {
   const navigate = useNavigate();
   const confirm = useConfirm();
 
-  // Pagination state
+  // Users pagination state
   const PAGE_SIZE = 25;
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+
+  // Campaigns pagination state
+  const CAMPAIGNS_PAGE_SIZE = 50;
+  const [campaignsPage, setCampaignsPage] = useState(1);
+  const [campaignsTotalCount, setCampaignsTotalCount] = useState(0);
 
   // Entra ID directory search state
   const [entraSearch, setEntraSearch] = useState("");
@@ -153,11 +158,14 @@ export default function Admin() {
     }
   }, []);
 
-  const fetchCampaigns = useCallback(async () => {
+  const fetchCampaigns = useCallback(async (pg = 1) => {
     setLoadingCampaigns(true);
     setCampaignsError(null);
     try {
-      setCampaigns(await listAllCampaigns());
+      const offset = (pg - 1) * CAMPAIGNS_PAGE_SIZE;
+      const { campaigns: data, totalCount: total } = await listAllCampaigns({ limit: CAMPAIGNS_PAGE_SIZE, offset });
+      setCampaigns(data);
+      setCampaignsTotalCount(total);
     } catch (err) {
       setCampaignsError(err.message);
     } finally {
@@ -821,6 +829,44 @@ export default function Admin() {
               </div>
             </div>
           )}
+
+            {/* Campaigns pagination controls */}
+            {!loadingCampaigns && !campaignsError && campaignsTotalCount > 0 && (() => {
+              const totalPages = Math.ceil(campaignsTotalCount / CAMPAIGNS_PAGE_SIZE);
+              return (
+                <div style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: "1rem",
+                  fontSize: "0.875rem",
+                  color: "var(--color-text-muted)",
+                }}>
+                  <span>
+                    Showing {(campaignsPage - 1) * CAMPAIGNS_PAGE_SIZE + 1}–{Math.min(campaignsPage * CAMPAIGNS_PAGE_SIZE, campaignsTotalCount)} of {campaignsTotalCount} campaigns
+                  </span>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <button
+                      className="btn btn-outline"
+                      style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem" }}
+                      disabled={campaignsPage <= 1}
+                      onClick={() => { const p = campaignsPage - 1; setCampaignsPage(p); fetchCampaigns(p); }}
+                    >
+                      Previous
+                    </button>
+                    <span>Page {campaignsPage} of {totalPages}</span>
+                    <button
+                      className="btn btn-outline"
+                      style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem" }}
+                      disabled={campaignsPage >= totalPages}
+                      onClick={() => { const p = campaignsPage + 1; setCampaignsPage(p); fetchCampaigns(p); }}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
         </>
       )}
 

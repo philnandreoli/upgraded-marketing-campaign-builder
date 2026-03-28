@@ -20,6 +20,20 @@ export class RateLimitError extends ApiError {
   }
 }
 
+function buildErrorDetail(status, statusText, url, body) {
+  let detail = body?.detail ?? statusText;
+  if (import.meta.env.DEV) {
+    const extra = body?.traceback ?? body?.message ?? body?.error;
+    if (extra && extra !== detail) {
+      detail = `${detail}\n\n${extra}`;
+    } else if (body && !body.detail && typeof body === "object") {
+      detail = `${statusText} (${status}): ${JSON.stringify(body)}`;
+    }
+    console.error(`[API ${status}] ${url}`, body ?? detail);
+  }
+  return detail;
+}
+
 async function handleResponse(res) {
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
@@ -30,7 +44,7 @@ async function handleResponse(res) {
     let body = null;
     try {
       body = await res.json();
-      detail = body.detail ?? detail;
+      detail = buildErrorDetail(res.status, res.statusText, res.url, body);
     } catch { /* response wasn't JSON */ }
     throw new ApiError(res.status, detail, body);
   }
@@ -48,7 +62,7 @@ async function handleResponseWithHeaders(res) {
     let body = null;
     try {
       body = await res.json();
-      detail = body.detail ?? detail;
+      detail = buildErrorDetail(res.status, res.statusText, res.url, body);
     } catch { /* response wasn't JSON */ }
     throw new ApiError(res.status, detail, body);
   }

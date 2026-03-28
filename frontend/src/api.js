@@ -149,7 +149,16 @@ export const deactivateUser = (userId) =>
 export const reactivateUser = (userId) =>
   request("POST", `/api/admin/users/${encodeURIComponent(userId)}/reactivate`);
 
-export const listAllCampaigns = () => request("GET", "/api/admin/campaigns");
+export const listAllCampaigns = async ({ limit = 50, offset = 0 } = {}) => {
+  const params = new URLSearchParams();
+  params.set("limit", limit);
+  params.set("offset", offset);
+  const { data, headers } = await requestWithHeaders("GET", `/api/admin/campaigns?${params}`);
+  return {
+    campaigns: data,
+    totalCount: parseInt(headers.get("X-Total-Count") ?? "0", 10),
+  };
+};
 
 export const searchEntraUsers = (search) =>
   request("GET", `/api/admin/entra/users?search=${encodeURIComponent(search)}`);
