@@ -14,6 +14,7 @@ import WorkspaceList from "./pages/WorkspaceList.jsx";
 import WorkspaceDetail from "./pages/WorkspaceDetail.jsx";
 import WorkspaceSettings from "./pages/WorkspaceSettings.jsx";
 import WorkspaceCalendar from "./pages/WorkspaceCalendar.jsx";
+import PersonaLibrary from "./pages/PersonaLibrary.jsx";
 import useWebSocket from "./hooks/useWebSocket.js";
 import AppNavbar from "./components/AppNavbar.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -126,6 +127,7 @@ function AuthenticatedApp() {
             <Route path="/workspaces/:id" element={<WorkspaceDetail events={events} />} />
             <Route path="/workspaces/:id/calendar" element={<WorkspaceCalendar />} />
             <Route path="/workspaces/:id/settings" element={<RequireBuilder><WorkspaceSettings /></RequireBuilder>} />
+            <Route path="/workspaces/:id/personas" element={<PersonaLibrary />} />
             <Route path="/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
             <Route path="/workspaces/:workspaceId/campaigns/new" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />
             <Route path="/workspaces/:workspaceId/campaigns/:campaignId/edit" element={<RequireBuilder><NewCampaign /></RequireBuilder>} />

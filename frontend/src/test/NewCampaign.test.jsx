@@ -56,6 +56,7 @@ const TEAM_WS_CONTRIB = { id: 'ws-contrib', name: 'Contrib WS', is_personal: fal
 function renderNewCampaign({ initialPath = '/new', isAdmin = false, workspaces = [], imageGenerationAvailable = false } = {}) {
   api.getMe.mockResolvedValue(makeMeResponse({ isAdmin, imageGenerationAvailable }));
   api.listWorkspaces.mockResolvedValue(workspaces);
+  api.listPersonas.mockResolvedValue({ items: [] });
 
   return render(
     <MemoryRouter initialEntries={[initialPath]}>

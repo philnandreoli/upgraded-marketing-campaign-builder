@@ -1,4 +1,40 @@
-export default function StrategySection({ data, error, onOpenComments, unresolvedCount = 0 }) {
+import { useState } from "react";
+import PersonaForm from "./PersonaForm";
+
+export default function StrategySection({ data, error, onOpenComments, unresolvedCount = 0, workspaceId: _workspaceId, onSavePersona, canSavePersona = false }) {
+  const [personaFormOpen, setPersonaFormOpen] = useState(false);
+  const [personaFormLoading, setPersonaFormLoading] = useState(false);
+  const [personaFormError, setPersonaFormError] = useState(null);
+  const [savedMessage, setSavedMessage] = useState(null);
+
+  const audience = data?.target_audience || {};
+
+  // Build a prefill description from audience insights
+  const buildPersonaDescription = () => {
+    const parts = [];
+    if (audience.demographics) parts.push(`Demographics: ${audience.demographics}`);
+    if (audience.psychographics) parts.push(`Psychographics: ${audience.psychographics}`);
+    if (audience.pain_points?.length > 0) parts.push(`Pain Points: ${audience.pain_points.join("; ")}`);
+    if (audience.personas?.length > 0) parts.push(`Personas: ${audience.personas.join("; ")}`);
+    return parts.join("\n\n");
+  };
+
+  const handleSavePersona = async ({ name, description }) => {
+    if (!onSavePersona) return;
+    setPersonaFormLoading(true);
+    setPersonaFormError(null);
+    try {
+      await onSavePersona({ name, description });
+      setPersonaFormOpen(false);
+      setSavedMessage(`Persona "${name}" saved!`);
+      setTimeout(() => setSavedMessage(null), 3000);
+    } catch (err) {
+      setPersonaFormError(err.message || "Failed to save persona.");
+    } finally {
+      setPersonaFormLoading(false);
+    }
+  };
+
   const commentButton = onOpenComments ? (
     <button
       className="section-comment-btn"
@@ -42,8 +78,6 @@ export default function StrategySection({ data, error, onOpenComments, unresolve
       </div>
     );
   }
-
-  const audience = data.target_audience || {};
 
   return (
     <div className="card">
@@ -125,6 +159,24 @@ export default function StrategySection({ data, error, onOpenComments, unresolve
               </ul>
             </>
           )}
+          {canSavePersona && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ marginTop: "0.75rem", fontSize: "0.82rem" }}
+              onClick={() => {
+                setPersonaFormError(null);
+                setPersonaFormOpen(true);
+              }}
+            >
+              👤 Save as Persona
+            </button>
+          )}
+          {savedMessage && (
+            <p style={{ color: "var(--color-success, #22c55e)", fontSize: "0.82rem", marginTop: "0.5rem" }}>
+              ✓ {savedMessage}
+            </p>
+          )}
         </div>
       )}
 
@@ -134,6 +186,16 @@ export default function StrategySection({ data, error, onOpenComments, unresolve
           <p className="strategy-sm-text">{data.competitive_landscape}</p>
         </div>
       )}
+
+      <PersonaForm
+        open={personaFormOpen}
+        onClose={() => setPersonaFormOpen(false)}
+        onSubmit={handleSavePersona}
+        initial={{ name: "", description: buildPersonaDescription() }}
+        loading={personaFormLoading}
+        title="Save as Persona"
+        error={personaFormError}
+      />
     </div>
   );
 }
