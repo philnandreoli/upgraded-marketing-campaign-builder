@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getCampaign, listImageAssets, listComments } from "../api";
+import { getCampaign, listImageAssets, listComments, createPersona } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import usePolling from "../hooks/usePolling";
 import StrategySection from "../components/StrategySection.jsx";
@@ -371,6 +371,11 @@ export default function CampaignDetail() {
             error={errors.strategy}
             onOpenComments={() => openSectionComments("strategy")}
             unresolvedCount={sectionCommentCounts.strategy || 0}
+            workspaceId={effectiveWorkspaceId}
+            canSavePersona={!isViewer && !!effectiveWorkspaceId}
+            onSavePersona={({ name, description }) =>
+              createPersona(effectiveWorkspaceId, { name, description })
+            }
           />
         );
       case "content":

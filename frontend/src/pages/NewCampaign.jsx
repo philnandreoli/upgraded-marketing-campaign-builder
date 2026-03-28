@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { createCampaign, getCampaign, updateCampaignDraft, launchCampaign } from "../api";
+import { createCampaign, getCampaign, updateCampaignDraft, launchCampaign, listPersonas } from "../api";
 import DatePicker from "../components/DatePicker";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
@@ -171,6 +171,8 @@ export default function NewCampaign() {
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
   const [generateImages, setGenerateImages] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(routeWorkspaceId ?? "");
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState([]);
+  const [availablePersonas, setAvailablePersonas] = useState([]);
 
   // Draft state
   const [campaignId, setCampaignId] = useState(routeCampaignId ?? null);
@@ -202,6 +204,17 @@ export default function NewCampaign() {
     }
   }, [creatableWorkspaces, personalWorkspace, routeWorkspaceId, searchParams]);
 
+  // Load personas for the selected workspace
+  useEffect(() => {
+    if (!selectedWorkspaceId) {
+      setAvailablePersonas([]);
+      return;
+    }
+    listPersonas(selectedWorkspaceId)
+      .then((res) => setAvailablePersonas(res.items ?? []))
+      .catch(() => setAvailablePersonas([]));
+  }, [selectedWorkspaceId]);
+
   // Resume an existing draft
   useEffect(() => {
     if (!routeCampaignId || !routeWorkspaceId) return;
@@ -225,6 +238,7 @@ export default function NewCampaign() {
         setSelectedChannels(b.selected_channels ?? []);
         setSelectedPlatforms(b.social_media_platforms ?? []);
         setGenerateImages(b.generate_images ?? false);
+        setSelectedPersonaIds(b.persona_ids ?? []);
         setCurrentStep(campaign.wizard_step > 0 ? campaign.wizard_step : 1);
       } catch {
         setError("Failed to load draft campaign.");
@@ -389,6 +403,7 @@ export default function NewCampaign() {
         } else if (step === 4) {
           Object.assign(patchBody, {
             additional_context: form.additional_context,
+            persona_ids: selectedPersonaIds,
           });
         }
         await updateCampaignDraft(selectedWorkspaceId, campaignId, patchBody);
@@ -672,6 +687,16 @@ export default function NewCampaign() {
     </div>
   );
 
+  const togglePersona = (personaId) => {
+    setSelectedPersonaIds((prev) => {
+      const next = prev.includes(personaId)
+        ? prev.filter((id) => id !== personaId)
+        : [...prev, personaId];
+      scheduleAutoSave({ persona_ids: next });
+      return next;
+    });
+  };
+
   const renderStep4 = () => (
     <div className="wizard-step-card">
       <h2 className="wizard-step-title">
@@ -679,6 +704,35 @@ export default function NewCampaign() {
         <span className="wizard-optional-badge">optional</span>
       </h2>
       <p className="wizard-step-subtitle">Add extra context — target markets, brand guidelines, constraints, or competitors.</p>
+
+      {availablePersonas.length > 0 && (
+        <div className="form-group">
+          <label>Target Personas</label>
+          <p style={{ fontSize: "0.78rem", color: "var(--color-text-muted)", margin: "0 0 0.5rem" }}>
+            Optionally select personas from your library to guide the AI pipeline.
+          </p>
+          <div className="channel-picker">
+            {availablePersonas.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`channel-chip${selectedPersonaIds.includes(p.id) ? " selected" : ""}`}
+                onClick={() => togglePersona(p.id)}
+                title={p.description}
+              >
+                <span className="channel-chip-icon" aria-hidden="true">👤</span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          {selectedPersonaIds.length > 0 && (
+            <p style={{ fontSize: "0.78rem", color: "var(--color-primary-hover)", marginTop: "0.4rem" }}>
+              {selectedPersonaIds.length} persona{selectedPersonaIds.length !== 1 ? "s" : ""} selected
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="form-group">
         <label>Additional Context</label>
         <textarea
@@ -708,6 +762,9 @@ export default function NewCampaign() {
       : null;
     const platformsDisplay = selectedChannels.includes("social_media") && selectedPlatforms.length > 0
       ? selectedPlatforms.map((p) => SOCIAL_MEDIA_PLATFORMS.find((o) => o.value === p)?.label ?? p).join(", ")
+      : null;
+    const personasDisplay = selectedPersonaIds.length > 0
+      ? selectedPersonaIds.map((pid) => availablePersonas.find((p) => p.id === pid)?.name ?? pid).join(", ")
       : null;
 
     return (
@@ -783,6 +840,19 @@ export default function NewCampaign() {
             </div>
           )}
         </div>
+
+        {personasDisplay && (
+          <div className="wizard-review-section">
+            <div className="wizard-review-section-header">
+              <span className="wizard-review-section-title">Personas</span>
+              <button className="wizard-review-edit-btn" onClick={() => goToStep(4)}>Edit</button>
+            </div>
+            <div className="wizard-review-field">
+              <span className="wizard-review-field-label">Selected</span>
+              <span className="wizard-review-field-value">{personasDisplay}</span>
+            </div>
+          </div>
+        )}
 
         <div className="wizard-review-section">
           <div className="wizard-review-section-header">

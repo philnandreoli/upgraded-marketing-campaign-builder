@@ -272,6 +272,33 @@ export const getWorkspaceBudgetOverview = (workspaceId, { alertThresholdPct = 0.
   return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/budget-overview?${params}`);
 };
 
+// ---------------------------------------------------------------------------
+// Persona API
+// ---------------------------------------------------------------------------
+
+export const listPersonas = (workspaceId, { limit = 50, offset = 0 } = {}) => {
+  const params = new URLSearchParams();
+  params.set("limit", limit);
+  params.set("offset", offset);
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas?${params}`);
+};
+
+export const getPersona = (workspaceId, personaId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas/${encodeURIComponent(personaId)}`);
+
+export const createPersona = (workspaceId, { name, description }) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas`, {
+    body: { name, description },
+  });
+
+export const updatePersona = (workspaceId, personaId, { name, description }) =>
+  request("PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas/${encodeURIComponent(personaId)}`, {
+    body: { name, description },
+  });
+
+export const deletePersona = (workspaceId, personaId) =>
+  request("DELETE", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas/${encodeURIComponent(personaId)}`);
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

@@ -268,6 +268,12 @@ export default function WorkspaceDetail({ events = [] }) {
           </div>
           <div className="ws-detail-actions">
             <Link
+              to={`/workspaces/${workspace.id}/personas`}
+              className="btn btn-outline"
+            >
+              👤 Personas
+            </Link>
+            <Link
               to={`/workspaces/${workspace.id}/calendar`}
               className="btn btn-outline"
             >
