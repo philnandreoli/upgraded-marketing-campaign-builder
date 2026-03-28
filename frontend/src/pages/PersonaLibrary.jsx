@@ -12,7 +12,8 @@ import { useUser } from "../UserContext";
 import { useConfirm } from "../ConfirmDialogContext";
 import { SkeletonCard } from "../components/Skeleton";
 import PersonaForm from "../components/PersonaForm";
-import PersonaEditor, { parseDescriptionToFields } from "../components/PersonaEditor";
+import PersonaEditor from "../components/PersonaEditor";
+import { parseDescriptionToFields } from "../utils/personaUtils";
 
 function formatDate(iso) {
   if (!iso) return "";
