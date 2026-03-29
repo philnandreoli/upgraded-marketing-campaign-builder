@@ -304,6 +304,51 @@ export const parsePersona = (workspaceId, { name, description }) =>
     body: { name, description },
   });
 
+// ---------------------------------------------------------------------------
+// Clone & Template API
+// ---------------------------------------------------------------------------
+
+export const cloneCampaign = (workspaceId, campaignId, { depth = "brief", targetWorkspaceId = null, parameterOverrides = null } = {}) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/clone`, {
+    body: { depth, target_workspace_id: targetWorkspaceId, parameter_overrides: parameterOverrides },
+  });
+
+export const markAsTemplate = (workspaceId, campaignId, config) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/mark-template`, { body: config });
+
+export const updateTemplate = (templateId, config) =>
+  request("PATCH", `/api/templates/${encodeURIComponent(templateId)}`, { body: config });
+
+export const unmarkTemplate = (templateId) =>
+  request("DELETE", `/api/templates/${encodeURIComponent(templateId)}`);
+
+export const listTemplates = ({ category, tags, featured, visibility, search, limit = 20, offset = 0 } = {}) => {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (tags) params.set("tags", tags);
+  if (featured !== undefined) params.set("featured", featured);
+  if (visibility) params.set("visibility", visibility);
+  if (search) params.set("search", search);
+  params.set("limit", limit);
+  params.set("offset", offset);
+  return request("GET", `/api/templates?${params}`);
+};
+
+export const getTemplatePreview = (id) =>
+  request("GET", `/api/templates/${encodeURIComponent(id)}/preview`);
+
+export const getTemplateRecommendations = ({ goal, product, channels, budget } = {}) => {
+  const params = new URLSearchParams();
+  if (goal) params.set("goal", goal);
+  if (product) params.set("product", product);
+  if (channels) params.set("channels", channels);
+  if (budget) params.set("budget", budget);
+  return request("GET", `/api/templates/recommend?${params}`);
+};
+
+export const getAdminTemplateAnalytics = () =>
+  request("GET", "/api/admin/templates/analytics");
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

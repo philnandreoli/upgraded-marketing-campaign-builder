@@ -265,10 +265,24 @@ class CampaignRow(Base):
     updated_at = Column(DateTime, nullable=False)
     workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True, index=True)
     version = Column(Integer, nullable=False, default=1)
+    is_template = Column(Boolean, nullable=False, default=False)
+    template_category = Column(String, nullable=True)
+    template_tags = Column(JSON, nullable=True)
+    template_description = Column(Text, nullable=True)
+    template_visibility = Column(String, nullable=True, default="workspace")
+    template_featured = Column(Boolean, nullable=False, default=False)
+    template_version = Column(Integer, nullable=False, default=1)
+    template_parameters = Column(JSON, nullable=True)
+    cloned_from_campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=True)
+    cloned_from_template_version = Column(Integer, nullable=True)
+    clone_depth = Column(String, nullable=True)
 
     __table_args__ = (
         Index("ix_campaigns_workspace_created", "workspace_id", text("created_at DESC")),
         Index("ix_campaigns_workspace_status", "workspace_id", "status"),
+        Index("ix_campaigns_is_template", "is_template"),
+        Index("ix_campaigns_template_visibility", "template_visibility"),
+        Index("ix_campaigns_template_category", "template_category"),
     )
 
 

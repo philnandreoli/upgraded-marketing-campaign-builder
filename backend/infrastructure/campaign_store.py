@@ -10,13 +10,25 @@ simply ``await`` these methods.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON as SA_JSON, case, cast, delete as sa_delete, exists, func, or_, select, update as sa_update
+from sqlalchemy import (
+    JSON as SA_JSON,
+    Float,
+    String,
+    case,
+    cast,
+    delete as sa_delete,
+    exists,
+    func,
+    or_,
+    select,
+    update as sa_update,
+)
+from sqlalchemy.orm import aliased
 
-from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, TemplateVisibility
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from backend.core.exceptions import ConcurrentUpdateError
@@ -32,6 +44,27 @@ from backend.infrastructure.database import (
 
 class CampaignStore:
     """Campaign repository backed by PostgreSQL."""
+
+    @staticmethod
+    def _campaign_row_values(campaign: Campaign) -> dict[str, Any]:
+        """Return flattened CampaignRow values that mirror denormalized columns."""
+        return {
+            "status": campaign.status.value,
+            "workspace_id": campaign.workspace_id,
+            "data": campaign.model_dump_json(),
+            "updated_at": campaign.updated_at,
+            "is_template": campaign.is_template,
+            "template_category": campaign.template_category,
+            "template_tags": campaign.template_tags,
+            "template_description": campaign.template_description,
+            "template_visibility": campaign.template_visibility.value,
+            "template_featured": campaign.template_featured,
+            "template_version": campaign.template_version,
+            "template_parameters": [p.model_dump() for p in campaign.template_parameters],
+            "cloned_from_campaign_id": campaign.cloned_from_campaign_id,
+            "cloned_from_template_version": campaign.cloned_from_template_version,
+            "clone_depth": campaign.clone_depth,
+        }
 
     # ------------------------------------------------------------------
     # Campaign CRUD — all async
@@ -53,11 +86,8 @@ class CampaignStore:
         row = CampaignRow(
             id=campaign.id,
             owner_id=campaign.owner_id,
-            workspace_id=campaign.workspace_id,
-            status=campaign.status.value,
-            data=campaign.model_dump_json(),
+            **self._campaign_row_values(campaign),
             created_at=campaign.created_at,
-            updated_at=campaign.updated_at,
             version=campaign.version,
         )
         async with async_session() as session:
@@ -103,10 +133,7 @@ class CampaignStore:
                     CampaignRow.version == campaign.version,
                 )
                 .values(
-                    status=campaign.status.value,
-                    workspace_id=campaign.workspace_id,
-                    data=campaign.model_dump_json(),
-                    updated_at=campaign.updated_at,
+                    **self._campaign_row_values(campaign),
                     version=campaign.version + 1,
                 )
             )
@@ -119,11 +146,8 @@ class CampaignStore:
                     row = CampaignRow(
                         id=campaign.id,
                         owner_id=campaign.owner_id,
-                        workspace_id=campaign.workspace_id,
-                        status=campaign.status.value,
-                        data=campaign.model_dump_json(),
+                        **self._campaign_row_values(campaign),
                         created_at=campaign.created_at,
-                        updated_at=campaign.updated_at,
                         version=campaign.version,
                     )
                     session.add(row)
@@ -697,6 +721,323 @@ class CampaignStore:
             )
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows], total
+
+    async def list_templates(
+        self,
+        user_id: Optional[str],
+        workspace_ids: list[str],
+        filters: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return paginated template summaries visible to the current user."""
+        limit = int(filters.get("limit", 20))
+        offset = int(filters.get("offset", 0))
+        is_admin = bool(filters.get("is_admin", False))
+
+        clone_counts = (
+            select(
+                CampaignRow.cloned_from_campaign_id.label("template_id"),
+                func.count(CampaignRow.id).label("clone_count"),
+            )
+            .where(CampaignRow.cloned_from_campaign_id.is_not(None))
+            .group_by(CampaignRow.cloned_from_campaign_id)
+            .subquery()
+        )
+
+        brief_json = cast(CampaignRow.data, SA_JSON)
+        template_query = (
+            select(
+                CampaignRow.id,
+                CampaignRow.template_category,
+                CampaignRow.template_tags,
+                CampaignRow.template_description,
+                CampaignRow.template_visibility,
+                CampaignRow.template_featured,
+                CampaignRow.template_version,
+                CampaignRow.created_at,
+                CampaignRow.updated_at,
+                func.json_extract_path_text(
+                    brief_json, "brief", "product_or_service"
+                ).label("name"),
+                func.coalesce(clone_counts.c.clone_count, 0).label("clone_count"),
+                CampaignRow.data,
+            )
+            .outerjoin(clone_counts, clone_counts.c.template_id == CampaignRow.id)
+            .where(CampaignRow.is_template.is_(True))
+        )
+
+        if not is_admin:
+            visibility_filters: list[Any] = [
+                CampaignRow.template_visibility == TemplateVisibility.ORGANIZATION.value
+            ]
+            if workspace_ids:
+                visibility_filters.append(CampaignRow.workspace_id.in_(workspace_ids))
+            template_query = template_query.where(or_(*visibility_filters))
+
+        category = filters.get("category")
+        if category:
+            template_query = template_query.where(CampaignRow.template_category == category)
+
+        featured = filters.get("featured")
+        if featured is not None:
+            template_query = template_query.where(CampaignRow.template_featured.is_(bool(featured)))
+
+        visibility = filters.get("visibility")
+        if visibility:
+            template_query = template_query.where(CampaignRow.template_visibility == visibility)
+
+        search = filters.get("search")
+        if search:
+            pattern = f"%{search.strip()}%"
+            template_query = template_query.where(
+                or_(
+                    CampaignRow.template_description.ilike(pattern),
+                    func.json_extract_path_text(brief_json, "brief", "product_or_service").ilike(pattern),
+                )
+            )
+
+        tags = [t for t in (filters.get("tags") or []) if t]
+        for tag in tags:
+            template_query = template_query.where(
+                cast(CampaignRow.template_tags, String).ilike(f'%"{tag}"%')
+            )
+
+        async with async_session() as session:
+            count_result = await session.execute(
+                select(func.count()).select_from(template_query.subquery())
+            )
+            total = count_result.scalar() or 0
+
+            result = await session.execute(
+                template_query
+                .order_by(
+                    CampaignRow.template_featured.desc(),
+                    CampaignRow.updated_at.desc(),
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+            rows = result.all()
+            items: list[dict[str, Any]] = []
+            for row in rows:
+                avg_brand_score: Optional[float] = None
+                if row.data:
+                    campaign = Campaign.model_validate_json(row.data)
+                    if campaign.review is not None:
+                        avg_brand_score = campaign.review.brand_consistency_score
+                items.append(
+                    {
+                        "id": row.id,
+                        "name": row.name or "",
+                        "category": row.template_category,
+                        "tags": row.template_tags or [],
+                        "description": row.template_description,
+                        "visibility": row.template_visibility,
+                        "featured": bool(row.template_featured),
+                        "version": int(row.template_version or 1),
+                        "clone_count": int(row.clone_count or 0),
+                        "created_at": row.created_at,
+                        "avg_brand_score": avg_brand_score,
+                    }
+                )
+            return items, total
+
+    async def get_template_stats(self, template_id: str) -> dict[str, Any]:
+        """Return aggregate clone statistics for a single template."""
+        data_as_json = cast(CampaignRow.data, SA_JSON)
+        brand_score = cast(
+            func.nullif(
+                func.json_extract_path_text(data_as_json, "review", "brand_consistency_score"),
+                "",
+            ),
+            Float,
+        )
+
+        async with async_session() as session:
+            result = await session.execute(
+                select(
+                    func.count(CampaignRow.id).label("clone_count"),
+                    func.sum(
+                        case(
+                            (CampaignRow.status == CampaignStatus.APPROVED.value, 1),
+                            else_=0,
+                        )
+                    ).label("approved_count"),
+                    func.avg(brand_score).label("avg_brand_score"),
+                    func.min(CampaignRow.created_at).label("first_clone_date"),
+                    func.max(CampaignRow.created_at).label("last_clone_date"),
+                ).where(CampaignRow.cloned_from_campaign_id == template_id)
+            )
+            row = result.one()
+
+        return {
+            "template_id": template_id,
+            "clone_count": int(row.clone_count or 0),
+            "approved_count": int(row.approved_count or 0),
+            "avg_brand_score": float(row.avg_brand_score) if row.avg_brand_score is not None else None,
+            "first_clone_date": row.first_clone_date,
+            "last_clone_date": row.last_clone_date,
+        }
+
+    async def get_template_analytics(self) -> dict[str, Any]:
+        """Return admin dashboard analytics for template adoption and performance."""
+        clone_row = aliased(CampaignRow)
+        template_row = aliased(CampaignRow)
+
+        clone_data_as_json = cast(clone_row.data, SA_JSON)
+        clone_brand_score = cast(
+            func.nullif(
+                func.json_extract_path_text(clone_data_as_json, "review", "brand_consistency_score"),
+                "",
+            ),
+            Float,
+        )
+
+        now = datetime.utcnow()
+        start_month = datetime(now.year, now.month, 1)
+        for _ in range(11):
+            if start_month.month == 1:
+                start_month = datetime(start_month.year - 1, 12, 1)
+            else:
+                start_month = datetime(start_month.year, start_month.month - 1, 1)
+
+        month_keys: list[str] = []
+        cursor = start_month
+        for _ in range(12):
+            month_keys.append(cursor.strftime("%Y-%m"))
+            if cursor.month == 12:
+                cursor = datetime(cursor.year + 1, 1, 1)
+            else:
+                cursor = datetime(cursor.year, cursor.month + 1, 1)
+
+        async with async_session() as session:
+            total_templates_result = await session.execute(
+                select(func.count(CampaignRow.id)).where(CampaignRow.is_template.is_(True))
+            )
+            total_templates = int(total_templates_result.scalar() or 0)
+
+            total_clones_result = await session.execute(
+                select(func.count(CampaignRow.id)).where(CampaignRow.cloned_from_campaign_id.is_not(None))
+            )
+            total_clones = int(total_clones_result.scalar() or 0)
+
+            avg_brand_result = await session.execute(
+                select(func.avg(clone_brand_score)).where(clone_row.cloned_from_campaign_id.is_not(None))
+            )
+            avg_brand_score = avg_brand_result.scalar()
+
+            popular_category_result = await session.execute(
+                select(
+                    template_row.template_category.label("category"),
+                    func.count(clone_row.id).label("clone_count"),
+                )
+                .join(clone_row, clone_row.cloned_from_campaign_id == template_row.id)
+                .where(
+                    template_row.is_template.is_(True),
+                    template_row.template_category.is_not(None),
+                )
+                .group_by(template_row.template_category)
+                .order_by(func.count(clone_row.id).desc(), template_row.template_category.asc())
+                .limit(1)
+            )
+            popular_category_row = popular_category_result.first()
+            most_popular_category = popular_category_row.category if popular_category_row is not None else None
+
+            template_data_as_json = cast(template_row.data, SA_JSON)
+            top_templates_result = await session.execute(
+                select(
+                    template_row.id.label("template_id"),
+                    func.json_extract_path_text(
+                        template_data_as_json, "brief", "product_or_service"
+                    ).label("template_name"),
+                    template_row.template_category.label("category"),
+                    func.count(clone_row.id).label("clone_count"),
+                    func.sum(
+                        case(
+                            (clone_row.status == CampaignStatus.APPROVED.value, 1),
+                            else_=0,
+                        )
+                    ).label("approved_count"),
+                    func.avg(clone_brand_score).label("avg_brand_score"),
+                )
+                .outerjoin(clone_row, clone_row.cloned_from_campaign_id == template_row.id)
+                .where(template_row.is_template.is_(True))
+                .group_by(template_row.id, template_row.data, template_row.template_category)
+                .order_by(func.count(clone_row.id).desc(), template_row.created_at.desc())
+                .limit(10)
+            )
+            top_templates_rows = top_templates_result.all()
+
+            monthly_trends_result = await session.execute(
+                select(
+                    func.to_char(func.date_trunc("month", CampaignRow.created_at), "YYYY-MM").label("month"),
+                    func.count(CampaignRow.id).label("clone_count"),
+                )
+                .where(
+                    CampaignRow.cloned_from_campaign_id.is_not(None),
+                    CampaignRow.created_at >= start_month,
+                )
+                .group_by(func.date_trunc("month", CampaignRow.created_at))
+                .order_by(func.date_trunc("month", CampaignRow.created_at).asc())
+            )
+            monthly_rows = monthly_trends_result.all()
+            monthly_counts = {row.month: int(row.clone_count or 0) for row in monthly_rows}
+
+            workspace_result = await session.execute(
+                select(
+                    CampaignRow.workspace_id,
+                    WorkspaceRow.name.label("workspace_name"),
+                    func.count(CampaignRow.id).label("clone_count"),
+                )
+                .outerjoin(WorkspaceRow, WorkspaceRow.id == CampaignRow.workspace_id)
+                .where(
+                    CampaignRow.cloned_from_campaign_id.is_not(None),
+                    CampaignRow.workspace_id.is_not(None),
+                )
+                .group_by(CampaignRow.workspace_id, WorkspaceRow.name)
+                .order_by(func.count(CampaignRow.id).desc())
+                .limit(10)
+            )
+            workspace_rows = workspace_result.all()
+
+        top_templates: list[dict[str, Any]] = []
+        for row in top_templates_rows:
+            clone_count = int(row.clone_count or 0)
+            approved_count = int(row.approved_count or 0)
+            success_rate = float(approved_count / clone_count) if clone_count > 0 else 0.0
+            top_templates.append(
+                {
+                    "template_id": row.template_id,
+                    "template_name": row.template_name or "",
+                    "category": row.category,
+                    "clone_count": clone_count,
+                    "success_rate": success_rate,
+                    "avg_brand_score": float(row.avg_brand_score) if row.avg_brand_score is not None else None,
+                }
+            )
+
+        monthly_trends = [
+            {"month": month, "clone_count": monthly_counts.get(month, 0)}
+            for month in month_keys
+        ]
+
+        workspace_adoption = [
+            {
+                "workspace_id": row.workspace_id,
+                "workspace_name": row.workspace_name,
+                "clone_count": int(row.clone_count or 0),
+            }
+            for row in workspace_rows
+        ]
+
+        return {
+            "total_templates": total_templates,
+            "total_clones": total_clones,
+            "most_popular_category": most_popular_category,
+            "avg_brand_score": float(avg_brand_score) if avg_brand_score is not None else None,
+            "top_templates": top_templates,
+            "monthly_trends": monthly_trends,
+            "workspace_adoption": workspace_adoption,
+        }
 
     async def get_personal_workspace(self, user_id: str) -> Optional[Workspace]:
         """Return the personal workspace for *user_id*, or ``None`` if not found."""

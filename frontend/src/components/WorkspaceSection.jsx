@@ -46,6 +46,7 @@ export default function WorkspaceSection({
   isViewer,
   user,
   onDelete,
+  onClone,
   allWorkspaces = [],
   onMove,
   children,
@@ -172,6 +173,7 @@ export default function WorkspaceSection({
                   isViewer={isViewer}
                   user={user}
                   onDelete={handleRemove}
+                  onClone={onClone}
                   showAssign={isAdmin}
                   workspaces={allWorkspaces}
                   onMove={handleMove}
@@ -197,6 +199,7 @@ export default function WorkspaceSection({
                           isViewer={isViewer}
                           user={user}
                           onDelete={handleRemove}
+                          onClone={onClone}
                           showAssign={false}
                           workspaces={allWorkspaces}
                           onMove={handleMove}
@@ -242,7 +245,7 @@ function getInitials(name) {
     .join("");
 }
 
-function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign, workspaces, onMove, deletingId, unresolvedCount }) {
+function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, onClone, showAssign, workspaces, onMove, deletingId, unresolvedCount }) {
   const [assigning, setAssigning] = useState(false);
   const isDraft = c.status === "draft";
   const campaignUrl = isDraft
@@ -298,6 +301,16 @@ function DefaultCampaignCard({ c, isAdmin, isViewer, user, onDelete, showAssign,
               <option key={ws.id} value={ws.id}>{ws.name}</option>
             ))}
           </select>
+        )}
+        {(isAdmin || (!isViewer && c.owner_id === user?.id)) && onClone && (
+          <button
+            className="btn btn-outline"
+            style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
+            onClick={() => onClone(c)}
+            aria-label="Clone campaign"
+          >
+            Clone
+          </button>
         )}
         {(isAdmin || (!isViewer && c.owner_id === user?.id)) && (
           <button
