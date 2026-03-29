@@ -7,3 +7,12 @@ from backend.models.budget import (
     WorkspaceBudgetOverview,
     WorkspaceBudgetOverviewItem,
 )
+from backend.models.experiments import (
+    Experiment,
+    ExperimentConfig,
+    ExperimentLearning,
+    ExperimentStatus,
+    MetricSource,
+    StatMethod,
+    VariantMetric,
+)

@@ -12,6 +12,7 @@ import ClarificationSection from "../components/ClarificationSection.jsx";
 import ImageGallerySection from "../components/ImageGallerySection.jsx";
 import CalendarView from "../components/CalendarView.jsx";
 import BudgetSection from "../components/BudgetSection.jsx";
+import ExperimentDashboard from "../components/ExperimentDashboard.jsx";
 import TeamMembersSection, { TeamMembersCompact } from "../components/TeamMembersSection.jsx";
 import ProgressIndicator from "../components/ProgressIndicator.jsx";
 import Toast from "../components/Toast.jsx";
@@ -341,6 +342,8 @@ export default function CampaignDetail() {
     }
     // Budget tab is always available
     tabs.push("budget");
+    // Experiments tab is always available
+    tabs.push("experiments");
     return tabs;
   }, [clickableTabs, showImagesTab]);
 
@@ -351,7 +354,7 @@ export default function CampaignDetail() {
     // Approved campaigns default to the budget tab
     if (campaign?.status === "approved" && allTabs.includes("budget")) return "budget";
     // Auto-select the last *pipeline* tab (not images, calendar, or budget)
-    const pipelineTabs = allTabs.filter(t => t !== "images" && t !== "calendar" && t !== "budget");
+    const pipelineTabs = allTabs.filter(t => t !== "images" && t !== "calendar" && t !== "budget" && t !== "experiments");
     return pipelineTabs[pipelineTabs.length - 1] ?? allTabs[0];
   }, [allTabs, userTab, campaign?.status]);
 
@@ -521,6 +524,15 @@ export default function CampaignDetail() {
             socialPlatforms={campaign.brief?.social_media_platforms || []}
           />
         );
+      case "experiments":
+        return (
+          <ExperimentDashboard
+            workspaceId={effectiveWorkspaceId}
+            campaignId={campaign.id}
+            contentPieces={campaign.content?.pieces || []}
+            isViewer={isViewer}
+          />
+        );
       default:
         return (
           <div className="card empty-state">
@@ -598,6 +610,16 @@ export default function CampaignDetail() {
           >
             <span className="pipeline-tab-icon" aria-hidden="true">💰</span>
             Budget
+          </button>
+        )}
+        {/* Experiments tab — always available */}
+        {allTabs.includes("experiments") && (
+          <button
+            className={`pipeline-tab completed${activeTab === "experiments" ? " selected" : ""}`}
+            onClick={() => setUserTab("experiments")}
+          >
+            <span className="pipeline-tab-icon" aria-hidden="true">🧪</span>
+            Experiments
           </button>
         )}
       </div>
@@ -881,6 +903,16 @@ export default function CampaignDetail() {
                   >
                     <span className="sidebar-stage-dot" />
                     <span className="sidebar-stage-label">Budget</span>
+                  </button>
+                )}
+                {/* Experiments tab — always available */}
+                {allTabs.includes("experiments") && (
+                  <button
+                    className={`sidebar-stage sidebar-stage-completed${activeTab === "experiments" ? " sidebar-stage-selected" : ""} sidebar-stage-clickable`}
+                    onClick={() => setUserTab("experiments")}
+                  >
+                    <span className="sidebar-stage-dot" />
+                    <span className="sidebar-stage-label">Experiments</span>
                   </button>
                 )}
               </div>
