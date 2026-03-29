@@ -82,6 +82,9 @@ export default function CampaignDetail() {
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [templateDialogMode, setTemplateDialogMode] = useState("create");
 
+  // Lineage badge state — source campaign for cloned campaigns
+  const [sourceCampaign, setSourceCampaign] = useState(undefined); // undefined=not loaded, null=not found/error, object=loaded
+
   // canManage: admins always can; campaign owners can too
   const canManage = isAdmin || (campaign?.owner_id != null && user?.id === campaign.owner_id);
 
@@ -138,6 +141,24 @@ export default function CampaignDetail() {
     }
     prevStatusRef.current = status;
   }, [status]);
+
+  // Fetch source campaign for lineage badge
+  useEffect(() => {
+    if (!campaign?.cloned_from_campaign_id) {
+      setSourceCampaign(undefined);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const src = await getCampaign(effectiveWorkspaceId, campaign.cloned_from_campaign_id);
+        if (!cancelled) setSourceCampaign(src);
+      } catch {
+        if (!cancelled) setSourceCampaign(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [campaign?.cloned_from_campaign_id, effectiveWorkspaceId]);
 
   // Derive stage states: completed / active / pending / error for each pipeline stage
   const stageStates = useMemo(() => {
@@ -631,6 +652,24 @@ export default function CampaignDetail() {
           <StatusBadge status={campaign.status} pulse={badgePulse} />
           {campaign.is_template && (
             <span className="badge badge-template" aria-label="Template">📋 Template</span>
+          )}
+          {campaign.cloned_from_campaign_id && (
+            <span
+              className="badge lineage-badge"
+              title={campaign.clone_depth != null ? `Cloned at depth: ${campaign.clone_depth}` : undefined}
+            >
+              {sourceCampaign ? (
+                <>
+                  📋 Cloned from:{" "}
+                  <Link to={`/workspaces/${sourceCampaign.workspace_id}/campaigns/${sourceCampaign.id}`} className="lineage-badge__link">
+                    {sourceCampaign.brief?.product_or_service ?? "Unknown"}
+                    {campaign.cloned_from_template_version != null && ` v${campaign.cloned_from_template_version}`}
+                  </Link>
+                </>
+              ) : sourceCampaign === null ? (
+                <span className="lineage-badge__deleted">📋 Cloned from: [deleted campaign]</span>
+              ) : null}
+            </span>
           )}
           {totalCount > 0 && (
             <ProgressIndicator completedCount={completedCount} totalCount={totalCount} />

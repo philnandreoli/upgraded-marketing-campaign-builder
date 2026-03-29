@@ -337,6 +337,18 @@ export const listTemplates = ({ category, tags, featured, visibility, search, li
 export const getTemplatePreview = (id) =>
   request("GET", `/api/templates/${encodeURIComponent(id)}/preview`);
 
+export const getTemplateRecommendations = ({ goal, product, channels, budget } = {}) => {
+  const params = new URLSearchParams();
+  if (goal) params.set("goal", goal);
+  if (product) params.set("product", product);
+  if (channels) params.set("channels", channels);
+  if (budget) params.set("budget", budget);
+  return request("GET", `/api/templates/recommend?${params}`);
+};
+
+export const getAdminTemplateAnalytics = () =>
+  request("GET", "/api/admin/templates/analytics");
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

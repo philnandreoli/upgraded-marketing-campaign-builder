@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { createCampaign, getCampaign, updateCampaignDraft, launchCampaign, listPersonas } from "../api";
+import { createCampaign, getCampaign, updateCampaignDraft, launchCampaign, listPersonas, getTemplateRecommendations } from "../api";
 import DatePicker from "../components/DatePicker";
+import CloneDialog from "../components/CloneDialog";
 import { useUser } from "../UserContext";
 import { useWorkspace } from "../WorkspaceContext";
 
@@ -182,6 +183,13 @@ export default function NewCampaign() {
   const autoSaveTimer = useRef(null);
   const isResuming = !!routeCampaignId;
 
+  // Template recommendation state
+  const [recommendations, setRecommendations] = useState([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recsOpen, setRecsOpen] = useState(true);
+  const [cloneTemplate, setCloneTemplate] = useState(null);
+  const recsTimer = useRef(null);
+
   const creatableWorkspaces = useMemo(
     () => (isAdmin ? workspaces : workspaces.filter((ws) => ws.role === "creator")),
     [isAdmin, workspaces]
@@ -245,6 +253,31 @@ export default function NewCampaign() {
       }
     })();
   }, [routeCampaignId, routeWorkspaceId, navigate]);
+
+  // Debounced template recommendations when product + goal both have values
+  useEffect(() => {
+    if (recsTimer.current) clearTimeout(recsTimer.current);
+    const product = form.product_or_service.trim();
+    const goal = form.goal.trim();
+    if (!product || !goal) {
+      setRecommendations([]);
+      return;
+    }
+    setRecsLoading(true);
+    recsTimer.current = setTimeout(async () => {
+      try {
+        const data = await getTemplateRecommendations({ product, goal });
+        setRecommendations(Array.isArray(data) ? data.slice(0, 3) : []);
+      } catch {
+        setRecommendations([]);
+      } finally {
+        setRecsLoading(false);
+      }
+    }, 500);
+    return () => {
+      if (recsTimer.current) clearTimeout(recsTimer.current);
+    };
+  }, [form.product_or_service, form.goal]);
 
   // Auto-save: debounced PATCH on form changes (steps 2-4 only)
   const scheduleAutoSave = useCallback(
@@ -539,6 +572,63 @@ export default function NewCampaign() {
           onChange={set("goal")}
         />
       </div>
+
+      {/* Suggested Templates widget */}
+      {(recsLoading || recommendations.length > 0) && (
+        <div className="suggested-templates" role="region" aria-label="Suggested templates">
+          <div className="suggested-templates__header">
+            <h3 className="suggested-templates__title">✨ Suggested Templates</h3>
+            <button
+              type="button"
+              className="suggested-templates__toggle"
+              onClick={() => setRecsOpen((prev) => !prev)}
+              aria-expanded={recsOpen}
+              aria-label={recsOpen ? "Collapse suggested templates" : "Expand suggested templates"}
+            >
+              {recsOpen ? "▲" : "▼"}
+            </button>
+          </div>
+          {recsOpen && (
+            <div className="suggested-templates__body">
+              {recsLoading ? (
+                <div className="suggested-templates__loading">
+                  <span className="spinner" style={{ width: 16, height: 16 }} /> Finding templates…
+                </div>
+              ) : (
+                <>
+                  <div className="suggested-templates__list">
+                    {recommendations.map((tpl) => (
+                      <div key={tpl.template_id ?? tpl.id} className="suggested-templates__card">
+                        <div className="suggested-templates__card-name">{tpl.template_name ?? tpl.name}</div>
+                        {tpl.match_reason && (
+                          <div className="suggested-templates__reason">{tpl.match_reason}</div>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-outline suggested-templates__use-btn"
+                          onClick={() => setCloneTemplate({
+                            id: tpl.template_id ?? tpl.id,
+                            workspace_id: tpl.workspace_id ?? selectedWorkspaceId,
+                            is_template: true,
+                            template_parameters: tpl.template_parameters ?? [],
+                            brief: { product_or_service: tpl.template_name ?? tpl.name },
+                          })}
+                        >
+                          Use This Template
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <Link to="/templates" className="suggested-templates__browse">
+                    Browse All Templates →
+                  </Link>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {renderNav(handleStep1Next, !!(form.product_or_service.trim() && form.goal.trim()), false, 1, hasWorkspaceStep)}
     </div>
   );
@@ -921,6 +1011,14 @@ export default function NewCampaign() {
       )}
 
       {steps[currentStep]?.()}
+
+      {/* Clone from template dialog */}
+      <CloneDialog
+        isOpen={!!cloneTemplate}
+        onClose={() => setCloneTemplate(null)}
+        campaign={cloneTemplate}
+        sourceWorkspaceId={cloneTemplate?.workspace_id ?? selectedWorkspaceId}
+      />
     </div>
   );
 }

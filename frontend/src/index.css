@@ -6949,3 +6949,280 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
     max-height: 90vh;
   }
 }
+
+/* ── Suggested Templates Widget (New Campaign Wizard) ──────────────── */
+
+.suggested-templates {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.suggested-templates__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.suggested-templates__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.suggested-templates__toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.suggested-templates__toggle:hover {
+  background: var(--color-border);
+}
+
+.suggested-templates__body {
+  margin-top: 0.75rem;
+}
+
+.suggested-templates__loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  padding: 0.5rem 0;
+}
+
+.suggested-templates__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.suggested-templates__card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.suggested-templates__card-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggested-templates__reason {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  flex: 1 1 100%;
+  margin-top: -0.25rem;
+}
+
+.suggested-templates__use-btn {
+  font-size: 0.75rem !important;
+  padding: 0.3rem 0.65rem !important;
+  flex-shrink: 0;
+}
+
+.suggested-templates__browse {
+  display: inline-block;
+  margin-top: 0.65rem;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+}
+
+.suggested-templates__browse:hover {
+  color: var(--color-primary-hover);
+}
+
+/* ── Lineage Badge (Campaign Detail) ───────────────────────────────── */
+
+.lineage-badge {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+}
+
+.lineage-badge__link {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.lineage-badge__link:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
+}
+
+.lineage-badge__deleted {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ── Template Analytics (Admin Dashboard) ──────────────────────────── */
+
+.analytics-stats-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.analytics-stat-card {
+  flex: 1 1 0;
+  min-width: 140px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1rem;
+  text-align: center;
+}
+
+.analytics-stat-card__number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-stat-card__label {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-top: 0.35rem;
+}
+
+/* Vertical bar chart */
+.bar-chart {
+  width: 100%;
+}
+
+.bar-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  height: 180px;
+  padding-bottom: 0.25rem;
+}
+
+.bar-chart__col {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+
+.bar-chart__value {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.bar-chart__bar {
+  width: 70%;
+  max-width: 40px;
+  min-height: 2px;
+  background: var(--color-primary);
+  border-radius: 3px 3px 0 0;
+  transition: height 0.3s ease;
+}
+
+.bar-chart__label {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  margin-top: 0.35rem;
+  white-space: nowrap;
+}
+
+/* Horizontal bar chart */
+.hbar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hbar-chart__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.hbar-chart__label {
+  flex: 0 0 140px;
+  font-size: 0.8rem;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.hbar-chart__track {
+  flex: 1 1 auto;
+  height: 22px;
+  background: var(--color-surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hbar-chart__bar {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 4px;
+  min-width: 2px;
+  transition: width 0.3s ease;
+}
+
+.hbar-chart__value {
+  flex: 0 0 40px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+/* Responsive: suggested-templates + analytics */
+@media (max-width: 640px) {
+  .suggested-templates__card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .analytics-stats-row {
+    flex-direction: column;
+  }
+
+  .analytics-stat-card {
+    min-width: auto;
+  }
+
+  .bar-chart__bars {
+    height: 120px;
+  }
+
+  .hbar-chart__label {
+    flex: 0 0 80px;
+    font-size: 0.72rem;
+  }
+}

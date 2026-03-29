@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
-import { listUsers, updateUserRoles, deactivateUser, reactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser, getUserWorkspaces } from "../api";
+import { listUsers, updateUserRoles, deactivateUser, reactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser, getUserWorkspaces, getAdminTemplateAnalytics } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { useConfirm } from "../ConfirmDialogContext";
@@ -115,6 +115,11 @@ export default function Admin() {
   const [reactivateError, setReactivateError] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
 
+  // Template analytics state
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(null);
+
   // Workspace access drill-down state (inline in user table)
   const [expandedUserId, setExpandedUserId] = useState(null);
   const [userWorkspaces, setUserWorkspaces] = useState({});
@@ -185,6 +190,18 @@ export default function Admin() {
     }
   }, []);
 
+  const fetchAnalytics = useCallback(async () => {
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    try {
+      setAnalytics(await getAdminTemplateAnalytics());
+    } catch (err) {
+      setAnalyticsError(err.message);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, []);
+
   const handleExpandUser = useCallback(async (userId) => {
     if (expandedUserId === userId) {
       setExpandedUserId(null);
@@ -207,6 +224,7 @@ export default function Admin() {
     fetchUsers("", 1);
     fetchCampaigns();
     fetchWorkspaces();
+    fetchAnalytics();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -331,6 +349,7 @@ export default function Admin() {
           { key: "users", label: "User Management" },
           { key: "campaigns", label: "All Campaigns" },
           { key: "workspaces", label: "Workspaces" },
+          { key: "templates", label: "Template Analytics" },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -952,6 +971,155 @@ export default function Admin() {
               </div>
             </div>
           )}
+        </>
+      )}
+
+      {/* ── Template Analytics Tab ────────────────────────────────────── */}
+      {activeTab === "templates" && (
+        <>
+          <div className="section-header">
+            <h2>Template Analytics</h2>
+          </div>
+
+          {analyticsLoading ? (
+            <div className="loading">
+              <span className="spinner" /> Loading template analytics…
+            </div>
+          ) : analyticsError ? (
+            <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
+              <p style={{ color: "var(--color-danger)", marginBottom: "1rem" }}>Error: {analyticsError}</p>
+              <button type="button" className="btn btn-outline" onClick={fetchAnalytics}>
+                Retry
+              </button>
+            </div>
+          ) : analytics && analytics.total_clones === 0 && analytics.total_templates === 0 ? (
+            <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
+              <p style={{ color: "var(--color-text-muted)" }}>
+                No template analytics yet. Mark approved campaigns as templates to start tracking.
+              </p>
+            </div>
+          ) : analytics ? (
+            <>
+              {/* Summary Stats Row */}
+              <div className="analytics-stats-row">
+                <div className="analytics-stat-card">
+                  <div className="analytics-stat-card__number">{analytics.total_templates ?? 0}</div>
+                  <div className="analytics-stat-card__label">Total Templates</div>
+                </div>
+                <div className="analytics-stat-card">
+                  <div className="analytics-stat-card__number">{analytics.total_clones ?? 0}</div>
+                  <div className="analytics-stat-card__label">Total Clones</div>
+                </div>
+                <div className="analytics-stat-card">
+                  <div className="analytics-stat-card__number">{analytics.most_popular_category ?? "—"}</div>
+                  <div className="analytics-stat-card__label">Most Popular Category</div>
+                </div>
+                <div className="analytics-stat-card">
+                  <div className="analytics-stat-card__number">
+                    {analytics.avg_brand_score != null ? analytics.avg_brand_score.toFixed(1) : "—"}
+                  </div>
+                  <div className="analytics-stat-card__label">Avg Brand Score</div>
+                </div>
+              </div>
+
+              {/* Top Templates Table */}
+              {analytics.top_templates && analytics.top_templates.length > 0 && (
+                <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: "1.5rem" }}>
+                  <h3 style={{ padding: "1rem 1rem 0.5rem", margin: 0, fontSize: "1rem" }}>Top Templates</h3>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+                          {["Rank", "Template Name", "Category", "Clone Count", "Success Rate (%)", "Avg Brand Score"].map((h) => (
+                            <th
+                              key={h}
+                              style={{
+                                textAlign: "left",
+                                padding: "0.75rem 1rem",
+                                color: "var(--color-text-muted)",
+                                fontWeight: 600,
+                                whiteSpace: "nowrap",
+                                background: "var(--color-surface)",
+                              }}
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analytics.top_templates.map((t, i) => (
+                          <tr key={t.template_id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                            <td style={{ padding: "0.6rem 1rem", color: "var(--color-text-muted)" }}>{i + 1}</td>
+                            <td style={{ padding: "0.6rem 1rem", fontWeight: 500 }}>
+                              <a href="/templates" style={{ color: "var(--color-primary)" }}>{t.template_name}</a>
+                            </td>
+                            <td style={{ padding: "0.6rem 1rem", color: "var(--color-text-muted)" }}>{t.category ?? "—"}</td>
+                            <td style={{ padding: "0.6rem 1rem" }}>{t.clone_count ?? 0}</td>
+                            <td style={{ padding: "0.6rem 1rem" }}>
+                              {t.success_rate != null ? `${(t.success_rate * 100).toFixed(1)}%` : "—"}
+                            </td>
+                            <td style={{ padding: "0.6rem 1rem" }}>
+                              {t.avg_brand_score != null ? t.avg_brand_score.toFixed(1) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Clone Trends Chart — vertical bar chart */}
+              {analytics.monthly_trends && analytics.monthly_trends.length > 0 && (() => {
+                const maxClone = Math.max(...analytics.monthly_trends.map((m) => m.clone_count), 1);
+                return (
+                  <div className="card" style={{ marginBottom: "1.5rem" }}>
+                    <h3 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Clone Trends (Last 12 Months)</h3>
+                    <div className="bar-chart" role="img" aria-label="Monthly clone trends bar chart">
+                      <div className="bar-chart__bars">
+                        {analytics.monthly_trends.map((m) => (
+                          <div key={m.month} className="bar-chart__col">
+                            <div className="bar-chart__value">{m.clone_count}</div>
+                            <div
+                              className="bar-chart__bar"
+                              style={{ height: `${(m.clone_count / maxClone) * 100}%` }}
+                              title={`${m.month}: ${m.clone_count} clones`}
+                            />
+                            <div className="bar-chart__label">{m.month.slice(5)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Workspace Adoption — horizontal bar chart */}
+              {analytics.workspace_adoption && analytics.workspace_adoption.length > 0 && (() => {
+                const maxWsClone = Math.max(...analytics.workspace_adoption.map((w) => w.clone_count), 1);
+                return (
+                  <div className="card" style={{ marginBottom: "1.5rem" }}>
+                    <h3 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Workspace Adoption (Top 10)</h3>
+                    <div className="hbar-chart">
+                      {analytics.workspace_adoption.map((w) => (
+                        <div key={w.workspace_id} className="hbar-chart__row">
+                          <div className="hbar-chart__label">{w.workspace_name ?? w.workspace_id}</div>
+                          <div className="hbar-chart__track">
+                            <div
+                              className="hbar-chart__bar"
+                              style={{ width: `${(w.clone_count / maxWsClone) * 100}%` }}
+                            />
+                          </div>
+                          <div className="hbar-chart__value">{w.clone_count}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          ) : null}
         </>
       )}
     </div>
