@@ -107,6 +107,52 @@ class TemplateListResponse(BaseModel):
     pagination: PaginationMeta
 
 
+class TemplateStats(BaseModel):
+    template_id: str
+    clone_count: int
+    approved_count: int
+    avg_brand_score: Optional[float]
+    first_clone_date: Optional[datetime]
+    last_clone_date: Optional[datetime]
+
+
+class TopTemplate(BaseModel):
+    template_id: str
+    template_name: str
+    category: Optional[str]
+    clone_count: int
+    success_rate: float
+    avg_brand_score: Optional[float]
+
+
+class MonthlyCloneTrend(BaseModel):
+    month: str
+    clone_count: int
+
+
+class WorkspaceAdoption(BaseModel):
+    workspace_id: str
+    workspace_name: Optional[str]
+    clone_count: int
+
+
+class AdminTemplateAnalytics(BaseModel):
+    total_templates: int
+    total_clones: int
+    most_popular_category: Optional[str]
+    avg_brand_score: Optional[float]
+    top_templates: list[TopTemplate]
+    monthly_trends: list[MonthlyCloneTrend]
+    workspace_adoption: list[WorkspaceAdoption]
+
+
+class TemplateRecommendation(BaseModel):
+    template_id: str
+    template_name: str
+    rank: int
+    match_reason: str
+
+
 class CloneCampaignRequest(BaseModel):
     depth: Literal["brief", "strategy", "content", "full"] = "brief"
     target_workspace_id: Optional[str] = None

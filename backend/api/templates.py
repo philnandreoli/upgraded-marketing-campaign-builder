@@ -1,24 +1,30 @@
 """Template Library API routes."""
 
-from __future__ import annotations
-
+import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
 from backend.apps.api.schemas.campaigns import (
+    AdminTemplateAnalytics,
+    TemplateRecommendation,
     TemplateMetadata,
     TemplatePreview,
+    TemplateStats,
     TemplateSummary,
     UpdateTemplateRequest,
 )
-from backend.infrastructure.auth import get_current_user
+from backend.core.rate_limit import limiter
+from backend.infrastructure.auth import get_current_user, require_admin, require_authenticated
 from backend.infrastructure.campaign_store import get_campaign_store
+from backend.infrastructure.llm_service import get_llm_service
 from backend.models.campaign import Campaign, TemplateVisibility
 from backend.models.user import User
+from backend.services.template_recommender import recommend_templates
 
 router = APIRouter(tags=["templates"])
+logger = logging.getLogger(__name__)
 
 
 async def _can_access_template(template: Campaign, user: Optional[User]) -> bool:
@@ -92,6 +98,38 @@ async def list_templates(
     ]
 
 
+@router.get("/templates/recommend", response_model=list[TemplateRecommendation])
+@limiter.limit("10/minute")
+async def recommend_template_list(
+    request: Request,
+    response: Response,
+    goal: str = Query(..., min_length=1),
+    product: str = Query(..., min_length=1),
+    channels: Optional[str] = Query(default=None, description="Comma-separated channels"),
+    budget: Optional[float] = Query(default=None, ge=0),
+    user: User = Depends(require_authenticated),
+) -> list[TemplateRecommendation]:
+    """Recommend best-fit templates using LLM ranking over templates accessible to the user."""
+    store = get_campaign_store()
+    workspaces = await store.list_workspaces(user.id, is_admin=user.is_admin)
+    workspace_ids = [workspace.id for workspace in workspaces]
+
+    try:
+        return await recommend_templates(
+            goal=goal,
+            product=product,
+            channels=channels,
+            budget=budget,
+            user_id=user.id,
+            workspace_ids=workspace_ids,
+            campaign_store=store,
+            llm_service=get_llm_service(),
+        )
+    except Exception:
+        logger.warning("Template recommendation failed unexpectedly; returning empty list", exc_info=True)
+        return []
+
+
 @router.get("/templates/{campaign_id}/preview", response_model=TemplatePreview)
 async def preview_template(
     campaign_id: str,
@@ -159,6 +197,33 @@ async def update_template_metadata(
         featured=updated.template_featured,
         version=updated.template_version,
     )
+
+
+@router.get("/templates/{template_id}/stats", response_model=TemplateStats)
+async def get_template_stats(
+    template_id: str,
+    user: User = Depends(require_authenticated),
+) -> TemplateStats:
+    """Return aggregate performance stats for a single template."""
+    store = get_campaign_store()
+    template = await store.get(template_id)
+    if template is None or not template.is_template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if not await _can_access_template(template, user):
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    stats = await store.get_template_stats(template_id)
+    return TemplateStats(**stats)
+
+
+@router.get("/admin/templates/analytics", response_model=AdminTemplateAnalytics)
+async def get_admin_template_analytics(
+    _: User = Depends(require_admin),
+) -> AdminTemplateAnalytics:
+    """Return admin-only aggregate analytics for template adoption and quality."""
+    store = get_campaign_store()
+    analytics = await store.get_template_analytics()
+    return AdminTemplateAnalytics(**analytics)
 
 
 @router.delete("/templates/{campaign_id}")

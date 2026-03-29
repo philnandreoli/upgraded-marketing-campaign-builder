@@ -322,6 +322,21 @@ export const updateTemplate = (templateId, config) =>
 export const unmarkTemplate = (templateId) =>
   request("DELETE", `/api/templates/${encodeURIComponent(templateId)}`);
 
+export const listTemplates = ({ category, tags, featured, visibility, search, limit = 20, offset = 0 } = {}) => {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (tags) params.set("tags", tags);
+  if (featured !== undefined) params.set("featured", featured);
+  if (visibility) params.set("visibility", visibility);
+  if (search) params.set("search", search);
+  params.set("limit", limit);
+  params.set("offset", offset);
+  return request("GET", `/api/templates?${params}`);
+};
+
+export const getTemplatePreview = (id) =>
+  request("GET", `/api/templates/${encodeURIComponent(id)}/preview`);
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

@@ -85,6 +85,9 @@ export default function AppNavbar({
         <NavLink to="/workspaces" className={({ isActive }) => navLinkClass(isActive)}>
           Workspaces
         </NavLink>
+        <NavLink to="/templates" className={({ isActive }) => navLinkClass(isActive)}>
+          Templates
+        </NavLink>
         {isAdmin && (
           <NavLink to="/admin" className={({ isActive }) => navLinkClass(isActive)}>
             Admin

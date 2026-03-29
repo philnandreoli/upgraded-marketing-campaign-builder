@@ -13,7 +13,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON as SA_JSON, String, case, cast, delete as sa_delete, exists, func, or_, select, update as sa_update
+from sqlalchemy import (
+    JSON as SA_JSON,
+    Float,
+    String,
+    case,
+    cast,
+    delete as sa_delete,
+    exists,
+    func,
+    or_,
+    select,
+    update as sa_update,
+)
+from sqlalchemy.orm import aliased
 
 from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, TemplateVisibility
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
@@ -827,6 +840,204 @@ class CampaignStore:
                     }
                 )
             return items, total
+
+    async def get_template_stats(self, template_id: str) -> dict[str, Any]:
+        """Return aggregate clone statistics for a single template."""
+        data_as_json = cast(CampaignRow.data, SA_JSON)
+        brand_score = cast(
+            func.nullif(
+                func.json_extract_path_text(data_as_json, "review", "brand_consistency_score"),
+                "",
+            ),
+            Float,
+        )
+
+        async with async_session() as session:
+            result = await session.execute(
+                select(
+                    func.count(CampaignRow.id).label("clone_count"),
+                    func.sum(
+                        case(
+                            (CampaignRow.status == CampaignStatus.APPROVED.value, 1),
+                            else_=0,
+                        )
+                    ).label("approved_count"),
+                    func.avg(brand_score).label("avg_brand_score"),
+                    func.min(CampaignRow.created_at).label("first_clone_date"),
+                    func.max(CampaignRow.created_at).label("last_clone_date"),
+                ).where(CampaignRow.cloned_from_campaign_id == template_id)
+            )
+            row = result.one()
+
+        return {
+            "template_id": template_id,
+            "clone_count": int(row.clone_count or 0),
+            "approved_count": int(row.approved_count or 0),
+            "avg_brand_score": float(row.avg_brand_score) if row.avg_brand_score is not None else None,
+            "first_clone_date": row.first_clone_date,
+            "last_clone_date": row.last_clone_date,
+        }
+
+    async def get_template_analytics(self) -> dict[str, Any]:
+        """Return admin dashboard analytics for template adoption and performance."""
+        clone_row = aliased(CampaignRow)
+        template_row = aliased(CampaignRow)
+
+        clone_data_as_json = cast(clone_row.data, SA_JSON)
+        clone_brand_score = cast(
+            func.nullif(
+                func.json_extract_path_text(clone_data_as_json, "review", "brand_consistency_score"),
+                "",
+            ),
+            Float,
+        )
+
+        now = datetime.utcnow()
+        start_month = datetime(now.year, now.month, 1)
+        for _ in range(11):
+            if start_month.month == 1:
+                start_month = datetime(start_month.year - 1, 12, 1)
+            else:
+                start_month = datetime(start_month.year, start_month.month - 1, 1)
+
+        month_keys: list[str] = []
+        cursor = start_month
+        for _ in range(12):
+            month_keys.append(cursor.strftime("%Y-%m"))
+            if cursor.month == 12:
+                cursor = datetime(cursor.year + 1, 1, 1)
+            else:
+                cursor = datetime(cursor.year, cursor.month + 1, 1)
+
+        async with async_session() as session:
+            total_templates_result = await session.execute(
+                select(func.count(CampaignRow.id)).where(CampaignRow.is_template.is_(True))
+            )
+            total_templates = int(total_templates_result.scalar() or 0)
+
+            total_clones_result = await session.execute(
+                select(func.count(CampaignRow.id)).where(CampaignRow.cloned_from_campaign_id.is_not(None))
+            )
+            total_clones = int(total_clones_result.scalar() or 0)
+
+            avg_brand_result = await session.execute(
+                select(func.avg(clone_brand_score)).where(clone_row.cloned_from_campaign_id.is_not(None))
+            )
+            avg_brand_score = avg_brand_result.scalar()
+
+            popular_category_result = await session.execute(
+                select(
+                    template_row.template_category.label("category"),
+                    func.count(clone_row.id).label("clone_count"),
+                )
+                .join(clone_row, clone_row.cloned_from_campaign_id == template_row.id)
+                .where(
+                    template_row.is_template.is_(True),
+                    template_row.template_category.is_not(None),
+                )
+                .group_by(template_row.template_category)
+                .order_by(func.count(clone_row.id).desc(), template_row.template_category.asc())
+                .limit(1)
+            )
+            popular_category_row = popular_category_result.first()
+            most_popular_category = popular_category_row.category if popular_category_row is not None else None
+
+            template_data_as_json = cast(template_row.data, SA_JSON)
+            top_templates_result = await session.execute(
+                select(
+                    template_row.id.label("template_id"),
+                    func.json_extract_path_text(
+                        template_data_as_json, "brief", "product_or_service"
+                    ).label("template_name"),
+                    template_row.template_category.label("category"),
+                    func.count(clone_row.id).label("clone_count"),
+                    func.sum(
+                        case(
+                            (clone_row.status == CampaignStatus.APPROVED.value, 1),
+                            else_=0,
+                        )
+                    ).label("approved_count"),
+                    func.avg(clone_brand_score).label("avg_brand_score"),
+                )
+                .outerjoin(clone_row, clone_row.cloned_from_campaign_id == template_row.id)
+                .where(template_row.is_template.is_(True))
+                .group_by(template_row.id, template_row.data, template_row.template_category)
+                .order_by(func.count(clone_row.id).desc(), template_row.created_at.desc())
+                .limit(10)
+            )
+            top_templates_rows = top_templates_result.all()
+
+            monthly_trends_result = await session.execute(
+                select(
+                    func.to_char(func.date_trunc("month", CampaignRow.created_at), "YYYY-MM").label("month"),
+                    func.count(CampaignRow.id).label("clone_count"),
+                )
+                .where(
+                    CampaignRow.cloned_from_campaign_id.is_not(None),
+                    CampaignRow.created_at >= start_month,
+                )
+                .group_by(func.date_trunc("month", CampaignRow.created_at))
+                .order_by(func.date_trunc("month", CampaignRow.created_at).asc())
+            )
+            monthly_rows = monthly_trends_result.all()
+            monthly_counts = {row.month: int(row.clone_count or 0) for row in monthly_rows}
+
+            workspace_result = await session.execute(
+                select(
+                    CampaignRow.workspace_id,
+                    WorkspaceRow.name.label("workspace_name"),
+                    func.count(CampaignRow.id).label("clone_count"),
+                )
+                .outerjoin(WorkspaceRow, WorkspaceRow.id == CampaignRow.workspace_id)
+                .where(
+                    CampaignRow.cloned_from_campaign_id.is_not(None),
+                    CampaignRow.workspace_id.is_not(None),
+                )
+                .group_by(CampaignRow.workspace_id, WorkspaceRow.name)
+                .order_by(func.count(CampaignRow.id).desc())
+                .limit(10)
+            )
+            workspace_rows = workspace_result.all()
+
+        top_templates: list[dict[str, Any]] = []
+        for row in top_templates_rows:
+            clone_count = int(row.clone_count or 0)
+            approved_count = int(row.approved_count or 0)
+            success_rate = float(approved_count / clone_count) if clone_count > 0 else 0.0
+            top_templates.append(
+                {
+                    "template_id": row.template_id,
+                    "template_name": row.template_name or "",
+                    "category": row.category,
+                    "clone_count": clone_count,
+                    "success_rate": success_rate,
+                    "avg_brand_score": float(row.avg_brand_score) if row.avg_brand_score is not None else None,
+                }
+            )
+
+        monthly_trends = [
+            {"month": month, "clone_count": monthly_counts.get(month, 0)}
+            for month in month_keys
+        ]
+
+        workspace_adoption = [
+            {
+                "workspace_id": row.workspace_id,
+                "workspace_name": row.workspace_name,
+                "clone_count": int(row.clone_count or 0),
+            }
+            for row in workspace_rows
+        ]
+
+        return {
+            "total_templates": total_templates,
+            "total_clones": total_clones,
+            "most_popular_category": most_popular_category,
+            "avg_brand_score": float(avg_brand_score) if avg_brand_score is not None else None,
+            "top_templates": top_templates,
+            "monthly_trends": monthly_trends,
+            "workspace_adoption": workspace_adoption,
+        }
 
     async def get_personal_workspace(self, user_id: str) -> Optional[Workspace]:
         """Return the personal workspace for *user_id*, or ``None`` if not found."""
