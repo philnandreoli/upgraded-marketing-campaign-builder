@@ -34,6 +34,7 @@ def _to_response(persona) -> PersonaResponse:
         workspace_id=persona.workspace_id,
         name=persona.name,
         description=persona.description,
+        source_text=persona.source_text,
         created_by=persona.created_by,
         created_at=persona.created_at,
         updated_at=persona.updated_at,
@@ -41,15 +42,35 @@ def _to_response(persona) -> PersonaResponse:
 
 
 _PARSE_SYSTEM_PROMPT = """You are a marketing persona expert. Parse the given freeform persona description into structured fields.
-Return a JSON object with exactly these keys:
-- demographics: demographic information (age range, gender, location, income, education level)
-- psychographics: personality traits, values, interests, lifestyle
-- pain_points: key challenges, frustrations, and problems they face
-- behaviors: purchasing patterns, media consumption, brand interactions
-- channels: preferred communication and marketing channels
+Return a JSON object with exactly these keys, where every value is a plain-text string (NEVER a nested object, array, or dict):
+- demographics: age range, gender, location, income, education level — as a readable sentence or comma-separated phrases
+- psychographics: personality traits, values, interests, lifestyle — as a readable sentence or comma-separated phrases
+- pain_points: key challenges, frustrations, and problems — as a readable sentence or comma-separated phrases
+- behaviors: purchasing patterns, media consumption, brand interactions — as a readable sentence or comma-separated phrases
+- channels: preferred communication and marketing channels — as a readable sentence or comma-separated phrases
 
+Each value MUST be a single human-readable string, not a JSON object or list.
 If information for a field is not present in the description, return an empty string for that field.
 Always return valid JSON with all five keys."""
+
+
+def _flatten_to_text(value: object) -> str:
+    """Convert an LLM-returned value to a clean, human-readable string.
+
+    Handles cases where the model returns a dict or list instead of a plain string.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return ", ".join(_flatten_to_text(item) for item in value if item)
+    if isinstance(value, dict):
+        parts = []
+        for k, v in value.items():
+            v_str = _flatten_to_text(v)
+            if v_str:
+                parts.append(f"{k.replace('_', ' ').title()}: {v_str}")
+        return "; ".join(parts)
+    return str(value) if value else ""
 
 
 @router.post("/personas/parse", response_model=ParsePersonaResponse)
@@ -89,11 +110,11 @@ async def parse_persona(
             parsed = {}
         return ParsePersonaResponse(
             name=body.name,
-            demographics=str(parsed.get("demographics", "")),
-            psychographics=str(parsed.get("psychographics", "")),
-            pain_points=str(parsed.get("pain_points", "")),
-            behaviors=str(parsed.get("behaviors", "")),
-            channels=str(parsed.get("channels", "")),
+            demographics=_flatten_to_text(parsed.get("demographics", "")),
+            psychographics=_flatten_to_text(parsed.get("psychographics", "")),
+            pain_points=_flatten_to_text(parsed.get("pain_points", "")),
+            behaviors=_flatten_to_text(parsed.get("behaviors", "")),
+            channels=_flatten_to_text(parsed.get("channels", "")),
         )
     except Exception:
         logger.warning("Persona parse LLM call failed; returning empty structured fields", exc_info=True)
@@ -125,6 +146,7 @@ async def create_persona(
         workspace_id=workspace_id,
         name=body.name,
         description=body.description,
+        source_text=body.source_text,
         created_by=user.id,
     )
     return _to_response(persona)

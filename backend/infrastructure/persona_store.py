@@ -21,11 +21,13 @@ class PersonaStore:
         name: str,
         description: str,
         created_by: str,
+        source_text: str = "",
     ) -> Persona:
         persona = Persona(
             workspace_id=workspace_id,
             name=name,
             description=description,
+            source_text=source_text,
             created_by=created_by,
         )
         row = PersonaRow(
@@ -33,6 +35,7 @@ class PersonaStore:
             workspace_id=persona.workspace_id,
             name=persona.name,
             description=persona.description,
+            source_text=persona.source_text,
             created_by=persona.created_by,
             created_at=persona.created_at,
             updated_at=persona.updated_at,
@@ -136,6 +139,7 @@ def _row_to_model(row: PersonaRow) -> Persona:
         workspace_id=row.workspace_id,
         name=row.name,
         description=row.description,
+        source_text=row.source_text or "",
         created_by=row.created_by,
         created_at=row.created_at,
         updated_at=row.updated_at,

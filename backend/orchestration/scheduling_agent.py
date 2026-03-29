@@ -157,6 +157,14 @@ SECURITY RULES:
                     "value (keys: %s)",
                     list(parsed.keys()),
                 )
+            elif "piece_index" in parsed and "scheduled_date" in parsed:
+                # LLM returned a single schedule entry as a bare dict
+                schedule = [parsed]
+                logger.info(
+                    "Scheduling agent: received single entry dict; wrapping "
+                    "in list (keys: %s)",
+                    list(parsed.keys()),
+                )
             else:
                 raise ValueError(
                     "Scheduling agent: expected a JSON array or object with "

@@ -11,6 +11,7 @@ import {
 import { useUser } from "../UserContext";
 import { useConfirm } from "../ConfirmDialogContext";
 import { SkeletonCard } from "../components/Skeleton";
+import SearchBar from "../components/SearchBar";
 import PersonaForm from "../components/PersonaForm";
 import PersonaEditor from "../components/PersonaEditor";
 import { parseDescriptionToFields } from "../utils/personaUtils";
@@ -100,6 +101,7 @@ export default function PersonaLibrary() {
 
   // "✨ Structure with AI" — call parse endpoint, transition to editor
   const handleStructureWithAI = async ({ name, description }) => {
+    setFreeformInput({ name, description });
     setParseLoading(true);
     setParseError(null);
     try {
@@ -119,6 +121,7 @@ export default function PersonaLibrary() {
 
   // Skip AI — open PersonaEditor directly for manual creation
   const handleSkipAI = ({ name, description }) => {
+    setFreeformInput({ name, description });
     setParsedFields({ name, demographics: description, psychographics: "", pain_points: "", behaviors: "", channels: "" });
     setParseError(null);
     setPhase("editor");
@@ -132,7 +135,11 @@ export default function PersonaLibrary() {
         const updated = await updatePersona(workspaceId, editTarget.id, { name, description });
         setPersonas((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
       } else {
-        const created = await createPersona(workspaceId, { name, description });
+        const created = await createPersona(workspaceId, {
+          name,
+          description,
+          source_text: freeformInput.description || "",
+        });
         setPersonas((prev) => [created, ...prev]);
       }
       handleCloseAll();
@@ -216,16 +223,19 @@ export default function PersonaLibrary() {
 
       {/* Search */}
       {personas.length > 0 && (
-        <div style={{ marginBottom: "1rem" }}>
-          <input
-            type="search"
-            placeholder="Search personas…"
-            aria-label="Search personas"
+        <>
+          <SearchBar
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ width: "100%", maxWidth: "24rem" }}
+            onChange={(value) => setSearchQuery(value)}
+            onClear={() => setSearchQuery("")}
+            placeholder="Search personas…"
           />
-        </div>
+          {searchQuery && (
+            <span className="search-result-count">
+              Showing {filtered.length} of {personas.length} persona{personas.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </>
       )}
 
       {/* Persona list */}
@@ -255,37 +265,71 @@ export default function PersonaLibrary() {
           </p>
         </div>
       ) : (
-        <div className="campaign-list">
-          {filtered.map((persona) => (
-            <div key={persona.id} className="campaign-card card" data-testid={`persona-card-${persona.id}`}>
-              <div className="campaign-card-avatar">👤</div>
-              <div className="campaign-card-body">
-                <span className="campaign-card-title">{persona.name}</span>
-                <p className="campaign-card-goal">{persona.description}</p>
-                <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
-                  Created {formatDate(persona.created_at)}
-                </span>
-              </div>
-              {canWrite && (
-                <div className="campaign-card-meta">
-                  <button
-                    className="btn btn-outline"
-                    style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
-                    onClick={() => handleOpenEdit(persona)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="btn btn-outline"
-                    style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
-                    onClick={() => handleDelete(persona)}
-                  >
-                    Delete
-                  </button>
+        <div className="persona-grid">
+          {filtered.map((persona) => {
+            const fields = parseDescriptionToFields(persona.description);
+            const initials = persona.name
+              .split(/\s+/)
+              .map((w) => w[0])
+              .slice(0, 2)
+              .join("");
+            return (
+              <div key={persona.id} className="persona-card card" data-testid={`persona-card-${persona.id}`}>
+                <div className="persona-card__header">
+                  <div className="persona-card__avatar">{initials}</div>
+                  <span className="persona-card__name">{persona.name}</span>
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="persona-card__body">
+                  {fields.demographics && (
+                    <div className="persona-card__field">
+                      <span className="persona-card__field-label">Demographics</span>
+                      {fields.demographics}
+                    </div>
+                  )}
+                  {fields.psychographics && (
+                    <div className="persona-card__field">
+                      <span className="persona-card__field-label">Psychographics</span>
+                      {fields.psychographics}
+                    </div>
+                  )}
+                  {fields.pain_points && (
+                    <div className="persona-card__field">
+                      <span className="persona-card__field-label">Pain Points</span>
+                      {fields.pain_points}
+                    </div>
+                  )}
+                  {fields.behaviors && (
+                    <div className="persona-card__field">
+                      <span className="persona-card__field-label">Behaviors</span>
+                      {fields.behaviors}
+                    </div>
+                  )}
+                  {fields.channels && (
+                    <div className="persona-card__field">
+                      <span className="persona-card__field-label">Channels</span>
+                      {fields.channels}
+                    </div>
+                  )}
+                  {!fields.demographics && !fields.psychographics && !fields.pain_points && !fields.behaviors && !fields.channels && (
+                    <div className="persona-card__field">{persona.description}</div>
+                  )}
+                </div>
+                <div className="persona-card__footer">
+                  <span className="persona-card__date">Created {formatDate(persona.created_at)}</span>
+                  {canWrite && (
+                    <div className="persona-card__actions">
+                      <button className="btn btn-outline" onClick={() => handleOpenEdit(persona)}>
+                        Edit
+                      </button>
+                      <button className="btn btn-outline" onClick={() => handleDelete(persona)}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

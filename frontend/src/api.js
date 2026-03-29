@@ -286,9 +286,9 @@ export const listPersonas = (workspaceId, { limit = 50, offset = 0 } = {}) => {
 export const getPersona = (workspaceId, personaId) =>
   request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas/${encodeURIComponent(personaId)}`);
 
-export const createPersona = (workspaceId, { name, description }) =>
+export const createPersona = (workspaceId, { name, description, source_text = "" }) =>
   request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/personas`, {
-    body: { name, description },
+    body: { name, description, source_text },
   });
 
 export const updatePersona = (workspaceId, personaId, { name, description }) =>
