@@ -11,6 +11,7 @@ import SearchBar from "../components/SearchBar";
 import SavedViews from "../components/SavedViews";
 import SortDropdown from "../components/SortDropdown";
 import Toast from "../components/Toast";
+import CloneDialog from "../components/CloneDialog";
 import useSavedViews from "../hooks/useSavedViews";
 import { applyFilter, matchesSearch, sortCampaigns } from "../lib/campaignFilters";
 import {
@@ -53,6 +54,12 @@ export default function Dashboard({ events }) {
   const { workspaces } = useWorkspace();
   const { views, addView, removeView, renameView } = useSavedViews();
   const confirm = useConfirm();
+  const [cloneTarget, setCloneTarget] = useState(null);
+
+  const handleClone = (campaign) => {
+    setCloneTarget(campaign);
+  };
+  const closeCloneDialog = () => setCloneTarget(null);
 
   const updateSearchParams = (filter, query) => {
     setSearchParams(
@@ -499,6 +506,7 @@ export default function Dashboard({ events }) {
                 isViewer={isViewer}
                 user={user}
                 onDelete={handleDelete}
+                onClone={!isViewer ? handleClone : undefined}
                 allWorkspaces={workspaces}
                 deletingId={deleting}
                 hasMore={!isFiltered && !!paginationRef.current[ws.id]?.hasMore}
@@ -516,6 +524,7 @@ export default function Dashboard({ events }) {
                 isViewer={isViewer}
                 user={user}
                 onDelete={handleDelete}
+                onClone={!isViewer ? handleClone : undefined}
                 allWorkspaces={workspaces}
                 deletingId={deleting}
               />
@@ -530,6 +539,12 @@ export default function Dashboard({ events }) {
     <>
       {content}
       <Toast events={events} notifications={notifications} />
+      <CloneDialog
+        isOpen={!!cloneTarget}
+        onClose={closeCloneDialog}
+        campaign={cloneTarget}
+        sourceWorkspaceId={cloneTarget?.workspace_id}
+      />
     </>
   );
 }

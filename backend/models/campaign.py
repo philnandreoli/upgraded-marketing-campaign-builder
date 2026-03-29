@@ -71,6 +71,13 @@ class CommentSection(str, Enum):
     GENERAL = "general"
 
 
+class TemplateVisibility(str, Enum):
+    """Template visibility scope."""
+
+    WORKSPACE = "workspace"
+    ORGANIZATION = "organization"
+
+
 # ---------------------------------------------------------------------------
 # Sub-models
 # ---------------------------------------------------------------------------
@@ -206,6 +213,15 @@ class ReviewFeedback(BaseModel):
     human_notes: str = Field(default="", description="Notes added by the human reviewer")
 
 
+class TemplateParameter(BaseModel):
+    """Template parameter metadata used for prompt-time customization."""
+
+    name: str
+    type: str = Field(description='Parameter type (e.g. "text", "number", "date").')
+    default: Optional[str] = None
+    description: str
+
+
 # ---------------------------------------------------------------------------
 # Campaign (aggregate root)
 # ---------------------------------------------------------------------------
@@ -338,6 +354,17 @@ class Campaign(BaseModel):
         default=0,
         description="Current step in the creation wizard (0–5). Stored in the campaign JSON; no schema migration required.",
     )
+    is_template: bool = False
+    template_category: Optional[str] = None
+    template_tags: list[str] = Field(default_factory=list)
+    template_description: Optional[str] = None
+    template_visibility: TemplateVisibility = TemplateVisibility.WORKSPACE
+    template_featured: bool = False
+    template_version: int = 1
+    template_parameters: list[TemplateParameter] = Field(default_factory=list)
+    cloned_from_campaign_id: Optional[str] = None
+    cloned_from_template_version: Optional[int] = None
+    clone_depth: Optional[str] = None
 
     def advance_status(self, new_status: CampaignStatus) -> None:
         self.status = new_status

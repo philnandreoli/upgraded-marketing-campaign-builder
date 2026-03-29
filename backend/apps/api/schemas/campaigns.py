@@ -15,7 +15,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.models.campaign import CampaignBrief, ChannelType, SocialMediaPlatform
+from backend.models.campaign import (
+    Campaign,
+    CampaignBrief,
+    ChannelType,
+    SocialMediaPlatform,
+    TemplateParameter,
+    TemplateVisibility,
+)
 from backend.models.user_settings import UITheme
 from backend.apps.api.schemas.common import PaginationMeta
 
@@ -66,6 +73,61 @@ class CampaignSummary(BaseModel):
 class CampaignListResponse(BaseModel):
     items: list[CampaignSummary]
     pagination: PaginationMeta
+
+
+class TemplateSummary(BaseModel):
+    id: str
+    name: str
+    category: Optional[str]
+    tags: list[str] = Field(default_factory=list)
+    description: Optional[str]
+    visibility: TemplateVisibility
+    featured: bool = False
+    version: int = 1
+    clone_count: int = 0
+    avg_brand_score: Optional[float] = None
+    created_at: datetime
+
+
+class TemplatePreview(Campaign):
+    """Read-only preview payload containing the full campaign template document."""
+
+
+class TemplateMetadata(BaseModel):
+    category: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    visibility: TemplateVisibility = TemplateVisibility.WORKSPACE
+    featured: bool = False
+    version: int = 1
+
+
+class TemplateListResponse(BaseModel):
+    items: list[TemplateSummary]
+    pagination: PaginationMeta
+
+
+class CloneCampaignRequest(BaseModel):
+    depth: Literal["brief", "strategy", "content", "full"] = "brief"
+    target_workspace_id: Optional[str] = None
+    parameter_overrides: Optional[dict[str, str]] = None
+
+
+class MarkTemplateRequest(BaseModel):
+    category: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    visibility: TemplateVisibility = TemplateVisibility.WORKSPACE
+    parameters: list[TemplateParameter] = Field(default_factory=list)
+
+
+class UpdateTemplateRequest(BaseModel):
+    category: Optional[str] = None
+    tags: Optional[list[str]] = None
+    description: Optional[str] = None
+    visibility: Optional[TemplateVisibility] = None
+    featured: Optional[bool] = None
+    parameters: Optional[list[TemplateParameter]] = None
 
 
 class CreateCampaignRequest(CampaignBrief):

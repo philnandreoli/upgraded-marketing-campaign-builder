@@ -17,6 +17,8 @@ import ProgressIndicator from "../components/ProgressIndicator.jsx";
 import Toast from "../components/Toast.jsx";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
+import CloneDialog from "../components/CloneDialog.jsx";
+import TemplateConfigDialog from "../components/TemplateConfigDialog.jsx";
 import { useUser } from "../UserContext";
 import { SkeletonCard } from "../components/Skeleton.jsx";
 import CommentPanel from "../components/CommentPanel.jsx";
@@ -76,6 +78,9 @@ export default function CampaignDetail() {
   const { events, connected, connectionFailed } = useWebSocket(id);
   const { isViewer, isAdmin, user, imageGenerationAvailable } = useUser();
   const prevStatusRef = useRef(null);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templateDialogMode, setTemplateDialogMode] = useState("create");
 
   // canManage: admins always can; campaign owners can too
   const canManage = isAdmin || (campaign?.owner_id != null && user?.id === campaign.owner_id);
@@ -624,6 +629,9 @@ export default function CampaignDetail() {
             {connected ? "Live" : connectionFailed ? "Disconnected" : "Reconnecting…"}
           </span>
           <StatusBadge status={campaign.status} pulse={badgePulse} />
+          {campaign.is_template && (
+            <span className="badge badge-template" aria-label="Template">📋 Template</span>
+          )}
           {totalCount > 0 && (
             <ProgressIndicator completedCount={completedCount} totalCount={totalCount} />
           )}
@@ -631,6 +639,39 @@ export default function CampaignDetail() {
             <span className="badge" style={{ background: "rgba(148,163,184,0.2)", color: "var(--color-text-muted)", fontSize: "0.75rem" }}>
               👁 Read-only
             </span>
+          )}
+          {/* Clone Campaign button — visible to creators/contributors (not viewers) */}
+          {!isViewer && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ fontSize: "0.8rem" }}
+              onClick={() => setCloneDialogOpen(true)}
+            >
+              📋 Clone Campaign
+            </button>
+          )}
+          {/* Save as Template — approved, non-template campaigns for creators/admins */}
+          {!isViewer && campaign.status === "approved" && !campaign.is_template && canManage && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ fontSize: "0.8rem" }}
+              onClick={() => { setTemplateDialogMode("create"); setTemplateDialogOpen(true); }}
+            >
+              ⭐ Save as Template
+            </button>
+          )}
+          {/* Edit Template Settings — for campaigns already marked as templates */}
+          {!isViewer && campaign.is_template && canManage && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ fontSize: "0.8rem" }}
+              onClick={() => { setTemplateDialogMode("edit"); setTemplateDialogOpen(true); }}
+            >
+              ⚙️ Edit Template Settings
+            </button>
           )}
         </div>
       </div>
@@ -835,6 +876,24 @@ export default function CampaignDetail() {
         events={events}
         isOpen={commentPanelState.isOpen}
         onClose={closeCommentPanel}
+      />
+
+      {/* Clone Campaign dialog */}
+      <CloneDialog
+        isOpen={cloneDialogOpen}
+        onClose={() => setCloneDialogOpen(false)}
+        campaign={campaign}
+        sourceWorkspaceId={effectiveWorkspaceId}
+      />
+
+      {/* Template Config dialog */}
+      <TemplateConfigDialog
+        isOpen={templateDialogOpen}
+        onClose={() => setTemplateDialogOpen(false)}
+        campaign={campaign}
+        workspaceId={effectiveWorkspaceId}
+        mode={templateDialogMode}
+        onSuccess={() => load()}
       />
     </div>
   );

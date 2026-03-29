@@ -304,6 +304,24 @@ export const parsePersona = (workspaceId, { name, description }) =>
     body: { name, description },
   });
 
+// ---------------------------------------------------------------------------
+// Clone & Template API
+// ---------------------------------------------------------------------------
+
+export const cloneCampaign = (workspaceId, campaignId, { depth = "brief", targetWorkspaceId = null, parameterOverrides = null } = {}) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/clone`, {
+    body: { depth, target_workspace_id: targetWorkspaceId, parameter_overrides: parameterOverrides },
+  });
+
+export const markAsTemplate = (workspaceId, campaignId, config) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/mark-template`, { body: config });
+
+export const updateTemplate = (templateId, config) =>
+  request("PATCH", `/api/templates/${encodeURIComponent(templateId)}`, { body: config });
+
+export const unmarkTemplate = (templateId) =>
+  request("DELETE", `/api/templates/${encodeURIComponent(templateId)}`);
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

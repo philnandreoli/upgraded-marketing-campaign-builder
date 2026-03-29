@@ -10,13 +10,12 @@ simply ``await`` these methods.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON as SA_JSON, case, cast, delete as sa_delete, exists, func, or_, select, update as sa_update
+from sqlalchemy import JSON as SA_JSON, String, case, cast, delete as sa_delete, exists, func, or_, select, update as sa_update
 
-from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus
+from backend.models.campaign import Campaign, CampaignBrief, CampaignStatus, TemplateVisibility
 from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRole, roles_from_db
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from backend.core.exceptions import ConcurrentUpdateError
@@ -32,6 +31,27 @@ from backend.infrastructure.database import (
 
 class CampaignStore:
     """Campaign repository backed by PostgreSQL."""
+
+    @staticmethod
+    def _campaign_row_values(campaign: Campaign) -> dict[str, Any]:
+        """Return flattened CampaignRow values that mirror denormalized columns."""
+        return {
+            "status": campaign.status.value,
+            "workspace_id": campaign.workspace_id,
+            "data": campaign.model_dump_json(),
+            "updated_at": campaign.updated_at,
+            "is_template": campaign.is_template,
+            "template_category": campaign.template_category,
+            "template_tags": campaign.template_tags,
+            "template_description": campaign.template_description,
+            "template_visibility": campaign.template_visibility.value,
+            "template_featured": campaign.template_featured,
+            "template_version": campaign.template_version,
+            "template_parameters": [p.model_dump() for p in campaign.template_parameters],
+            "cloned_from_campaign_id": campaign.cloned_from_campaign_id,
+            "cloned_from_template_version": campaign.cloned_from_template_version,
+            "clone_depth": campaign.clone_depth,
+        }
 
     # ------------------------------------------------------------------
     # Campaign CRUD — all async
@@ -53,11 +73,8 @@ class CampaignStore:
         row = CampaignRow(
             id=campaign.id,
             owner_id=campaign.owner_id,
-            workspace_id=campaign.workspace_id,
-            status=campaign.status.value,
-            data=campaign.model_dump_json(),
+            **self._campaign_row_values(campaign),
             created_at=campaign.created_at,
-            updated_at=campaign.updated_at,
             version=campaign.version,
         )
         async with async_session() as session:
@@ -103,10 +120,7 @@ class CampaignStore:
                     CampaignRow.version == campaign.version,
                 )
                 .values(
-                    status=campaign.status.value,
-                    workspace_id=campaign.workspace_id,
-                    data=campaign.model_dump_json(),
-                    updated_at=campaign.updated_at,
+                    **self._campaign_row_values(campaign),
                     version=campaign.version + 1,
                 )
             )
@@ -119,11 +133,8 @@ class CampaignStore:
                     row = CampaignRow(
                         id=campaign.id,
                         owner_id=campaign.owner_id,
-                        workspace_id=campaign.workspace_id,
-                        status=campaign.status.value,
-                        data=campaign.model_dump_json(),
+                        **self._campaign_row_values(campaign),
                         created_at=campaign.created_at,
-                        updated_at=campaign.updated_at,
                         version=campaign.version,
                     )
                     session.add(row)
@@ -697,6 +708,125 @@ class CampaignStore:
             )
             rows = result.scalars().all()
             return [Campaign.model_validate_json(r.data) for r in rows], total
+
+    async def list_templates(
+        self,
+        user_id: Optional[str],
+        workspace_ids: list[str],
+        filters: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return paginated template summaries visible to the current user."""
+        limit = int(filters.get("limit", 20))
+        offset = int(filters.get("offset", 0))
+        is_admin = bool(filters.get("is_admin", False))
+
+        clone_counts = (
+            select(
+                CampaignRow.cloned_from_campaign_id.label("template_id"),
+                func.count(CampaignRow.id).label("clone_count"),
+            )
+            .where(CampaignRow.cloned_from_campaign_id.is_not(None))
+            .group_by(CampaignRow.cloned_from_campaign_id)
+            .subquery()
+        )
+
+        brief_json = cast(CampaignRow.data, SA_JSON)
+        template_query = (
+            select(
+                CampaignRow.id,
+                CampaignRow.template_category,
+                CampaignRow.template_tags,
+                CampaignRow.template_description,
+                CampaignRow.template_visibility,
+                CampaignRow.template_featured,
+                CampaignRow.template_version,
+                CampaignRow.created_at,
+                CampaignRow.updated_at,
+                func.json_extract_path_text(
+                    brief_json, "brief", "product_or_service"
+                ).label("name"),
+                func.coalesce(clone_counts.c.clone_count, 0).label("clone_count"),
+                CampaignRow.data,
+            )
+            .outerjoin(clone_counts, clone_counts.c.template_id == CampaignRow.id)
+            .where(CampaignRow.is_template.is_(True))
+        )
+
+        if not is_admin:
+            visibility_filters: list[Any] = [
+                CampaignRow.template_visibility == TemplateVisibility.ORGANIZATION.value
+            ]
+            if workspace_ids:
+                visibility_filters.append(CampaignRow.workspace_id.in_(workspace_ids))
+            template_query = template_query.where(or_(*visibility_filters))
+
+        category = filters.get("category")
+        if category:
+            template_query = template_query.where(CampaignRow.template_category == category)
+
+        featured = filters.get("featured")
+        if featured is not None:
+            template_query = template_query.where(CampaignRow.template_featured.is_(bool(featured)))
+
+        visibility = filters.get("visibility")
+        if visibility:
+            template_query = template_query.where(CampaignRow.template_visibility == visibility)
+
+        search = filters.get("search")
+        if search:
+            pattern = f"%{search.strip()}%"
+            template_query = template_query.where(
+                or_(
+                    CampaignRow.template_description.ilike(pattern),
+                    func.json_extract_path_text(brief_json, "brief", "product_or_service").ilike(pattern),
+                )
+            )
+
+        tags = [t for t in (filters.get("tags") or []) if t]
+        for tag in tags:
+            template_query = template_query.where(
+                cast(CampaignRow.template_tags, String).ilike(f'%"{tag}"%')
+            )
+
+        async with async_session() as session:
+            count_result = await session.execute(
+                select(func.count()).select_from(template_query.subquery())
+            )
+            total = count_result.scalar() or 0
+
+            result = await session.execute(
+                template_query
+                .order_by(
+                    CampaignRow.template_featured.desc(),
+                    CampaignRow.updated_at.desc(),
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+            rows = result.all()
+            items: list[dict[str, Any]] = []
+            for row in rows:
+                avg_brand_score: Optional[float] = None
+                if row.data:
+                    campaign = Campaign.model_validate_json(row.data)
+                    if campaign.review is not None:
+                        avg_brand_score = campaign.review.brand_consistency_score
+                items.append(
+                    {
+                        "id": row.id,
+                        "name": row.name or "",
+                        "category": row.template_category,
+                        "tags": row.template_tags or [],
+                        "description": row.template_description,
+                        "visibility": row.template_visibility,
+                        "featured": bool(row.template_featured),
+                        "version": int(row.template_version or 1),
+                        "clone_count": int(row.clone_count or 0),
+                        "created_at": row.created_at,
+                        "avg_brand_score": avg_brand_score,
+                    }
+                )
+            return items, total
 
     async def get_personal_workspace(self, user_id: str) -> Optional[Workspace]:
         """Return the personal workspace for *user_id*, or ``None`` if not found."""
