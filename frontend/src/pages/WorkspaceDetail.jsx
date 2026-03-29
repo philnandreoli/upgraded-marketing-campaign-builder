@@ -41,19 +41,32 @@ function getInitials(name) {
 }
 
 function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId, deletingId }) {
+  const isDraft = c.status === "draft";
+  const campaignUrl = isDraft
+    ? `/workspaces/${workspaceId}/campaigns/${c.id}/edit`
+    : `/workspaces/${workspaceId}/campaigns/${c.id}`;
   return (
     <div className="campaign-card card" data-status={c.status}>
       <div className="campaign-card-avatar">
         {getInitials(c.product_or_service)}
       </div>
       <div className="campaign-card-body">
-        <Link to={`/workspaces/${workspaceId}/campaigns/${c.id}`} className="campaign-card-title">
+        <Link to={campaignUrl} className="campaign-card-title">
           {c.product_or_service}
         </Link>
         <p className="campaign-card-goal">{c.goal}</p>
       </div>
       <div className="campaign-card-meta">
         <StatusBadge status={c.status} />
+        {isDraft && (
+          <Link
+            to={campaignUrl}
+            className="btn btn-outline"
+            style={{ padding: "0.3rem 0.6rem", fontSize: "0.75rem" }}
+          >
+            Resume →
+          </Link>
+        )}
         {(isAdmin || (!isViewer && c.owner_id === user?.id)) && (
           <button
             className="btn btn-outline"
@@ -61,7 +74,7 @@ function CampaignCard({ c, isAdmin, isViewer, user, onDelete, workspaceId, delet
             disabled={deletingId === c.id}
             onClick={() => onDelete(c.id)}
           >
-            {deletingId === c.id ? "Deleting…" : "Delete"}
+            {deletingId === c.id ? "Deleting…" : isDraft ? "Discard" : "Delete"}
           </button>
         )}
       </div>
@@ -119,7 +132,7 @@ export default function WorkspaceDetail({ events = [] }) {
   // Fetch campaigns
   const loadCampaigns = useCallback(async () => {
     try {
-      const res = await listWorkspaceCampaigns(id);
+      const res = await listWorkspaceCampaigns(id, { includeDrafts: true });
       const items = res.items ?? res;
       // Filter out campaigns currently in the soft-delete undo window
       setCampaigns(items.filter((c) => !pendingDeletesRef.current.has(c.id)));

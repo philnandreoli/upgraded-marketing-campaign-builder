@@ -15,6 +15,11 @@ class Persona(BaseModel):
     workspace_id: str
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
+    source_text: str = Field(
+        default="",
+        max_length=4000,
+        description="Original freeform text the user entered before AI structuring.",
+    )
     created_by: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

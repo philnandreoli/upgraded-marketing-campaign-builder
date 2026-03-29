@@ -63,7 +63,7 @@ class InMemoryPersonaStore:
         self._personas: dict[str, dict] = {}
         self._counter = 0
 
-    async def create(self, *, workspace_id: str, name: str, description: str, created_by: str):
+    async def create(self, *, workspace_id: str, name: str, description: str, source_text: str = "", created_by: str):
         from datetime import datetime
 
         self._counter += 1
@@ -74,6 +74,7 @@ class InMemoryPersonaStore:
             "workspace_id": workspace_id,
             "name": name,
             "description": description,
+            "source_text": source_text,
             "created_by": created_by,
             "created_at": now,
             "updated_at": now,

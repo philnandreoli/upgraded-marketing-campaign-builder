@@ -15,6 +15,7 @@ class PersonaResponse(BaseModel):
     workspace_id: str
     name: str
     description: str
+    source_text: str = ""
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -28,6 +29,7 @@ class PersonaListResponse(BaseModel):
 class CreatePersonaRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
+    source_text: str = Field(default="", max_length=4000)
 
 
 class UpdatePersonaRequest(BaseModel):

@@ -480,6 +480,7 @@ class PersonaRow(Base):
     )
     name = Column(String, nullable=False)
     description = Column(Text, nullable=False)
+    source_text = Column(Text, nullable=False, server_default="")
     created_by = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
