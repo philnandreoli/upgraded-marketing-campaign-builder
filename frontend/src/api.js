@@ -349,6 +349,81 @@ export const getTemplateRecommendations = ({ goal, product, channels, budget } =
 export const getAdminTemplateAnalytics = () =>
   request("GET", "/api/admin/templates/analytics");
 
+// ---------------------------------------------------------------------------
+// Experiment / A/B Testing API
+// ---------------------------------------------------------------------------
+
+export const listExperiments = (workspaceId, campaignId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments`);
+
+export const createExperiment = (workspaceId, campaignId, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments`, { body });
+
+export const getExperiment = (workspaceId, campaignId, expId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}`);
+
+export const updateExperiment = (workspaceId, campaignId, expId, body) =>
+  request("PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}`, { body });
+
+export const recordMetrics = (workspaceId, campaignId, expId, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/metrics`, { body });
+
+export const listMetrics = (workspaceId, campaignId, expId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/metrics`);
+
+export const importMetrics = (workspaceId, campaignId, expId, csvData) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/metrics/import`, {
+    body: { csv_data: csvData },
+  });
+
+export const getExperimentReport = (workspaceId, campaignId, expId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/report`);
+
+export const getExperimentForecast = (workspaceId, campaignId, expId, daysAhead = 7) => {
+  const params = new URLSearchParams();
+  if (daysAhead) params.set("days_ahead", daysAhead);
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/forecast?${params}`);
+};
+
+export const selectWinner = (workspaceId, campaignId, expId, variant) =>
+  request("PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/select-winner`, {
+    body: { variant },
+  });
+
+export const concludeExperiment = (workspaceId, campaignId, expId) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/conclude`);
+
+export const exportExperiment = (workspaceId, campaignId, expId, format = "csv") =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/export?format=${encodeURIComponent(format)}`);
+
+export const getExperimentInsights = (workspaceId, campaignId, expId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/insights`);
+
+export const getExperimentWebhook = (workspaceId, campaignId, expId, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/experiments/${encodeURIComponent(expId)}/webhook`, { body });
+
+// Workspace-level experiment learnings
+export const listExperimentLearnings = (workspaceId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/experiment-learnings`);
+
+export const createExperimentLearning = (workspaceId, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/experiment-learnings`, { body });
+
+// Global sample-size calculator
+export const getSampleSizeCalculator = (params = {}) => {
+  const qs = new URLSearchParams();
+  if (params.baseline_rate != null) qs.set("baseline_rate", params.baseline_rate);
+  if (params.mde != null) qs.set("mde", params.mde);
+  if (params.confidence_level != null) qs.set("confidence_level", params.confidence_level);
+  if (params.power != null) qs.set("power", params.power);
+  if (params.daily_traffic != null) qs.set("daily_traffic", params.daily_traffic);
+  return request("GET", `/api/experiments/sample-size-calculator?${qs}`);
+};
+
+// ---------------------------------------------------------------------------
+// WebSocket ticket / URL builder
+// ---------------------------------------------------------------------------
+
 export async function getWsUrl(campaignId = null) {
   let base;
   if (import.meta.env.VITE_API_URL) {

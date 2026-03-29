@@ -141,6 +141,14 @@ class ContentPiece(BaseModel):
     scheduled_date: Optional[date] = Field(default=None, description="Scheduled publish date")
     scheduled_time: Optional[time] = Field(default=None, description="Scheduled publish time")
     platform_target: Optional[str] = Field(default=None, description="Target platform for this piece")
+    variant_group: Optional[str] = Field(
+        default=None,
+        description="UUID grouping A/B/n variants together",
+    )
+    is_winner: bool = Field(
+        default=False,
+        description="Whether this variant was selected as the winner",
+    )
 
 
 class CampaignContent(BaseModel):

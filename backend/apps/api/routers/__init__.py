@@ -6,6 +6,8 @@ from fastapi import FastAPI
 
 from backend.api.admin import router as admin_router
 from backend.api.budget_entries import router as budget_entries_router
+from backend.api.experiment_insights import router as experiment_insights_router
+from backend.api.experiments import global_router as experiments_global_router, router as experiments_router
 from backend.api.campaigns import me_router, router as campaigns_router
 from backend.api.personas import router as personas_router
 from backend.api.campaign_assets import router as campaign_assets_router
@@ -31,10 +33,13 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(campaign_comments_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(campaign_clone_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(budget_entries_router, prefix="/api/workspaces/{workspace_id}")
+    app.include_router(experiments_router, prefix="/api/workspaces/{workspace_id}")
+    app.include_router(experiment_insights_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(campaign_members_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(personas_router, prefix="/api/workspaces/{workspace_id}")
     app.include_router(templates_router, prefix="/api")
     app.include_router(workspaces_router, prefix="/api")
     app.include_router(workspace_members_router, prefix="/api")
+    app.include_router(experiments_global_router, prefix="/api")
     app.include_router(ws_router, prefix="/ws")
     app.include_router(ws_ticket_router, prefix="/api/ws")

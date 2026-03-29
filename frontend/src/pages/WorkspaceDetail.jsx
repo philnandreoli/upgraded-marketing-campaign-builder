@@ -13,6 +13,7 @@ import FilterTabs from "../components/FilterTabs.jsx";
 import SearchBar from "../components/SearchBar.jsx";
 import Toast from "../components/Toast.jsx";
 import WorkspaceBudgetOverview from "../components/WorkspaceBudgetOverview.jsx";
+import ExperimentHistory from "../components/ExperimentHistory.jsx";
 import { applyFilter, matchesSearch } from "../lib/campaignFilters";
 import usePolling from "../hooks/usePolling";
 
@@ -408,6 +409,9 @@ export default function WorkspaceDetail({ events = [] }) {
         <div className="ws-detail-col-sidebar">
           {/* ── Budget Overview ─────────────────────────────────────────── */}
           <WorkspaceBudgetOverview workspaceId={id} />
+
+          {/* ── Experiment Learnings ────────────────────────────────────── */}
+          <ExperimentHistory workspaceId={id} isViewer={isViewer} />
         </div>
       </div>
 

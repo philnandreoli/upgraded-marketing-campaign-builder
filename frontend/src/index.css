@@ -7226,3 +7226,869 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
     font-size: 0.72rem;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* 17. A/B Testing & Experiment Components                              */
+/* ------------------------------------------------------------------ */
+
+/* ── Dashboard Layout ─────────────────────────────────────────────── */
+.exp-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.exp-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .exp-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Experiment List Sidebar ──────────────────────────────────────── */
+.exp-list-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.exp-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.exp-list-item:hover {
+  background: var(--color-surface-2);
+}
+
+.exp-list-item--active {
+  border-color: var(--color-primary);
+  background: var(--color-surface-2);
+}
+
+.exp-list-item-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.exp-list-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.exp-list-item-date {
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+}
+
+.exp-winner-mini-badge {
+  font-size: 0.7rem;
+  color: var(--color-success);
+}
+
+/* ── Detail Panel ────────────────────────────────────────────────── */
+.exp-detail-panel {
+  min-width: 0;
+}
+
+.exp-detail-header {
+  margin-bottom: 0;
+}
+
+.exp-detail-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-top: 0.5rem;
+  overflow-x: auto;
+}
+
+.exp-detail-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.exp-detail-tab:hover {
+  color: var(--color-text);
+}
+
+.exp-detail-tab--active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.exp-detail-body {
+  margin-top: 0.75rem;
+}
+
+/* ── Charts ──────────────────────────────────────────────────────── */
+.exp-charts {
+  display: flex;
+  flex-direction: column;
+}
+
+.exp-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 600px) {
+  .exp-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.exp-chart-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.exp-chart-group-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.exp-chart-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.exp-chart-bar-variant {
+  font-weight: 700;
+  font-size: 0.78rem;
+  min-width: 16px;
+  text-align: center;
+}
+
+.exp-chart-bar-track {
+  flex: 1;
+  height: 18px;
+  background: var(--color-surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.exp-chart-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+
+.exp-chart-bar-value {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  min-width: 60px;
+  text-align: right;
+}
+
+/* ── Statistical Results ─────────────────────────────────────────── */
+.exp-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.exp-winner-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.1));
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius);
+  margin-bottom: 0.25rem;
+}
+
+.exp-winner-crown {
+  font-size: 1.75rem;
+}
+
+.exp-winner-text {
+  font-size: 1rem;
+  color: var(--color-success);
+}
+
+.exp-winner-text strong {
+  font-size: 1.15rem;
+}
+
+.exp-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.exp-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}
+
+.exp-stat-label {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.exp-stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.exp-stat-value--positive {
+  color: var(--color-success);
+}
+
+.exp-stat-value--negative {
+  color: var(--color-danger);
+}
+
+.exp-stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+}
+
+.exp-stat-badge--success {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.exp-stat-badge--neutral {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--color-text-muted);
+}
+
+.exp-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.exp-stats-table th,
+.exp-stats-table td {
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.exp-stats-table th {
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.exp-stats-winner-row {
+  background: rgba(16, 185, 129, 0.06);
+}
+
+/* ── Variant Comparison ──────────────────────────────────────────── */
+.exp-variant-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.exp-variant-group {
+  margin-bottom: 0;
+}
+
+.exp-variant-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.92rem;
+  margin-bottom: 0.75rem;
+}
+
+.exp-variant-group-icon {
+  font-size: 1rem;
+}
+
+.exp-variant-cols {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.exp-variant-col {
+  padding: 0.75rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}
+
+.exp-variant-col--winner {
+  border-color: var(--color-success);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.exp-variant-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.exp-variant-col-label {
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.exp-winner-badge {
+  font-size: 0.72rem;
+  color: var(--color-success);
+  background: rgba(16, 185, 129, 0.15);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.exp-variant-text {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.exp-diff-highlight {
+  background: rgba(244, 157, 55, 0.2);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.exp-variant-metrics-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.exp-variant-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.exp-variant-metric-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  letter-spacing: 0.03em;
+}
+
+.exp-variant-metric-value {
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+/* ── Metric Entry Panel ──────────────────────────────────────────── */
+.exp-variant-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.exp-variant-tab {
+  padding: 0.4rem 0.85rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.exp-variant-tab:hover {
+  color: var(--color-text);
+}
+
+.exp-variant-tab--active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.exp-metric-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.exp-metric-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.65rem;
+}
+
+.exp-metric-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.exp-metric-field span {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.exp-metric-field input,
+.exp-metric-field select,
+.exp-metric-field textarea {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.exp-metric-field input:focus,
+.exp-metric-field select:focus,
+.exp-metric-field textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+}
+
+.exp-metric-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* ── Auto-Winner Config ──────────────────────────────────────────── */
+.exp-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.exp-config-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.exp-config-toggle-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.exp-config-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-dim);
+}
+
+.exp-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  transition: background 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.exp-toggle--on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.exp-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s;
+}
+
+.exp-toggle--on .exp-toggle-knob {
+  transform: translateX(20px);
+}
+
+.exp-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.exp-config-field > span {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.exp-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.exp-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-surface-2);
+  outline: none;
+}
+
+.exp-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  cursor: pointer;
+  border: 2px solid var(--color-surface);
+}
+
+.exp-slider-value {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+
+.exp-config-input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.exp-config-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+}
+
+.exp-config-select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.exp-config-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.exp-config-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+/* ── Sample Size Calculator ──────────────────────────────────────── */
+.exp-calc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.65rem;
+}
+
+.exp-calc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.exp-calc-field span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.exp-calc-field input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.exp-calc-field input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+}
+
+.exp-calc-result-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.65rem;
+}
+
+.exp-calc-result-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}
+
+.exp-calc-result-label {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.exp-calc-result-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--color-primary);
+}
+
+/* ── AI Insights Panel ──────────────────────────────────────────── */
+.exp-insights-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.exp-insight-section {
+  padding: 0.75rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}
+
+.exp-insight-heading {
+  font-size: 0.88rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.exp-insight-text {
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--color-text);
+}
+
+.exp-insight-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.exp-insight-list-item {
+  position: relative;
+  padding-left: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.exp-insight-list-item::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+/* ── CSV Import Dialog ──────────────────────────────────────────── */
+.exp-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
+}
+
+.exp-dialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.exp-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.exp-dialog-header h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.exp-dialog-close {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.25rem;
+  line-height: 1;
+}
+
+.exp-dialog-close:hover {
+  color: var(--color-text);
+}
+
+.exp-dialog-body {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.exp-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.exp-csv-textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  resize: vertical;
+}
+
+.exp-csv-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+}
+
+.exp-csv-preview {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+/* ── Experiment History / Learnings ───────────────────────────────── */
+.exp-learnings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.exp-learning-card {
+  padding: 0.65rem 0.75rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.exp-learning-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.exp-learning-tags {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+/* ── Create Form ─────────────────────────────────────────────────── */
+.exp-create-form {
+  padding: 0.75rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}

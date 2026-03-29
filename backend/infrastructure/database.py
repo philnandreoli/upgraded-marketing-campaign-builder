@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -503,6 +503,102 @@ class PersonaRow(Base):
         Index("ix_personas_workspace_created", "workspace_id", "created_at"),
         Index("ix_personas_workspace_name", "workspace_id", "name"),
     )
+
+
+class ExperimentRow(Base):
+    """Campaign-scoped A/B experiment definition."""
+
+    __tablename__ = "experiments"
+
+    id = Column(String, primary_key=True)
+    campaign_id = Column(
+        String,
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    workspace_id = Column(
+        String,
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    variant_group = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="draft")
+    config = Column(JSON, nullable=False, default=dict)
+    started_at = Column(DateTime, nullable=True)
+    concluded_at = Column(DateTime, nullable=True)
+    winner_variant = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_experiments_campaign_group", "campaign_id", "variant_group"),
+    )
+
+
+class VariantMetricRow(Base):
+    """Recorded metric snapshot for one experiment variant."""
+
+    __tablename__ = "variant_metrics"
+
+    id = Column(String, primary_key=True)
+    experiment_id = Column(
+        String,
+        ForeignKey("experiments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    campaign_id = Column(
+        String,
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    content_piece_index = Column(Integer, nullable=False)
+    variant = Column(String, nullable=False)
+    impressions = Column(Integer, nullable=False, default=0)
+    clicks = Column(Integer, nullable=False, default=0)
+    conversions = Column(Integer, nullable=False, default=0)
+    revenue = Column(Float, nullable=False, default=0.0)
+    custom_metrics = Column(JSON, nullable=False, default=dict)
+    source = Column(String, nullable=False, default="manual")
+    recorded_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_variant_metrics_variant", "experiment_id", "variant"),
+    )
+
+
+class ExperimentLearningRow(Base):
+    """Workspace-level reusable learning captured from concluded experiments."""
+
+    __tablename__ = "experiment_learnings"
+
+    id = Column(String, primary_key=True)
+    experiment_id = Column(
+        String,
+        ForeignKey("experiments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    campaign_id = Column(
+        String,
+        ForeignKey("campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    workspace_id = Column(
+        String,
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    summary = Column(Text, nullable=False)
+    tags = Column(JSON, nullable=False, default=list)
+    ai_generated = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False)
 
 
 # ---------------------------------------------------------------------------
