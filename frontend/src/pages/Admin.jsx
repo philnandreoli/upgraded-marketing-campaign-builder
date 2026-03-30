@@ -100,6 +100,21 @@ function getEntraUserLabel(user) {
   return user.display_name ?? user.mail ?? user.user_principal_name ?? user.id;
 }
 
+function formatMonthShortYear(monthKey) {
+  if (typeof monthKey !== "string") return "";
+  const [yearPart, monthPart] = monthKey.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return monthKey;
+  }
+  const date = new Date(year, month - 1, 1);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    year: "2-digit",
+  });
+}
+
 export default function Admin() {
   const [users, setUsers] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -1086,7 +1101,7 @@ export default function Admin() {
                               style={{ height: `${(m.clone_count / maxClone) * 100}%` }}
                               title={`${m.month}: ${m.clone_count} clones`}
                             />
-                            <div className="bar-chart__label">{m.month.slice(5)}</div>
+                            <div className="bar-chart__label">{formatMonthShortYear(m.month)}</div>
                           </div>
                         ))}
                       </div>

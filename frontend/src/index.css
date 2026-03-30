@@ -3436,6 +3436,12 @@ a:hover { color: var(--color-primary-hover); }
   margin-top: 0.25rem;
 }
 
+.ws-card-finance-stats {
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+}
+
 .ws-card-stat {
   display: flex;
   flex-direction: column;
@@ -3454,6 +3460,34 @@ a:hover { color: var(--color-primary-hover); }
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.ws-finance-value--budget {
+  color: #0f766e;
+}
+
+.ws-finance-value--actual-good {
+  color: #166534;
+}
+
+.ws-finance-value--actual-over {
+  color: var(--color-danger);
+}
+
+.ws-finance-value--actual-neutral {
+  color: var(--color-text, #1e293b);
+}
+
+.ws-finance-value--variance-good {
+  color: #166534;
+}
+
+.ws-finance-value--variance-over {
+  color: var(--color-danger);
+}
+
+.ws-finance-value--variance-neutral {
+  color: var(--color-text, #1e293b);
 }
 
 /* ── Create Workspace Modal ───────────────────────────────────────────── */

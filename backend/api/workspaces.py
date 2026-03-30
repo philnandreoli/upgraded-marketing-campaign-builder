@@ -20,6 +20,7 @@ import calendar
 import json as _json
 from collections import defaultdict
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal, Optional
 
@@ -131,6 +132,9 @@ class WorkspaceSummary(BaseModel):
     in_progress_count: int = 0
     awaiting_approval_count: int = 0
     approved_count: int = 0
+    budget_total: Decimal = Decimal("0.00")
+    actual_total: Decimal = Decimal("0.00")
+    variance_total: Decimal = Decimal("0.00")
 
 
 class WorkspaceListResponse(BaseModel):
@@ -201,6 +205,9 @@ async def list_workspaces(
             in_progress_count = int(summary.get("in_progress_count", 0))
             awaiting_approval_count = int(summary.get("awaiting_approval_count", 0))
             approved_count = int(summary.get("approved_count", 0))
+            budget_total = Decimal(str(summary.get("budget_total", "0.00"))).quantize(Decimal("0.01"))
+            actual_total = Decimal(str(summary.get("actual_total", "0.00"))).quantize(Decimal("0.01"))
+            variance_total = Decimal(str(summary.get("variance_total", "0.00"))).quantize(Decimal("0.01"))
         else:
             if user is not None:
                 role = await store.get_workspace_member_role(ws.id, user.id)
@@ -225,6 +232,9 @@ async def list_workspaces(
             in_progress_count = 0
             awaiting_approval_count = 0
             approved_count = 0
+            budget_total = Decimal("0.00")
+            actual_total = Decimal("0.00")
+            variance_total = Decimal("0.00")
 
         result.append(
             WorkspaceSummary(
@@ -241,6 +251,9 @@ async def list_workspaces(
                 in_progress_count=in_progress_count,
                 awaiting_approval_count=awaiting_approval_count,
                 approved_count=approved_count,
+                budget_total=budget_total,
+                actual_total=actual_total,
+                variance_total=variance_total,
             )
         )
     total_count = len(result)
