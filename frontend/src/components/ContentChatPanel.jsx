@@ -6,9 +6,12 @@ import {
   revertContentChat,
   applyAndApproveFromChat,
   getContentChatVersions,
+  getContentScore,
 } from "../api";
 import { useToast } from "../ToastContext";
 import QuickActionChips from "./QuickActionChips";
+import ContentDiffView from "./ContentDiffView";
+import ContentScoreBadge from "./ContentScoreBadge";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,6 +47,11 @@ function formatRelativeTime(dateStr) {
 
 function ChatMessage({ message, onApply, onRevert, onApprove, isLatestAssistant }) {
   const isUser = message.role === "user";
+  const [showDiff, setShowDiff] = useState(false);
+
+  const beforeText = message.metadata?.version?.before || "";
+  const afterText = message.metadata?.version?.after || message.content || "";
+  const hasDiffContent = !isUser && (beforeText || afterText);
 
   return (
     <div
@@ -88,6 +96,24 @@ function ChatMessage({ message, onApply, onRevert, onApprove, isLatestAssistant 
               🔒 Approve
             </button>
           )}
+          {hasDiffContent && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline chat-panel-action-btn"
+              onClick={() => setShowDiff((s) => !s)}
+              aria-expanded={showDiff}
+              aria-label={showDiff ? "Hide diff" : "Show diff"}
+            >
+              {showDiff ? "🔍 Hide diff" : "🔍 Show diff"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Diff view below message */}
+      {showDiff && hasDiffContent && (
+        <div className="chat-panel-diff-container">
+          <ContentDiffView original={beforeText} revised={afterText} />
         </div>
       )}
     </div>
@@ -107,6 +133,7 @@ export default function ContentChatPanel({
   onClose,
   onContentUpdated,
   events = [],
+  otherUsers = [],
 }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,6 +146,8 @@ export default function ContentChatPanel({
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState(null);
   const [customChips, setCustomChips] = useState([]);
+  const [score, setScore] = useState(null);
+  const [scoreLoading, setScoreLoading] = useState(false);
 
   const { addToast } = useToast();
   const listEndRef = useRef(null);
@@ -156,13 +185,27 @@ export default function ContentChatPanel({
     }
   }, [workspaceId, campaignId, pieceIndex]);
 
+  const fetchScore = useCallback(async () => {
+    if (!workspaceId || !campaignId || pieceIndex == null) return;
+    setScoreLoading(true);
+    try {
+      const data = await getContentScore(workspaceId, campaignId, pieceIndex, {});
+      setScore(data);
+    } catch {
+      // Score is non-critical — silently ignore errors
+    } finally {
+      setScoreLoading(false);
+    }
+  }, [workspaceId, campaignId, pieceIndex]);
+
   // Fetch on open
   useEffect(() => {
     if (isOpen) {
       fetchHistory();
       fetchSuggestions();
+      fetchScore();
     }
-  }, [isOpen, fetchHistory, fetchSuggestions]);
+  }, [isOpen, fetchHistory, fetchSuggestions, fetchScore]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -279,10 +322,12 @@ export default function ContentChatPanel({
     try {
       onContentUpdated?.(pieceIndex, newContent);
       addToast({ type: "success", stage: "Applied", message: "Content updated from chat refinement." });
+      // Refresh score after applying
+      fetchScore();
     } catch (err) {
       addToast({ type: "error", stage: "Error", message: "Failed to apply content: " + err.message });
     }
-  }, [pieceIndex, onContentUpdated, addToast]);
+  }, [pieceIndex, onContentUpdated, addToast, fetchScore]);
 
   const handleRevert = useCallback(async () => {
     try {
@@ -414,6 +459,7 @@ export default function ContentChatPanel({
           <div className="chat-panel-header-left">
             <span className="chat-panel-title">🤖 AI Refine: {pieceTypeLabel}</span>
             <span className="chat-panel-version">v{versionNumber}</span>
+            <ContentScoreBadge score={score} loading={scoreLoading} />
           </div>
           {onClose && (
             <button
@@ -425,6 +471,13 @@ export default function ContentChatPanel({
             </button>
           )}
         </div>
+
+        {/* Presence conflict warning */}
+        {otherUsers.length > 0 && (
+          <div className="chat-panel-presence-warning" role="status">
+            ⚠️ {otherUsers[0].display_name || "Someone"}{otherUsers.length > 1 ? ` and ${otherUsers.length - 1} other${otherUsers.length > 2 ? "s" : ""}` : ""} is also reviewing this piece
+          </div>
+        )}
 
         {/* Proactive suggestions banner */}
         {showSuggestions && suggestions.length > 0 && (

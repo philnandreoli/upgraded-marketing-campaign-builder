@@ -1,10 +1,12 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { submitContentApproval, updatePieceNotes, updatePieceDecision, generateImageAsset } from "../api";
 import { useConfirm } from "../ConfirmDialogContext";
 import { useToast } from "../ToastContext";
 import { useNotifications } from "../NotificationContext";
 import ImageAssetCard from "./ImageAssetCard";
 import ContentChatPanel from "./ContentChatPanel";
+import BatchRefinementModal from "./BatchRefinementModal";
+import PresenceIndicator from "./PresenceIndicator";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -79,6 +81,8 @@ export default function ContentSection({
   const [imageErrors, setImageErrors] = useState({});           // { [index]: string | null }
   const [chatPieceIndex, setChatPieceIndex] = useState(null);
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [presenceData, setPresenceData] = useState({});
 
   const visiblePieces = data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
@@ -95,6 +99,17 @@ export default function ContentSection({
   const closeChatPanel = useCallback(() => {
     setIsChatPanelOpen(false);
   }, []);
+
+  // Listen for presence_update WebSocket events
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+    const presenceEvents = events.filter((e) => (e.event ?? e.type) === "presence_update");
+    presenceEvents.forEach((evt) => {
+      if (evt.piece_index != null && Array.isArray(evt.users)) {
+        setPresenceData((prev) => ({ ...prev, [evt.piece_index]: evt.users }));
+      }
+    });
+  }, [events]);
 
   const handleChatContentUpdated = useCallback((idx, newContent) => {
     if (newContent != null) {
@@ -256,7 +271,19 @@ export default function ContentSection({
     <div className="card">
       <div className="section-header-row">
         <h2>✍️ {isApprovalMode ? "Content Approval" : "Content"}</h2>
-        {contentCommentButton}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {isApprovalMode && (
+            <button
+              className="chat-refine-btn"
+              onClick={() => setIsBatchModalOpen(true)}
+              aria-label="Batch refine content pieces"
+              title="Batch Refine multiple pieces"
+            >
+              ✨ Batch Refine
+            </button>
+          )}
+          {contentCommentButton}
+        </div>
       </div>
 
       {isApprovalMode && (
@@ -912,6 +939,19 @@ export default function ContentSection({
           onClose={closeChatPanel}
           onContentUpdated={handleChatContentUpdated}
           events={events}
+          otherUsers={presenceData[chatPieceIndex] || []}
+        />
+      )}
+
+      {/* Batch Refinement Modal */}
+      {isBatchModalOpen && (
+        <BatchRefinementModal
+          isOpen={isBatchModalOpen}
+          onClose={() => setIsBatchModalOpen(false)}
+          campaignId={campaignId}
+          workspaceId={workspaceId}
+          pieces={data?.pieces || []}
+          onBatchComplete={() => {}}
         />
       )}
     </div>
