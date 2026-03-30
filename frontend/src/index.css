@@ -8167,6 +8167,7 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   z-index: 310;
   transform: translateX(100%);
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-x: hidden;
 }
 
 .chat-panel--open {
@@ -8197,6 +8198,8 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .chat-panel-title {
@@ -8204,6 +8207,10 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   font-weight: 700;
   color: var(--color-text);
   font-family: var(--font-display);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
 }
 
 .chat-panel-version {
@@ -8497,23 +8504,8 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
 .quick-action-chips-scroll {
   display: flex;
   gap: 0.3rem;
-  overflow-x: auto;
+  flex-wrap: wrap;
   padding-bottom: 0.2rem;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
-}
-
-.quick-action-chips-scroll::-webkit-scrollbar {
-  height: 4px;
-}
-
-.quick-action-chips-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.quick-action-chips-scroll::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 9999px;
 }
 
 .quick-action-chip {
