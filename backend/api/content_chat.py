@@ -19,8 +19,9 @@ from backend.core.rate_limit import limiter
 from backend.infrastructure.auth import get_current_user
 from backend.infrastructure.campaign_store import CampaignStore, get_campaign_store
 from backend.infrastructure.content_chat_store import ContentChatStore, get_content_chat_store
+from backend.infrastructure.event_store import EventStore, get_event_store
 from backend.infrastructure.llm_service import LLMService, get_llm_service
-from backend.models.campaign import Campaign
+from backend.models.campaign import Campaign, ContentApprovalStatus
 from backend.models.chat import ContentChatMessage
 from backend.models.user import User
 
@@ -116,6 +117,24 @@ class BatchChatSummary(BaseModel):
 class BatchChatResponse(BaseModel):
     results: list[BatchChatResult]
     summary: BatchChatSummary
+
+
+class ApplyAndApproveRequest(BaseModel):
+    message_id: Optional[str] = None
+
+
+class ApplyAndApproveResponse(BaseModel):
+    piece_index: int
+    approval_status: str
+    message: str
+
+
+class RefinementStatsResponse(BaseModel):
+    total_refinements: int
+    total_reverts: int
+    avg_refinements_per_piece: float
+    pieces_approved_from_chat: int
+    top_instruction_types: dict[str, int] = Field(default_factory=dict)
 
 
 def _render_channel_plan_summary(campaign: Campaign) -> str:
@@ -227,6 +246,7 @@ async def chat_with_content_piece(
     body: ContentChatRequest = Body(),
     campaign: Campaign = Depends(get_campaign_for_chat_write),
     user: Optional[User] = Depends(get_current_user),
+    event_store: EventStore = Depends(get_event_store),
 ) -> ContentChatPostResponse | ContentChatStreamAcceptedResponse:
     piece = _ensure_piece(campaign, piece_index)
     before_content = piece.human_edited_content or piece.content
@@ -245,7 +265,12 @@ async def chat_with_content_piece(
         role="user",
         content=body.instruction,
         user_id=user.id if user else None,
-        metadata={"context": body.context or "", "include_score": body.include_score, "stream": body.stream},
+        metadata={
+            "context": body.context or "",
+            "include_score": body.include_score,
+            "stream": body.stream,
+            "instruction_type": "manual",
+        },
     )
 
     if body.stream:
@@ -282,6 +307,16 @@ async def chat_with_content_piece(
                             "version_number": version_number,
                         },
                         "include_score": body.include_score,
+                    },
+                )
+                await event_store.save_event(
+                    campaign_id=campaign_id,
+                    event_type="content_chat_refinement",
+                    stage="content_approval",
+                    payload={
+                        "piece_index": piece_index,
+                        "instruction": body.instruction,
+                        "instruction_type": "manual",
                     },
                 )
                 await manager.broadcast(
@@ -326,6 +361,16 @@ async def chat_with_content_piece(
             "include_score": body.include_score,
         },
     )
+    await event_store.save_event(
+        campaign_id=campaign_id,
+        event_type="content_chat_refinement",
+        stage="content_approval",
+        payload={
+            "piece_index": piece_index,
+            "instruction": body.instruction,
+            "instruction_type": "manual",
+        },
+    )
     return ContentChatPostResponse(
         message_id=assistant_msg.id,
         revised_content=revised_content,
@@ -360,6 +405,7 @@ async def revert_content_chat_version(
     piece_index: int,
     campaign: Campaign = Depends(get_campaign_for_chat_write),
     campaign_store: CampaignStore = Depends(get_campaign_store),
+    event_store: EventStore = Depends(get_event_store),
 ) -> RevertResponse:
     _ensure_piece(campaign, piece_index)
     chat_store = get_content_chat_store()
@@ -389,6 +435,16 @@ async def revert_content_chat_version(
     metadata = dict(last_assistant.metadata or {})
     metadata["reverted"] = True
     await chat_store.update_message_metadata(last_assistant.id, metadata)
+    await event_store.save_event(
+        campaign_id=campaign_id,
+        event_type="content_chat_reverted",
+        stage="content_approval",
+        payload={
+            "piece_index": piece_index,
+            "message_id": last_assistant.id,
+            "version_number": int(version_meta.get("version_number", 0)),
+        },
+    )
     return RevertResponse(
         piece_index=piece_index,
         restored_content=str(before_value),
@@ -511,6 +567,7 @@ async def batch_chat_content_pieces(
     body: BatchChatRequest = Body(),
     campaign: Campaign = Depends(get_campaign_for_chat_write),
     user: Optional[User] = Depends(get_current_user),
+    event_store: EventStore = Depends(get_event_store),
 ) -> BatchChatResponse:
     if campaign.content is None:
         raise HTTPException(status_code=422, detail="piece_index is out of range")
@@ -539,7 +596,12 @@ async def batch_chat_content_pieces(
                     role="user",
                     content=body.instruction,
                     user_id=user.id if user else None,
-                    metadata={"context": body.context or "", "include_score": body.include_score, "batch": True},
+                    metadata={
+                        "context": body.context or "",
+                        "include_score": body.include_score,
+                        "batch": True,
+                        "instruction_type": "manual",
+                    },
                 )
                 version_number = await _next_version_number(chat_store, campaign.id, piece_index)
                 assistant_msg = await chat_store.create_message(
@@ -572,7 +634,105 @@ async def batch_chat_content_pieces(
     results = await asyncio.gather(*(_process(idx) for idx in body.piece_indices))
     succeeded = sum(1 for r in results if r.status == "success")
     failed = len(results) - succeeded
+    await event_store.save_event(
+        campaign_id=campaign_id,
+        event_type="content_chat_batch",
+        stage="content_approval",
+        payload={"piece_count": len(body.piece_indices)},
+    )
     return BatchChatResponse(
         results=results,
         summary=BatchChatSummary(total=len(results), succeeded=succeeded, failed=failed),
+    )
+
+
+@router.post("/content/{piece_index}/chat/apply-and-approve", response_model=ApplyAndApproveResponse)
+@limiter.limit("20/minute")
+async def apply_and_approve_content_chat_version(
+    request: Request,
+    response: Response,
+    campaign_id: str,
+    piece_index: int,
+    body: ApplyAndApproveRequest = Body(default=ApplyAndApproveRequest()),
+    campaign: Campaign = Depends(get_campaign_for_chat_write),
+    campaign_store: CampaignStore = Depends(get_campaign_store),
+    event_store: EventStore = Depends(get_event_store),
+) -> ApplyAndApproveResponse:
+    _ensure_piece(campaign, piece_index)
+    chat_store = get_content_chat_store()
+
+    message: Optional[ContentChatMessage]
+    if body.message_id:
+        found = await chat_store.get_message(body.message_id)
+        if found is None or found.campaign_id != campaign_id or found.piece_index != piece_index:
+            raise HTTPException(status_code=404, detail="Message not found")
+        version_meta = (found.metadata or {}).get("version")
+        if not isinstance(version_meta, dict) or version_meta.get("after") is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        message = found
+    else:
+        message = await chat_store.get_last_non_reverted_assistant_message(campaign_id, piece_index)
+        if message is None:
+            raise HTTPException(status_code=404, detail="No assistant messages found")
+        version_meta = (message.metadata or {}).get("version", {})
+        if not isinstance(version_meta, dict) or version_meta.get("after") is None:
+            raise HTTPException(status_code=404, detail="No assistant messages found")
+
+    refined_content = str(version_meta["after"])
+
+    for attempt in range(2):
+        fresh = await campaign_store.get(campaign_id)
+        if fresh is None:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        piece = _ensure_piece(fresh, piece_index)
+        if piece.approval_status == ContentApprovalStatus.APPROVED:
+            raise HTTPException(status_code=409, detail="Content piece is already approved")
+        piece.human_edited_content = refined_content
+        piece.approval_status = ContentApprovalStatus.APPROVED
+
+        try:
+            await campaign_store.update(fresh)
+        except ConcurrentUpdateError:
+            if attempt == 0:
+                logger.warning(
+                    "Optimistic lock conflict applying chat approval for piece %d of campaign %s — retrying",
+                    piece_index,
+                    campaign_id,
+                )
+                continue
+            raise HTTPException(status_code=409, detail="Concurrent update conflict, please retry")
+        break
+
+    approved_metadata = dict(message.metadata or {})
+    approved_metadata["type"] = "apply_and_approve"
+    await chat_store.update_message_metadata(message.id, approved_metadata)
+
+    await event_store.save_event(
+        campaign_id=campaign_id,
+        event_type="content_chat_approved",
+        stage="content_approval",
+        payload={"piece_index": piece_index, "message_id": message.id, "from_chat": True},
+    )
+
+    return ApplyAndApproveResponse(
+        piece_index=piece_index,
+        approval_status=ContentApprovalStatus.APPROVED.value,
+        message="Content approved with chat refinement",
+    )
+
+
+@router.get("/refinement-stats", response_model=RefinementStatsResponse)
+async def get_refinement_stats(
+    campaign_id: str,
+    campaign: Campaign = Depends(get_campaign_for_chat_read),
+) -> RefinementStatsResponse:
+    stats = await get_content_chat_store().get_stats(campaign_id)
+    piece_count = len(campaign.content.pieces) if campaign.content is not None else 0
+    avg = float(stats["total_refinements"]) / piece_count if piece_count > 0 else 0.0
+    return RefinementStatsResponse(
+        total_refinements=int(stats["total_refinements"]),
+        total_reverts=int(stats["total_reverts"]),
+        avg_refinements_per_piece=avg,
+        pieces_approved_from_chat=int(stats["pieces_approved_from_chat"]),
+        top_instruction_types=stats.get("top_instruction_types", {}),
     )

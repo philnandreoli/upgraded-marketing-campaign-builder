@@ -60,6 +60,10 @@ class ConnectionManager:
         self._ws_meta: dict[WebSocket, tuple[Optional[str], bool]] = {}
         # WebSocket -> campaign_id -> (is_member, expires_at_utc)
         self._authz_cache: dict[WebSocket, dict[str, tuple[bool, datetime]]] = {}
+        # campaign_id -> piece_index -> set(user_id)
+        self._presence: dict[str, dict[int, set[str]]] = {}
+        # user_id -> basic user info for presence payloads
+        self._user_info: dict[str, dict[str, Optional[str]]] = {}
 
     async def connect(
         self,
@@ -67,10 +71,17 @@ class ConnectionManager:
         campaign_id: str = "*",
         user_id: Optional[str] = None,
         is_admin: bool = False,
+        display_name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
     ) -> None:
         await websocket.accept()
         self._connections.setdefault(campaign_id, []).append(websocket)
         self._ws_meta[websocket] = (user_id, is_admin)
+        if user_id:
+            self._user_info[user_id] = {
+                "display_name": display_name or user_id,
+                "avatar_url": avatar_url,
+            }
         logger.info("WS connected: campaign=%s (total=%d)", campaign_id, self._total())
 
     def disconnect(self, websocket: WebSocket, campaign_id: str = "*") -> None:
@@ -80,6 +91,59 @@ class ConnectionManager:
         self._ws_meta.pop(websocket, None)
         self._authz_cache.pop(websocket, None)
         logger.info("WS disconnected: campaign=%s (total=%d)", campaign_id, self._total())
+
+    async def set_presence_focus(self, campaign_id: str, piece_index: int, user_id: str) -> None:
+        campaign_presence = self._presence.setdefault(campaign_id, {})
+        users = campaign_presence.setdefault(piece_index, set())
+        users.add(user_id)
+        await self._broadcast_presence_update(campaign_id, piece_index)
+
+    async def set_presence_blur(self, campaign_id: str, piece_index: int, user_id: str) -> None:
+        campaign_presence = self._presence.get(campaign_id, {})
+        users = campaign_presence.get(piece_index)
+        if users is None:
+            return
+        users.discard(user_id)
+        if not users:
+            campaign_presence.pop(piece_index, None)
+        if not campaign_presence:
+            self._presence.pop(campaign_id, None)
+        await self._broadcast_presence_update(campaign_id, piece_index)
+
+    async def clear_presence_for_connection(self, campaign_id: str, user_id: Optional[str]) -> None:
+        if not user_id:
+            return
+        campaign_presence = self._presence.get(campaign_id, {})
+        changed_piece_indices: list[int] = []
+        for piece_index, users in list(campaign_presence.items()):
+            if user_id in users:
+                users.discard(user_id)
+                changed_piece_indices.append(piece_index)
+            if not users:
+                campaign_presence.pop(piece_index, None)
+        if not campaign_presence:
+            self._presence.pop(campaign_id, None)
+        for piece_index in changed_piece_indices:
+            await self._broadcast_presence_update(campaign_id, piece_index)
+
+    async def _broadcast_presence_update(self, campaign_id: str, piece_index: int) -> None:
+        users = sorted(self._presence.get(campaign_id, {}).get(piece_index, set()))
+        payload_users = [
+            {
+                "id": uid,
+                "display_name": self._user_info.get(uid, {}).get("display_name") or uid,
+                "avatar_url": self._user_info.get(uid, {}).get("avatar_url"),
+            }
+            for uid in users
+        ]
+        await self.broadcast(
+            {
+                "type": "presence_update",
+                "campaign_id": campaign_id,
+                "piece_index": piece_index,
+                "users": payload_users,
+            }
+        )
 
     async def broadcast(self, message: dict[str, Any]) -> None:
         """Send a message to all authorized subscribers.
@@ -249,8 +313,16 @@ async def ws_global(websocket: WebSocket, ticket: Optional[str] = None) -> None:
 
     user_id = user.id if user else None
     is_admin = user.is_admin if user else False
+    display_name = user.display_name if user else None
 
-    await manager.connect(websocket, "*", user_id=user_id, is_admin=is_admin)
+    await manager.connect(
+        websocket,
+        "*",
+        user_id=user_id,
+        is_admin=is_admin,
+        display_name=display_name,
+        avatar_url=None,
+    )
     try:
         while True:
             # Keep the connection alive; we don't expect inbound messages
@@ -288,10 +360,39 @@ async def ws_campaign(
 
     user_id = user.id if user else None
     is_admin = user.is_admin if user else False
+    display_name = user.display_name if user else None
 
-    await manager.connect(websocket, campaign_id, user_id=user_id, is_admin=is_admin)
+    await manager.connect(
+        websocket,
+        campaign_id,
+        user_id=user_id,
+        is_admin=is_admin,
+        display_name=display_name,
+        avatar_url=None,
+    )
     try:
         while True:
-            await websocket.receive_text()
+            raw = await websocket.receive_text()
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            msg_type = message.get("type")
+            raw_piece_index = message.get("piece_index")
+            if msg_type not in ("presence_focus", "presence_blur"):
+                continue
+            if user_id is None or not isinstance(raw_piece_index, int):
+                continue
+            if raw_piece_index < 0:
+                continue
+            if campaign.content is None or raw_piece_index >= len(campaign.content.pieces):
+                continue
+
+            if msg_type == "presence_focus":
+                await manager.set_presence_focus(campaign_id, raw_piece_index, user_id)
+            elif msg_type == "presence_blur":
+                await manager.set_presence_blur(campaign_id, raw_piece_index, user_id)
     except WebSocketDisconnect:
+        await manager.clear_presence_for_connection(campaign_id, user_id)
         manager.disconnect(websocket, campaign_id)

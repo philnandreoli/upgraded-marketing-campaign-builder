@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import delete as sa_delete, func, select, update as sa_update
+from sqlalchemy import delete as sa_delete, distinct, func, select, update as sa_update
 
 from backend.infrastructure.database import ContentChatMessageRow, async_session
 from backend.models.chat import ContentChatMessage
@@ -175,6 +175,59 @@ class ContentChatStore:
                 if metadata.get("type") == "suggestions":
                     return _row_to_model(row)
             return None
+
+    async def get_stats(self, campaign_id: str) -> dict[str, Any]:
+        async with async_session() as session:
+            total_refinements_res = await session.execute(
+                select(func.count()).select_from(ContentChatMessageRow).where(
+                    ContentChatMessageRow.campaign_id == campaign_id,
+                    ContentChatMessageRow.role == "user",
+                )
+            )
+            total_refinements = int(total_refinements_res.scalar_one())
+
+            total_reverts_res = await session.execute(
+                select(func.count()).select_from(ContentChatMessageRow).where(
+                    ContentChatMessageRow.campaign_id == campaign_id,
+                    ContentChatMessageRow.metadata_json["reverted"].as_boolean() == True,  # noqa: E712
+                )
+            )
+            total_reverts = int(total_reverts_res.scalar_one())
+
+            approved_from_chat_res = await session.execute(
+                select(func.count(distinct(ContentChatMessageRow.piece_index))).where(
+                    ContentChatMessageRow.campaign_id == campaign_id,
+                    ContentChatMessageRow.role == "assistant",
+                    ContentChatMessageRow.metadata_json["type"].as_string() == "apply_and_approve",
+                )
+            )
+            pieces_approved_from_chat = int(approved_from_chat_res.scalar_one())
+
+            instruction_type_res = await session.execute(
+                select(
+                    ContentChatMessageRow.metadata_json["instruction_type"].as_string().label("instruction_type"),
+                    func.count().label("count"),
+                )
+                .where(
+                    ContentChatMessageRow.campaign_id == campaign_id,
+                    ContentChatMessageRow.role == "user",
+                    ContentChatMessageRow.metadata_json["instruction_type"].as_string().is_not(None),
+                )
+                .group_by(ContentChatMessageRow.metadata_json["instruction_type"].as_string())
+                .order_by(func.count().desc())
+            )
+            top_instruction_types = {
+                str(row.instruction_type): int(row.count)
+                for row in instruction_type_res.all()
+                if row.instruction_type is not None
+            }
+
+        return {
+            "total_refinements": total_refinements,
+            "total_reverts": total_reverts,
+            "pieces_approved_from_chat": pieces_approved_from_chat,
+            "top_instruction_types": top_instruction_types,
+        }
 
 
 def _row_to_model(row: ContentChatMessageRow) -> ContentChatMessage:
