@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { cloneCampaign, ApiError } from "../api";
 import { useWorkspace } from "../WorkspaceContext";
+import FormSelect from "./FormSelect";
 
 const DEPTH_OPTIONS = [
   {
@@ -193,19 +194,16 @@ export default function CloneDialog({ isOpen, onClose, campaign, sourceWorkspace
           <label className="clone-dialog-section-label" htmlFor="clone-target-workspace">
             Target Workspace
           </label>
-          <select
+          <FormSelect
             id="clone-target-workspace"
-            className="clone-dialog-select"
+            options={workspaces.map((ws) => ({
+              value: ws.id,
+              label: `${ws.name}${ws.id === sourceWorkspaceId ? " (source)" : ""}`,
+            }))}
             value={targetWorkspaceId}
-            onChange={(e) => setTargetWorkspaceId(e.target.value)}
-            disabled={loading}
-          >
-            {workspaces.map((ws) => (
-              <option key={ws.id} value={ws.id}>
-                {ws.name}{ws.id === sourceWorkspaceId ? " (source)" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setTargetWorkspaceId(val)}
+            ariaLabel="Target workspace"
+          />
         </div>
 
         {/* Template parameters */}

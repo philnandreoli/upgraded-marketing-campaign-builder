@@ -1,37 +1,93 @@
 import { useState } from "react";
 import PersonaForm from "./PersonaForm";
+import PersonaEditor from "./PersonaEditor";
 
-export default function StrategySection({ data, error, onOpenComments, unresolvedCount = 0, workspaceId: _workspaceId, onSavePersona, canSavePersona = false }) {
-  const [personaFormOpen, setPersonaFormOpen] = useState(false);
+export default function StrategySection({ data, error, onOpenComments, unresolvedCount = 0, workspaceId: _workspaceId, onSavePersona, onParsePersona, canSavePersona = false, hasPreselectedPersonas = false }) {
+  const [personaPhase, setPersonaPhase] = useState(null); // null | "freeform" | "editor"
   const [personaFormLoading, setPersonaFormLoading] = useState(false);
   const [personaFormError, setPersonaFormError] = useState(null);
   const [savedMessage, setSavedMessage] = useState(null);
+  const [personaFormInitial, setPersonaFormInitial] = useState({ name: "", description: "" });
+  const [parsedFields, setParsedFields] = useState(null);
+  const [savedPersonaIndices, setSavedPersonaIndices] = useState(new Set());
+  const [savingPersonaIndex, setSavingPersonaIndex] = useState(null);
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [editorError, setEditorError] = useState(null);
 
   const audience = data?.target_audience || {};
 
-  // Build a prefill description from audience insights
-  const buildPersonaDescription = () => {
-    const parts = [];
-    if (audience.demographics) parts.push(`Demographics: ${audience.demographics}`);
-    if (audience.psychographics) parts.push(`Psychographics: ${audience.psychographics}`);
-    if (audience.pain_points?.length > 0) parts.push(`Pain Points: ${audience.pain_points.join("; ")}`);
-    if (audience.personas?.length > 0) parts.push(`Personas: ${audience.personas.join("; ")}`);
-    return parts.join("\n\n");
+  // Extract a short name from a persona string like "Name (Archetype): description..."
+  const parsePersonaName = (personaStr) => {
+    const colonIdx = personaStr.indexOf(":");
+    if (colonIdx > 0 && colonIdx < 80) {
+      const raw = personaStr.slice(0, colonIdx).trim();
+      const parenIdx = raw.indexOf("(");
+      return parenIdx > 0 ? raw.slice(0, parenIdx).trim() : raw;
+    }
+    return personaStr.split(/\s+/).slice(0, 4).join(" ");
+  };
+
+  const openPersonaForm = (personaStr, index) => {
+    setPersonaFormError(null);
+    setEditorError(null);
+    setParsedFields(null);
+    setPersonaFormInitial({
+      name: parsePersonaName(personaStr),
+      description: personaStr,
+    });
+    setSavingPersonaIndex(index);
+    setPersonaPhase("freeform");
+  };
+
+  const handleCloseAll = () => {
+    setPersonaPhase(null);
+    setParsedFields(null);
+    setPersonaFormError(null);
+    setEditorError(null);
+  };
+
+  // "✨ Structure with AI" — parse, then open editor
+  const handleStructureWithAI = async ({ name, description }) => {
+    if (!onParsePersona) return;
+    setPersonaFormLoading(true);
+    setPersonaFormError(null);
+    try {
+      const result = await onParsePersona({ name, description });
+      setParsedFields(result);
+      setPersonaPhase("editor");
+    } catch (err) {
+      console.warn("AI persona parse failed:", err);
+      setPersonaFormError("AI structuring failed. You can fill the fields manually.");
+      setParsedFields({ name, demographics: description, psychographics: "", pain_points: "", behaviors: "", channels: "" });
+      setPersonaPhase("editor");
+    } finally {
+      setPersonaFormLoading(false);
+    }
+  };
+
+  // Skip AI — open editor directly
+  const handleSkipAI = ({ name, description }) => {
+    setParsedFields({ name, demographics: description, psychographics: "", pain_points: "", behaviors: "", channels: "" });
+    setPersonaFormError(null);
+    setPersonaPhase("editor");
   };
 
   const handleSavePersona = async ({ name, description }) => {
     if (!onSavePersona) return;
-    setPersonaFormLoading(true);
-    setPersonaFormError(null);
+    setEditorLoading(true);
+    setEditorError(null);
     try {
       await onSavePersona({ name, description });
-      setPersonaFormOpen(false);
+      handleCloseAll();
+      if (savingPersonaIndex != null) {
+        setSavedPersonaIndices((prev) => new Set(prev).add(savingPersonaIndex));
+      }
       setSavedMessage(`Persona "${name}" saved!`);
       setTimeout(() => setSavedMessage(null), 3000);
     } catch (err) {
-      setPersonaFormError(err.message || "Failed to save persona.");
+      setEditorError(err.message || "Failed to save persona.");
     } finally {
-      setPersonaFormLoading(false);
+      setEditorLoading(false);
     }
   };
 
@@ -154,23 +210,29 @@ export default function StrategySection({ data, error, onOpenComments, unresolve
               <strong className="strategy-sm-text">Personas:</strong>
               <ul className="strategy-list">
                 {audience.personas.map((p, i) => (
-                  <li key={i} className="strategy-sm-text">{p}</li>
+                  <li key={i} className="strategy-sm-text">
+                    <span>{p}</span>
+                    {canSavePersona && !hasPreselectedPersonas && !savedPersonaIndices.has(i) && (
+                      <div style={{ marginTop: "0.4rem" }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          style={{ fontSize: "0.78rem", padding: "0.25rem 0.6rem" }}
+                          onClick={() => openPersonaForm(p, i)}
+                        >
+                          👤 Save as Persona
+                        </button>
+                      </div>
+                    )}
+                    {savedPersonaIndices.has(i) && (
+                      <span style={{ color: "var(--color-success, #22c55e)", fontSize: "0.78rem", marginLeft: "0.5rem" }}>
+                        ✓ Saved
+                      </span>
+                    )}
+                  </li>
                 ))}
               </ul>
             </>
-          )}
-          {canSavePersona && (
-            <button
-              type="button"
-              className="btn btn-outline"
-              style={{ marginTop: "0.75rem", fontSize: "0.82rem" }}
-              onClick={() => {
-                setPersonaFormError(null);
-                setPersonaFormOpen(true);
-              }}
-            >
-              👤 Save as Persona
-            </button>
           )}
           {savedMessage && (
             <p style={{ color: "var(--color-success, #22c55e)", fontSize: "0.82rem", marginTop: "0.5rem" }}>
@@ -187,14 +249,29 @@ export default function StrategySection({ data, error, onOpenComments, unresolve
         </div>
       )}
 
+      {/* Phase 1: Freeform describe modal */}
       <PersonaForm
-        open={personaFormOpen}
-        onClose={() => setPersonaFormOpen(false)}
-        onSubmit={handleSavePersona}
-        initial={{ name: "", description: buildPersonaDescription() }}
+        open={personaPhase === "freeform"}
+        onClose={handleCloseAll}
+        onSubmit={handleStructureWithAI}
+        onSkip={handleSkipAI}
+        initial={personaFormInitial}
         loading={personaFormLoading}
         title="Save as Persona"
         error={personaFormError}
+        submitLabel="✨ Structure with AI"
+      />
+
+      {/* Phase 2: Structured editor modal */}
+      <PersonaEditor
+        open={personaPhase === "editor"}
+        onClose={handleCloseAll}
+        onBack={() => setPersonaPhase("freeform")}
+        onSubmit={handleSavePersona}
+        initial={parsedFields ?? {}}
+        loading={editorLoading}
+        title="Review & Save Persona"
+        error={editorError}
       />
     </div>
   );

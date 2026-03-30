@@ -967,17 +967,18 @@ class CampaignStore:
             )
             top_templates_rows = top_templates_result.all()
 
+            month_label = func.to_char(func.date_trunc("month", CampaignRow.created_at), "YYYY-MM")
             monthly_trends_result = await session.execute(
                 select(
-                    func.to_char(func.date_trunc("month", CampaignRow.created_at), "YYYY-MM").label("month"),
+                    month_label.label("month"),
                     func.count(CampaignRow.id).label("clone_count"),
                 )
                 .where(
                     CampaignRow.cloned_from_campaign_id.is_not(None),
                     CampaignRow.created_at >= start_month,
                 )
-                .group_by(func.date_trunc("month", CampaignRow.created_at))
-                .order_by(func.date_trunc("month", CampaignRow.created_at).asc())
+                .group_by(month_label)
+                .order_by(month_label.asc())
             )
             monthly_rows = monthly_trends_result.all()
             monthly_counts = {row.month: int(row.clone_count or 0) for row in monthly_rows}

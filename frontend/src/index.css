@@ -1716,6 +1716,9 @@ a:hover { color: var(--color-primary-hover); }
 .sidebar-meta-label { font-size: 0.72rem; font-weight: 600; color: var(--color-text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
 .sidebar-meta-value { font-size: 0.82rem; color: var(--color-text-muted); }
 .sidebar-meta-channels { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
+.sidebar-meta-personas { margin-top: 0.5rem; }
+.sidebar-meta-persona-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+.sidebar-persona-badge { background: rgba(13, 148, 136, 0.12); color: var(--color-primary); font-size: 0.68rem; }
 
 /* Collapse split layout to single column on narrow screens */
 @media (max-width: 768px) {
@@ -3532,6 +3535,7 @@ a:hover { color: var(--color-primary-hover); }
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
+  margin-top: 1.25rem;
 }
 
 /* ── Toast (context-provided) ────────────────────────────────────────── */
@@ -6290,6 +6294,9 @@ a.workspace-badge--personal:hover { background: rgba(99,102,241,0.22); }
   max-width: 560px;
   width: 90vw;
   max-height: 85vh;
+}
+
+.template-config-dialog {
   overflow-y: auto;
 }
 
