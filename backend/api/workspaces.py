@@ -127,6 +127,10 @@ class WorkspaceSummary(BaseModel):
     owner_id: Optional[str] = None
     owner_display_name: Optional[str] = None
     created_at: Optional[datetime] = None
+    draft_count: int = 0
+    in_progress_count: int = 0
+    awaiting_approval_count: int = 0
+    approved_count: int = 0
 
 
 class WorkspaceListResponse(BaseModel):
@@ -193,6 +197,10 @@ async def list_workspaces(
             member_count = int(summary.get("member_count", 0))
             campaign_count = int(summary.get("campaign_count", 0))
             owner_display_name = summary.get("owner_display_name")
+            draft_count = int(summary.get("draft_count", 0))
+            in_progress_count = int(summary.get("in_progress_count", 0))
+            awaiting_approval_count = int(summary.get("awaiting_approval_count", 0))
+            approved_count = int(summary.get("approved_count", 0))
         else:
             if user is not None:
                 role = await store.get_workspace_member_role(ws.id, user.id)
@@ -213,6 +221,10 @@ async def list_workspaces(
                 )
             else:
                 owner_display_name = None
+            draft_count = 0
+            in_progress_count = 0
+            awaiting_approval_count = 0
+            approved_count = 0
 
         result.append(
             WorkspaceSummary(
@@ -225,6 +237,10 @@ async def list_workspaces(
                 owner_id=ws.owner_id,
                 owner_display_name=owner_display_name,
                 created_at=ws.created_at,
+                draft_count=draft_count,
+                in_progress_count=in_progress_count,
+                awaiting_approval_count=awaiting_approval_count,
+                approved_count=approved_count,
             )
         )
     total_count = len(result)

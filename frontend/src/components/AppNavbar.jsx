@@ -80,9 +80,6 @@ export default function AppNavbar({
       {/* ── Zone 2: Nav links (desktop) ───────────────────────── */}
       <nav className={`navbar-nav${menuOpen ? " navbar-nav--open" : ""}`} aria-label="Main navigation">
         <NavLink to="/" end className={({ isActive }) => navLinkClass(isActive)}>
-          Dashboard
-        </NavLink>
-        <NavLink to="/workspaces" className={({ isActive }) => navLinkClass(isActive)}>
           Workspaces
         </NavLink>
         <NavLink to="/templates" className={({ isActive }) => navLinkClass(isActive)}>

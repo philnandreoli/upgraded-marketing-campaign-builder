@@ -5,7 +5,6 @@ import {
   UnauthenticatedTemplate,
   useMsal,
 } from "@azure/msal-react";
-import Dashboard from "./pages/Dashboard.jsx";
 import NewCampaign from "./pages/NewCampaign.jsx";
 import CampaignDetail from "./pages/CampaignDetail.jsx";
 import Admin from "./pages/Admin.jsx";
@@ -123,8 +122,8 @@ function AuthenticatedApp() {
       <main className="app-main">
         <ErrorBoundary>
           <Routes>
-            <Route path="/" element={<Dashboard events={events} />} />
-            <Route path="/workspaces" element={<WorkspaceList />} />
+            <Route path="/" element={<WorkspaceList />} />
+            <Route path="/workspaces" element={<Navigate to="/" replace />} />
             <Route path="/workspaces/:id" element={<WorkspaceDetail events={events} />} />
             <Route path="/workspaces/:id/calendar" element={<WorkspaceCalendar />} />
             <Route path="/workspaces/:id/settings" element={<RequireBuilder><WorkspaceSettings /></RequireBuilder>} />

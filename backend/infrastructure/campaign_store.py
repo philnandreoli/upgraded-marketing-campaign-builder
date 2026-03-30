@@ -635,6 +635,10 @@ class CampaignStore:
                 "member_count": 0,
                 "campaign_count": 0,
                 "owner_display_name": None,
+                "draft_count": 0,
+                "in_progress_count": 0,
+                "awaiting_approval_count": 0,
+                "approved_count": 0,
             }
             for ws_id in unique_ids
         }
@@ -682,6 +686,45 @@ class CampaignStore:
             for ws_id, count in campaign_count_rows.all():
                 if ws_id is not None and ws_id in result:
                     result[ws_id]["campaign_count"] = int(count or 0)
+
+            status_expr = func.json_extract_path_text(cast(CampaignRow.data, SA_JSON), "status")
+            status_counts_rows = await session.execute(
+                select(
+                    CampaignRow.workspace_id,
+                    status_expr.label("status"),
+                    func.count(CampaignRow.id).label("cnt"),
+                )
+                .where(CampaignRow.workspace_id.in_(unique_ids))
+                .group_by(CampaignRow.workspace_id, status_expr)
+            )
+
+            draft_statuses = {"draft"}
+            in_progress_statuses = {
+                "strategy",
+                "content",
+                "channel_planning",
+                "analytics_setup",
+                "review",
+                "review_clarification",
+                "content_revision",
+                "clarification",
+            }
+            awaiting_approval_statuses = {"content_approval", "awaiting_approval"}
+            approved_statuses = {"approved"}
+
+            for ws_id, status, count in status_counts_rows.all():
+                if ws_id is None or ws_id not in result:
+                    continue
+                status_value = (status or "").strip()
+                cnt = int(count or 0)
+                if status_value in draft_statuses:
+                    result[ws_id]["draft_count"] += cnt  # type: ignore[operator]
+                elif status_value in in_progress_statuses:
+                    result[ws_id]["in_progress_count"] += cnt  # type: ignore[operator]
+                elif status_value in awaiting_approval_statuses:
+                    result[ws_id]["awaiting_approval_count"] += cnt  # type: ignore[operator]
+                elif status_value in approved_statuses:
+                    result[ws_id]["approved_count"] += cnt  # type: ignore[operator]
 
         return result
 
