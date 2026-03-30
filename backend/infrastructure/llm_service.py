@@ -6,7 +6,7 @@ configured for Azure AI Foundry with retry logic.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from azure.ai.projects.aio import AIProjectClient
 from azure.identity.aio import DefaultAzureCredential
@@ -125,6 +125,63 @@ class LLMService:
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[str]:
+        """Yield tokens/chunks from the Responses API streaming path when available.
+
+        If the SDK/runtime does not expose a streaming iterator, falls back to a
+        single non-streaming call and yields one full chunk.
+        """
+        # Keep message preprocessing aligned with chat()
+        instructions: str | None = None
+        input_messages: list[dict[str, str]] = []
+        for msg in messages:
+            if msg["role"] == "system" and instructions is None:
+                instructions = msg["content"]
+            else:
+                input_messages.append({"type": "message", **msg})
+
+        kwargs: dict[str, Any] = {
+            "model": self._deployment,
+            "input": input_messages,
+            "temperature": temperature or self._agent_settings.temperature,
+            "max_output_tokens": max_tokens or self._agent_settings.max_tokens,
+            "stream": True,
+        }
+        if instructions is not None:
+            kwargs["instructions"] = instructions
+
+        try:
+            stream = await self._client.responses.create(**kwargs)
+            if hasattr(stream, "__aiter__"):
+                async for event in stream:
+                    chunk = ""
+                    try:
+                        # Common event shape in newer clients
+                        if hasattr(event, "delta") and event.delta is not None:
+                            chunk = str(event.delta)
+                        elif hasattr(event, "output_text") and event.output_text:
+                            chunk = str(event.output_text)
+                        elif isinstance(event, dict):
+                            chunk = str(event.get("delta") or event.get("output_text") or "")
+                    except Exception:
+                        chunk = ""
+                    if chunk:
+                        yield chunk
+                return
+        except Exception as exc:
+            logger.debug("Streaming path unavailable, falling back to non-streaming chat: %s", exc)
+
+        # Fallback path: interface remains streaming-compatible.
+        fallback = await self.chat(messages, temperature=temperature, max_tokens=max_tokens)
+        if fallback:
+            yield fallback
 
     # ------------------------------------------------------------------
     # Foundry Agent Operations path

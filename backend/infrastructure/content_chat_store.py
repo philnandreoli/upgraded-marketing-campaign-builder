@@ -134,6 +134,48 @@ class ContentChatStore:
             )
             await session.commit()
 
+    async def get_last_non_reverted_assistant_message(
+        self,
+        campaign_id: str,
+        piece_index: int,
+    ) -> Optional[ContentChatMessage]:
+        async with async_session() as session:
+            result = await session.execute(
+                select(ContentChatMessageRow)
+                .where(
+                    ContentChatMessageRow.campaign_id == campaign_id,
+                    ContentChatMessageRow.piece_index == piece_index,
+                    ContentChatMessageRow.role == "assistant",
+                )
+                .order_by(ContentChatMessageRow.created_at.desc())
+            )
+            for row in result.scalars().all():
+                metadata = row.metadata_json or {}
+                if not bool(metadata.get("reverted", False)):
+                    return _row_to_model(row)
+            return None
+
+    async def get_suggestions_message(
+        self,
+        campaign_id: str,
+        piece_index: int,
+    ) -> Optional[ContentChatMessage]:
+        async with async_session() as session:
+            result = await session.execute(
+                select(ContentChatMessageRow)
+                .where(
+                    ContentChatMessageRow.campaign_id == campaign_id,
+                    ContentChatMessageRow.piece_index == piece_index,
+                    ContentChatMessageRow.role == "system",
+                )
+                .order_by(ContentChatMessageRow.created_at.desc())
+            )
+            for row in result.scalars().all():
+                metadata = row.metadata_json or {}
+                if metadata.get("type") == "suggestions":
+                    return _row_to_model(row)
+            return None
+
 
 def _row_to_model(row: ContentChatMessageRow) -> ContentChatMessage:
     return ContentChatMessage(
@@ -156,4 +198,3 @@ def get_content_chat_store() -> ContentChatStore:
     if _store is None:
         _store = ContentChatStore()
     return _store
-
