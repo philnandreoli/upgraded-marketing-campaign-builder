@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { submitContentApproval, updatePieceNotes, updatePieceDecision, generateImageAsset } from "../api";
 import { useConfirm } from "../ConfirmDialogContext";
 import { useToast } from "../ToastContext";
 import { useNotifications } from "../NotificationContext";
 import ImageAssetCard from "./ImageAssetCard";
+import ContentChatPanel from "./ContentChatPanel";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -63,6 +64,7 @@ export default function ContentSection({
   unresolvedCount = 0,
   onOpenPieceComments,
   pieceCommentCounts = {},
+  events = [],
 }) {
   const confirm = useConfirm();
   const { addToast } = useToast();
@@ -75,6 +77,8 @@ export default function ContentSection({
   const [savingDecision, setSavingDecision] = useState({}); // { [index]: boolean }
   const [generatingImages, setGeneratingImages] = useState({}); // { [index]: boolean }
   const [imageErrors, setImageErrors] = useState({});           // { [index]: string | null }
+  const [chatPieceIndex, setChatPieceIndex] = useState(null);
+  const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
 
   const visiblePieces = data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
@@ -82,6 +86,21 @@ export default function ContentSection({
 
   const setEdit = (idx, text) => setEditing((prev) => ({ ...prev, [idx]: text }));
   const setNote = (idx, text) => setNotes((prev) => ({ ...prev, [idx]: text }));
+
+  const openChatPanel = useCallback((idx) => {
+    setChatPieceIndex(idx);
+    setIsChatPanelOpen(true);
+  }, []);
+
+  const closeChatPanel = useCallback(() => {
+    setIsChatPanelOpen(false);
+  }, []);
+
+  const handleChatContentUpdated = useCallback((idx, newContent) => {
+    if (newContent != null) {
+      setEdit(idx, newContent);
+    }
+  }, []);
 
   const pendingPieces = visiblePieces.filter((piece, i) => {
     const effApproved = piece.approval_status === "approved" || decisions[i] === "approved";
@@ -367,6 +386,17 @@ export default function ContentSection({
                             {combinedApproved ? "🔒 Approved" : combinedRejected ? "❌ Rejected" : "⏳ Pending"}
                           </span>
                         )}
+                        {isApprovalMode && (
+                          <button
+                            className="chat-refine-btn"
+                            onClick={() => openChatPanel(i)}
+                            aria-label={`AI Refine content piece ${i + 1}`}
+                            title={`AI Refine piece ${i + 1}`}
+                            data-testid={`chat-refine-btn-${i}`}
+                          >
+                            🤖 Refine
+                          </button>
+                        )}
                         {onOpenPieceComments && (
                           <button
                             className="piece-comment-btn"
@@ -590,6 +620,17 @@ export default function ContentSection({
                         <span className={`badge badge-${effectiveApproved ? "approved" : effectiveRejected ? "rejected" : "pending"}`}>
                           {effectiveApproved ? "🔒 Approved" : effectiveRejected ? "❌ Rejected" : "⏳ Pending"}
                         </span>
+                      )}
+                      {isApprovalMode && (
+                        <button
+                          className="chat-refine-btn"
+                          onClick={() => openChatPanel(i)}
+                          aria-label={`AI Refine content piece ${i + 1}`}
+                          title={`AI Refine piece ${i + 1}`}
+                          data-testid={`chat-refine-btn-${i}`}
+                        >
+                          🤖 Refine
+                        </button>
                       )}
                       {onOpenPieceComments && (
                         <button
@@ -858,6 +899,20 @@ export default function ContentSection({
         }}>
           ❌ Campaign Rejected
         </div>
+      )}
+
+      {/* AI Chat Refinement Panel */}
+      {isChatPanelOpen && chatPieceIndex != null && visiblePieces[chatPieceIndex] && (
+        <ContentChatPanel
+          campaignId={campaignId}
+          workspaceId={workspaceId}
+          pieceIndex={chatPieceIndex}
+          piece={visiblePieces[chatPieceIndex]}
+          isOpen={isChatPanelOpen}
+          onClose={closeChatPanel}
+          onContentUpdated={handleChatContentUpdated}
+          events={events}
+        />
       )}
     </div>
   );

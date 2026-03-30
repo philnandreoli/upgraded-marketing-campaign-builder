@@ -435,6 +435,7 @@ export default function CampaignDetail() {
             unresolvedCount={sectionCommentCounts.content || 0}
             onOpenPieceComments={openPieceComments}
             pieceCommentCounts={pieceCommentCounts}
+            events={events}
           />
         );
       case "channel_plan":
@@ -482,6 +483,7 @@ export default function CampaignDetail() {
             unresolvedCount={sectionCommentCounts.content || 0}
             onOpenPieceComments={openPieceComments}
             pieceCommentCounts={pieceCommentCounts}
+            events={events}
           />
         );
       case "content_approval":
@@ -504,6 +506,7 @@ export default function CampaignDetail() {
             unresolvedCount={sectionCommentCounts.content || 0}
             onOpenPieceComments={openPieceComments}
             pieceCommentCounts={pieceCommentCounts}
+            events={events}
           />
         );
       case "images":
