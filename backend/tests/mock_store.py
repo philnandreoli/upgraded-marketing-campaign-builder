@@ -347,6 +347,19 @@ class InMemoryCampaignStore:
         """Return aggregated workspace summary metadata for test parity."""
         summaries: dict[str, dict[str, Optional[str] | int]] = {}
         default_role = WorkspaceRole.CREATOR.value if user_id is None else WorkspaceRole.VIEWER.value
+        draft_statuses = {"draft"}
+        in_progress_statuses = {
+            "strategy",
+            "content",
+            "channel_planning",
+            "analytics_setup",
+            "review",
+            "review_clarification",
+            "content_revision",
+            "clarification",
+        }
+        awaiting_approval_statuses = {"content_approval", "awaiting_approval"}
+        approved_statuses = {"approved"}
 
         for ws_id in set(workspace_ids):
             owner_display_name: Optional[str] = None
@@ -359,11 +372,18 @@ class InMemoryCampaignStore:
             if user_id is not None:
                 role = self._workspace_members.get((ws_id, user_id), WorkspaceRole.VIEWER.value)
 
+            campaigns_in_ws = [c for c in self._campaigns.values() if c.workspace_id == ws_id]
             summaries[ws_id] = {
                 "role": role,
                 "member_count": sum(1 for (wid, _) in self._workspace_members if wid == ws_id),
-                "campaign_count": sum(1 for c in self._campaigns.values() if c.workspace_id == ws_id),
+                "campaign_count": len(campaigns_in_ws),
                 "owner_display_name": owner_display_name,
+                "draft_count": sum(1 for c in campaigns_in_ws if c.status.value in draft_statuses),
+                "in_progress_count": sum(1 for c in campaigns_in_ws if c.status.value in in_progress_statuses),
+                "awaiting_approval_count": sum(
+                    1 for c in campaigns_in_ws if c.status.value in awaiting_approval_statuses
+                ),
+                "approved_count": sum(1 for c in campaigns_in_ws if c.status.value in approved_statuses),
             }
         return summaries
 
