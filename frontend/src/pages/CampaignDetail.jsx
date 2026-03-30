@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getCampaign, listImageAssets, listComments, createPersona } from "../api";
+import { getCampaign, listImageAssets, listComments, createPersona, listPersonas } from "../api";
 import useWebSocket from "../hooks/useWebSocket";
 import usePolling from "../hooks/usePolling";
 import StrategySection from "../components/StrategySection.jsx";
@@ -85,6 +85,7 @@ export default function CampaignDetail() {
 
   // Lineage badge state — source campaign for cloned campaigns
   const [sourceCampaign, setSourceCampaign] = useState(undefined); // undefined=not loaded, null=not found/error, object=loaded
+  const [personas, setPersonas] = useState([]);
 
   // canManage: admins always can; campaign owners can too
   const canManage = isAdmin || (campaign?.owner_id != null && user?.id === campaign.owner_id);
@@ -240,6 +241,14 @@ export default function CampaignDetail() {
   }, [loadImageAssets, imageGenerationEnabled]);
 
   const handleViewGallery = useCallback(() => setUserTab("images"), []);
+
+  // Fetch workspace personas to resolve persona_ids to display names
+  useEffect(() => {
+    if (!effectiveWorkspaceId) return;
+    listPersonas(effectiveWorkspaceId).then((data) => {
+      setPersonas(data?.items ?? data ?? []);
+    }).catch(() => {});
+  }, [effectiveWorkspaceId]);
 
   // Fetch all comments for the campaign and compute per-section/per-piece unresolved counts
   const loadCommentCounts = useCallback(async () => {
@@ -402,6 +411,7 @@ export default function CampaignDetail() {
             unresolvedCount={sectionCommentCounts.strategy || 0}
             workspaceId={effectiveWorkspaceId}
             canSavePersona={!isViewer && !!effectiveWorkspaceId}
+            hasPreselectedPersonas={campaign.brief?.persona_ids?.length > 0}
             onSavePersona={({ name, description }) =>
               createPersona(effectiveWorkspaceId, { name, description })
             }
@@ -833,6 +843,21 @@ export default function CampaignDetail() {
                       {ch.replace(/_/g, " ")}
                     </span>
                   ))}
+                </div>
+              )}
+              {campaign.brief.persona_ids?.length > 0 && personas.length > 0 && (
+                <div className="sidebar-meta-personas">
+                  <span className="sidebar-meta-label">👤 Personas</span>
+                  <div className="sidebar-meta-persona-list">
+                    {campaign.brief.persona_ids.map((pid) => {
+                      const p = personas.find((x) => x.id === pid);
+                      return p ? (
+                        <span key={pid} className="badge sidebar-persona-badge">
+                          {p.name}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
                 </div>
               )}
             </div>
