@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { submitContentApproval, updatePieceNotes, updatePieceDecision, generateImageAsset } from "../api";
 import { useConfirm } from "../ConfirmDialogContext";
 import { useToast } from "../ToastContext";
 import { useNotifications } from "../NotificationContext";
 import ImageAssetCard from "./ImageAssetCard";
+import ContentChatPanel from "./ContentChatPanel";
+import BatchRefinementModal from "./BatchRefinementModal";
+import PresenceIndicator from "./PresenceIndicator";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -63,6 +66,7 @@ export default function ContentSection({
   unresolvedCount = 0,
   onOpenPieceComments,
   pieceCommentCounts = {},
+  events = [],
 }) {
   const confirm = useConfirm();
   const { addToast } = useToast();
@@ -75,6 +79,10 @@ export default function ContentSection({
   const [savingDecision, setSavingDecision] = useState({}); // { [index]: boolean }
   const [generatingImages, setGeneratingImages] = useState({}); // { [index]: boolean }
   const [imageErrors, setImageErrors] = useState({});           // { [index]: string | null }
+  const [chatPieceIndex, setChatPieceIndex] = useState(null);
+  const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [presenceData, setPresenceData] = useState({});
 
   const visiblePieces = data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
@@ -82,6 +90,32 @@ export default function ContentSection({
 
   const setEdit = (idx, text) => setEditing((prev) => ({ ...prev, [idx]: text }));
   const setNote = (idx, text) => setNotes((prev) => ({ ...prev, [idx]: text }));
+
+  const openChatPanel = useCallback((idx) => {
+    setChatPieceIndex(idx);
+    setIsChatPanelOpen(true);
+  }, []);
+
+  const closeChatPanel = useCallback(() => {
+    setIsChatPanelOpen(false);
+  }, []);
+
+  // Listen for presence_update WebSocket events
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+    const presenceEvents = events.filter((e) => (e.event ?? e.type) === "presence_update");
+    presenceEvents.forEach((evt) => {
+      if (evt.piece_index != null && Array.isArray(evt.users)) {
+        setPresenceData((prev) => ({ ...prev, [evt.piece_index]: evt.users }));
+      }
+    });
+  }, [events]);
+
+  const handleChatContentUpdated = useCallback((idx, newContent) => {
+    if (newContent != null) {
+      setEdit(idx, newContent);
+    }
+  }, []);
 
   const pendingPieces = visiblePieces.filter((piece, i) => {
     const effApproved = piece.approval_status === "approved" || decisions[i] === "approved";
@@ -237,7 +271,19 @@ export default function ContentSection({
     <div className="card">
       <div className="section-header-row">
         <h2>✍️ {isApprovalMode ? "Content Approval" : "Content"}</h2>
-        {contentCommentButton}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {isApprovalMode && (
+            <button
+              className="chat-refine-btn"
+              onClick={() => setIsBatchModalOpen(true)}
+              aria-label="Batch refine content pieces"
+              title="Batch Refine multiple pieces"
+            >
+              ✨ Batch Refine
+            </button>
+          )}
+          {contentCommentButton}
+        </div>
       </div>
 
       {isApprovalMode && (
@@ -366,6 +412,17 @@ export default function ContentSection({
                           <span className={`badge badge-${combinedApproved ? "approved" : combinedRejected ? "rejected" : "pending"}`}>
                             {combinedApproved ? "🔒 Approved" : combinedRejected ? "❌ Rejected" : "⏳ Pending"}
                           </span>
+                        )}
+                        {isApprovalMode && (
+                          <button
+                            className="chat-refine-btn"
+                            onClick={() => openChatPanel(i)}
+                            aria-label={`AI Refine content piece ${i + 1}`}
+                            title={`AI Refine piece ${i + 1}`}
+                            data-testid={`chat-refine-btn-${i}`}
+                          >
+                            🤖 Refine
+                          </button>
                         )}
                         {onOpenPieceComments && (
                           <button
@@ -590,6 +647,17 @@ export default function ContentSection({
                         <span className={`badge badge-${effectiveApproved ? "approved" : effectiveRejected ? "rejected" : "pending"}`}>
                           {effectiveApproved ? "🔒 Approved" : effectiveRejected ? "❌ Rejected" : "⏳ Pending"}
                         </span>
+                      )}
+                      {isApprovalMode && (
+                        <button
+                          className="chat-refine-btn"
+                          onClick={() => openChatPanel(i)}
+                          aria-label={`AI Refine content piece ${i + 1}`}
+                          title={`AI Refine piece ${i + 1}`}
+                          data-testid={`chat-refine-btn-${i}`}
+                        >
+                          🤖 Refine
+                        </button>
                       )}
                       {onOpenPieceComments && (
                         <button
@@ -858,6 +926,33 @@ export default function ContentSection({
         }}>
           ❌ Campaign Rejected
         </div>
+      )}
+
+      {/* AI Chat Refinement Panel */}
+      {isChatPanelOpen && chatPieceIndex != null && visiblePieces[chatPieceIndex] && (
+        <ContentChatPanel
+          campaignId={campaignId}
+          workspaceId={workspaceId}
+          pieceIndex={chatPieceIndex}
+          piece={visiblePieces[chatPieceIndex]}
+          isOpen={isChatPanelOpen}
+          onClose={closeChatPanel}
+          onContentUpdated={handleChatContentUpdated}
+          events={events}
+          otherUsers={presenceData[chatPieceIndex] || []}
+        />
+      )}
+
+      {/* Batch Refinement Modal */}
+      {isBatchModalOpen && (
+        <BatchRefinementModal
+          isOpen={isBatchModalOpen}
+          onClose={() => setIsBatchModalOpen(false)}
+          campaignId={campaignId}
+          workspaceId={workspaceId}
+          pieces={data?.pieces || []}
+          onBatchComplete={() => {}}
+        />
       )}
     </div>
   );

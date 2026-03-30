@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from fastapi import Depends, HTTPException
 
-from backend.models.campaign import Campaign
+from backend.models.campaign import Campaign, CampaignStatus
 from backend.models.user import CampaignMemberRole, User
 from backend.models.workspace import WorkspaceRole
 from backend.infrastructure.auth import get_current_user
@@ -139,4 +139,36 @@ async def get_campaign_for_write(
     if campaign is None or campaign.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     await _authorize(campaign_id, user, Action.WRITE, store, campaign=campaign)
+    return campaign
+
+
+async def get_campaign_for_chat_write(
+    campaign_id: str,
+    workspace_id: str,
+    user: User = Depends(get_current_user),
+    store: Any = Depends(get_campaign_store),
+) -> Campaign:
+    """Load campaign, enforce content_approval status, authorize WRITE access."""
+    campaign = await store.get(campaign_id)
+    if campaign is None or campaign.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.WRITE, store, campaign=campaign)
+    if campaign.status != CampaignStatus.CONTENT_APPROVAL:
+        raise HTTPException(status_code=409, detail="Chat is only available during content approval")
+    return campaign
+
+
+async def get_campaign_for_chat_read(
+    campaign_id: str,
+    workspace_id: str,
+    user: User = Depends(get_current_user),
+    store: Any = Depends(get_campaign_store),
+) -> Campaign:
+    """Load campaign, enforce content_approval status, authorize READ access."""
+    campaign = await store.get(campaign_id)
+    if campaign is None or campaign.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    await _authorize(campaign_id, user, Action.READ, store, campaign=campaign)
+    if campaign.status != CampaignStatus.CONTENT_APPROVAL:
+        raise HTTPException(status_code=409, detail="Chat is only available during content approval")
     return campaign

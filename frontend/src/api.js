@@ -421,6 +421,51 @@ export const getSampleSizeCalculator = (params = {}) => {
 };
 
 // ---------------------------------------------------------------------------
+// Content Chat / AI Refinement API
+// ---------------------------------------------------------------------------
+
+export const sendContentChat = (workspaceId, campaignId, pieceIndex, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(pieceIndex)}/chat`, {
+    body,
+  });
+
+export const getContentChatHistory = (workspaceId, campaignId, pieceIndex, { limit = 50, offset = 0 } = {}) => {
+  const params = new URLSearchParams({ limit, offset });
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(pieceIndex)}/chat?${params}`);
+};
+
+export const revertContentChat = (workspaceId, campaignId, pieceIndex) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(pieceIndex)}/chat/revert`);
+
+export const applyAndApproveFromChat = (workspaceId, campaignId, pieceIndex, body = {}) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(pieceIndex)}/chat/apply-and-approve`, {
+    body,
+  });
+
+export const getContentChatSuggestions = (workspaceId, campaignId, pieceIndex, { refresh = false } = {}) => {
+  const params = new URLSearchParams();
+  if (refresh) params.set("refresh", "true");
+  const qs = params.toString();
+  return request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(pieceIndex)}/chat/suggestions${qs ? `?${qs}` : ""}`);
+};
+
+export const getContentChatVersions = (workspaceId, campaignId, pieceIndex) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(pieceIndex)}/chat/versions`);
+
+export const getContentScore = (workspaceId, campaignId, pieceIndex, body = {}) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/${encodeURIComponent(pieceIndex)}/chat/score`, {
+    body,
+  });
+
+export const sendBatchChat = (workspaceId, campaignId, body) =>
+  request("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/content/batch-chat`, {
+    body,
+  });
+
+export const getRefinementStats = (workspaceId, campaignId) =>
+  request("GET", `/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/refinement-stats`);
+
+// ---------------------------------------------------------------------------
 // WebSocket ticket / URL builder
 // ---------------------------------------------------------------------------
 

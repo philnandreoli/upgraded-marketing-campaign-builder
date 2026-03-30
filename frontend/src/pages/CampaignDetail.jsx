@@ -23,6 +23,7 @@ import TemplateConfigDialog from "../components/TemplateConfigDialog.jsx";
 import { useUser } from "../UserContext";
 import { SkeletonCard } from "../components/Skeleton.jsx";
 import CommentPanel from "../components/CommentPanel.jsx";
+import RefinementAnalytics from "../components/RefinementAnalytics.jsx";
 
 const TERMINAL_STATES = ["approved", "rejected", "manual_review_required"];
 const PAUSE_STATES = ["clarification", "content_approval"];  // pipeline paused but will resume
@@ -435,6 +436,7 @@ export default function CampaignDetail() {
             unresolvedCount={sectionCommentCounts.content || 0}
             onOpenPieceComments={openPieceComments}
             pieceCommentCounts={pieceCommentCounts}
+            events={events}
           />
         );
       case "channel_plan":
@@ -482,29 +484,38 @@ export default function CampaignDetail() {
             unresolvedCount={sectionCommentCounts.content || 0}
             onOpenPieceComments={openPieceComments}
             pieceCommentCounts={pieceCommentCounts}
+            events={events}
           />
         );
       case "content_approval":
         return (
-          <ContentSection
-            data={campaign.content}
-            error={errors.content}
-            socialPlatforms={campaign.brief?.social_media_platforms || []}
-            isApprovalMode={!isViewer}
-            campaignId={campaign.id}
-            workspaceId={effectiveWorkspaceId}
-            onApprovalSubmitted={load}
-            status={campaign.status}
-            imageAssets={imageAssets}
-            imageGenerationEnabled={imageGenerationEnabled}
-            isViewer={isViewer}
-            onImageGenerated={loadImageAssets}
-            onViewGallery={showImagesTab ? handleViewGallery : undefined}
-            onOpenComments={() => openSectionComments("content")}
-            unresolvedCount={sectionCommentCounts.content || 0}
-            onOpenPieceComments={openPieceComments}
-            pieceCommentCounts={pieceCommentCounts}
-          />
+          <>
+            <ContentSection
+              data={campaign.content}
+              error={errors.content}
+              socialPlatforms={campaign.brief?.social_media_platforms || []}
+              isApprovalMode={!isViewer}
+              campaignId={campaign.id}
+              workspaceId={effectiveWorkspaceId}
+              onApprovalSubmitted={load}
+              status={campaign.status}
+              imageAssets={imageAssets}
+              imageGenerationEnabled={imageGenerationEnabled}
+              isViewer={isViewer}
+              onImageGenerated={loadImageAssets}
+              onViewGallery={showImagesTab ? handleViewGallery : undefined}
+              onOpenComments={() => openSectionComments("content")}
+              unresolvedCount={sectionCommentCounts.content || 0}
+              onOpenPieceComments={openPieceComments}
+              pieceCommentCounts={pieceCommentCounts}
+              events={events}
+            />
+            <RefinementAnalytics
+              campaignId={campaign.id}
+              workspaceId={effectiveWorkspaceId}
+              isVisible={true}
+            />
+          </>
         );
       case "images":
         return (
