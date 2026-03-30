@@ -56,12 +56,20 @@ beforeEach(() => {
 const personalWs = {
   id: 'ws-personal', name: 'My Space', is_personal: true, role: 'creator',
   member_count: 1, campaign_count: 2,
+  budget_total: '0.00', actual_total: '0.00', variance_total: '0.00',
   draft_count: 1, in_progress_count: 0, awaiting_approval_count: 0, approved_count: 1,
 };
 const teamWs = {
   id: 'ws-team', name: 'Team Space', is_personal: false, role: 'contributor',
   member_count: 3, campaign_count: 5,
+  budget_total: '5000.00', actual_total: '4200.00', variance_total: '-800.00',
   draft_count: 1, in_progress_count: 2, awaiting_approval_count: 1, approved_count: 1,
+};
+const overBudgetWs = {
+  id: 'ws-over', name: 'Over Budget Space', is_personal: false, role: 'creator',
+  member_count: 2, campaign_count: 1,
+  budget_total: '1000.00', actual_total: '1250.00', variance_total: '250.00',
+  draft_count: 0, in_progress_count: 0, awaiting_approval_count: 0, approved_count: 0,
 };
 
 describe('WorkspaceList – rendering', () => {
@@ -109,6 +117,34 @@ describe('WorkspaceList – rendering', () => {
     const card = screen.getByLabelText('Open workspace Team Space');
     expect(within(card).getByText('3')).toBeInTheDocument(); // member_count
     expect(within(card).getByText('5')).toBeInTheDocument(); // campaign_count
+    expect(within(card).getByText('$5,000.00')).toBeInTheDocument(); // budget_total
+    expect(within(card).getByText('$4,200.00')).toBeInTheDocument(); // actual_total
+    expect(within(card).getByText('-$800.00')).toBeInTheDocument(); // variance_total
+  });
+
+  it('hides budget row when budget information is not present', async () => {
+    await renderWorkspaceList({}, [personalWs]);
+    await waitFor(() => screen.getByText('My Space'));
+
+    const card = screen.getByLabelText('Open workspace My Space');
+    expect(within(card).queryByText('Budget')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Actual')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Variance')).not.toBeInTheDocument();
+  });
+
+  it('color codes budget and actual values', async () => {
+    await renderWorkspaceList({}, [teamWs, overBudgetWs]);
+    await waitFor(() => screen.getByText('Team Space'));
+
+    const underBudgetCard = screen.getByLabelText('Open workspace Team Space');
+    expect(within(underBudgetCard).getByText('$5,000.00')).toHaveClass('ws-finance-value--budget');
+    expect(within(underBudgetCard).getByText('$4,200.00')).toHaveClass('ws-finance-value--actual-good');
+    expect(within(underBudgetCard).getByText('-$800.00')).toHaveClass('ws-finance-value--variance-good');
+
+    const overBudgetCard = screen.getByLabelText('Open workspace Over Budget Space');
+    expect(within(overBudgetCard).getByText('$1,000.00')).toHaveClass('ws-finance-value--budget');
+    expect(within(overBudgetCard).getByText('$1,250.00')).toHaveClass('ws-finance-value--actual-over');
+    expect(within(overBudgetCard).getByText('+$250.00')).toHaveClass('ws-finance-value--variance-over');
   });
 });
 

@@ -11,6 +11,7 @@ simply ``await`` these methods.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import (
@@ -33,6 +34,7 @@ from backend.models.user import CampaignMember, CampaignMemberRole, User, UserRo
 from backend.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from backend.core.exceptions import ConcurrentUpdateError
 from backend.infrastructure.database import (
+    BudgetEntryRow,
     CampaignMemberRow,
     CampaignRow,
     UserRow,
@@ -613,7 +615,7 @@ class CampaignStore:
         *,
         user_id: Optional[str],
         is_admin: bool,
-    ) -> dict[str, dict[str, Optional[str] | int]]:
+    ) -> dict[str, dict[str, Any]]:
         """Return aggregated summary metadata for the given workspaces.
 
         Returned mapping keys are workspace IDs. Each value includes:
@@ -629,7 +631,7 @@ class CampaignStore:
             if user_id is None
             else WorkspaceRole.VIEWER.value
         )
-        result: dict[str, dict[str, Optional[str] | int]] = {
+        result: dict[str, dict[str, Any]] = {
             ws_id: {
                 "role": default_role,
                 "member_count": 0,
@@ -639,6 +641,9 @@ class CampaignStore:
                 "in_progress_count": 0,
                 "awaiting_approval_count": 0,
                 "approved_count": 0,
+                "budget_total": Decimal("0.00"),
+                "actual_total": Decimal("0.00"),
+                "variance_total": Decimal("0.00"),
             }
             for ws_id in unique_ids
         }
@@ -725,6 +730,36 @@ class CampaignStore:
                     result[ws_id]["awaiting_approval_count"] += cnt  # type: ignore[operator]
                 elif status_value in approved_statuses:
                     result[ws_id]["approved_count"] += cnt  # type: ignore[operator]
+
+            budget_totals_rows = await session.execute(
+                select(
+                    CampaignRow.workspace_id,
+                    func.coalesce(
+                        func.sum(BudgetEntryRow.amount).filter(
+                            BudgetEntryRow.entry_type == "planned"
+                        ),
+                        0,
+                    ).label("planned_total"),
+                    func.coalesce(
+                        func.sum(BudgetEntryRow.amount).filter(
+                            BudgetEntryRow.entry_type == "actual"
+                        ),
+                        0,
+                    ).label("actual_total"),
+                )
+                .join(BudgetEntryRow, BudgetEntryRow.campaign_id == CampaignRow.id)
+                .where(CampaignRow.workspace_id.in_(unique_ids))
+                .group_by(CampaignRow.workspace_id)
+            )
+
+            for ws_id, planned_total, actual_total in budget_totals_rows.all():
+                if ws_id is None or ws_id not in result:
+                    continue
+                planned = Decimal(planned_total or 0).quantize(Decimal("0.01"))
+                actual = Decimal(actual_total or 0).quantize(Decimal("0.01"))
+                result[ws_id]["budget_total"] = planned
+                result[ws_id]["actual_total"] = actual
+                result[ws_id]["variance_total"] = (actual - planned).quantize(Decimal("0.01"))
 
         return result
 

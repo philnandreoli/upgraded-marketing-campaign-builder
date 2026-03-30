@@ -217,6 +217,9 @@ class TestListWorkspaces:
         assert items["ws-a"]["campaign_count"] == 2
         assert items["ws-a"]["owner_id"] == _CREATOR_USER.id
         assert items["ws-a"]["owner_display_name"] == _CREATOR_USER.display_name
+        assert items["ws-a"]["budget_total"] == "0.00"
+        assert items["ws-a"]["actual_total"] == "0.00"
+        assert items["ws-a"]["variance_total"] == "0.00"
         assert "created_at" in items["ws-a"]
 
     def test_list_workspaces_supports_pagination(self, _isolated_store, creator_client):

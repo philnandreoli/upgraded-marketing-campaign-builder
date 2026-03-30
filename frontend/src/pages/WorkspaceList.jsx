@@ -84,6 +84,18 @@ function plural(count, singular, pluralForm) {
   return count === 1 ? `${count} ${singular}` : `${count} ${pluralForm ?? singular + "s"}`;
 }
 
+function formatMoney(value, { showSign = false } = {}) {
+  const amount = Number(value ?? 0);
+  const normalized = Number.isFinite(amount) ? amount : 0;
+  return normalized.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: showSign ? "always" : "auto",
+  });
+}
+
 /* ── SummaryStrip ────────────────────────────────────────────────────── */
 
 function SummaryStrip({ workspaces }) {
@@ -135,6 +147,21 @@ function WorkspaceCard({ ws }) {
     (ws.awaiting_approval_count ?? 0) > 0 ||
     (ws.approved_count ?? 0) > 0;
 
+  const budgetTotal = Number(ws.budget_total ?? 0);
+  const actualTotal = Number(ws.actual_total ?? 0);
+  const varianceTotal = Number(ws.variance_total ?? 0);
+  const hasBudgetInfo = budgetTotal !== 0 || actualTotal !== 0 || varianceTotal !== 0;
+  const actualBudgetToneClass =
+    budgetTotal > 0
+      ? (actualTotal > budgetTotal ? "ws-finance-value--actual-over" : "ws-finance-value--actual-good")
+      : "ws-finance-value--actual-neutral";
+  const varianceToneClass =
+    varianceTotal > 0
+      ? "ws-finance-value--variance-over"
+      : varianceTotal < 0
+        ? "ws-finance-value--variance-good"
+        : "ws-finance-value--variance-neutral";
+
   return (
     <Link to={`/workspaces/${ws.id}`} className="ws-card card" aria-label={`Open workspace ${ws.name}`}>
       <div className="ws-card-header">
@@ -167,6 +194,22 @@ function WorkspaceCard({ ws }) {
           <span className="ws-card-stat-label">Campaigns</span>
         </span>
       </div>
+      {hasBudgetInfo && (
+        <div className="ws-card-stats ws-card-finance-stats">
+          <span className="ws-card-stat">
+            <span className="ws-card-stat-value ws-finance-value--budget">{formatMoney(budgetTotal)}</span>
+            <span className="ws-card-stat-label">Budget</span>
+          </span>
+          <span className="ws-card-stat">
+            <span className={`ws-card-stat-value ${actualBudgetToneClass}`}>{formatMoney(actualTotal)}</span>
+            <span className="ws-card-stat-label">Actual</span>
+          </span>
+          <span className="ws-card-stat">
+            <span className={`ws-card-stat-value ${varianceToneClass}`}>{formatMoney(varianceTotal, { showSign: true })}</span>
+            <span className="ws-card-stat-label">Variance</span>
+          </span>
+        </div>
+      )}
       {hasStatusBreakdown && (
         <div className="ws-card-status-breakdown" style={statusBreakdownStyle}>
           {(ws.draft_count ?? 0) > 0 && (
