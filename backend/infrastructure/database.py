@@ -440,6 +440,33 @@ class CampaignCommentRow(Base):
     )
 
 
+class ContentChatMessageRow(Base):
+    """Persists content-approval chat messages for each campaign piece."""
+
+    __tablename__ = "content_chat_messages"
+
+    id = Column(String, primary_key=True)
+    campaign_id = Column(
+        String, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    piece_index = Column(Integer, nullable=False)
+    role = Column(String, nullable=False)  # "user" | "assistant" | "system"
+    content = Column(Text, nullable=False)
+    metadata_json = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_content_chat_messages_campaign_id", "campaign_id"),
+        Index(
+            "ix_content_chat_messages_campaign_piece",
+            "campaign_id",
+            "piece_index",
+            "created_at",
+        ),
+    )
+
+
 class BudgetEntryRow(Base):
     """Persists planned and actual spend entries for campaign budget tracking."""
 
