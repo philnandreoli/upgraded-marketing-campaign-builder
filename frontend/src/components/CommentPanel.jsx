@@ -242,6 +242,45 @@ export default function CommentPanel({
     }
   }, [workspaceId, campaignId, section, contentPieceIndex]);
 
+  const fetchMentionMembers = useCallback(async () => {
+    if (!workspaceId || !campaignId) return;
+    const [campaignMembers, workspaceMembers] = await Promise.all([
+      listCampaignMembers(workspaceId, campaignId),
+      listWorkspaceMembers(workspaceId),
+    ]);
+
+    const seen = new Set();
+    const merged = [];
+    const wsMap = {};
+
+    workspaceMembers.forEach((wm) => {
+      wsMap[wm.user_id] = wm;
+    });
+
+    campaignMembers.forEach((cm) => {
+      if (seen.has(cm.user_id)) return;
+      seen.add(cm.user_id);
+      const ws = wsMap[cm.user_id];
+      merged.push({
+        user_id: cm.user_id,
+        display_name: ws?.display_name || cm.display_name || cm.user_id,
+        email: ws?.email || cm.email || "",
+      });
+    });
+
+    workspaceMembers.forEach((wm) => {
+      if (seen.has(wm.user_id)) return;
+      seen.add(wm.user_id);
+      merged.push({
+        user_id: wm.user_id,
+        display_name: wm.display_name || wm.user_id,
+        email: wm.email || "",
+      });
+    });
+
+    setMembers(merged);
+  }, [workspaceId, campaignId]);
+
   useEffect(() => {
     fetchComments();
   }, [fetchComments]);
@@ -251,7 +290,7 @@ export default function CommentPanel({
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!workspaceId || !campaignId) return;
+    if (!isOpen) return;
     let cancelled = false;
     (async () => {
       try {
@@ -260,30 +299,26 @@ export default function CommentPanel({
           listWorkspaceMembers(workspaceId),
         ]);
         if (cancelled) return;
-        // Build a merged, deduplicated list of mentionable users from both
-        // campaign members and workspace members (who also have access).
+
         const seen = new Set();
         const merged = [];
-
-        // Workspace members have display_name / email — index them for lookup
         const wsMap = {};
+
         workspaceMembers.forEach((wm) => {
           wsMap[wm.user_id] = wm;
         });
 
-        // Add campaign members first (enriched with workspace info)
         campaignMembers.forEach((cm) => {
           if (seen.has(cm.user_id)) return;
           seen.add(cm.user_id);
           const ws = wsMap[cm.user_id];
           merged.push({
             user_id: cm.user_id,
-            display_name: ws?.display_name || cm.user_id,
-            email: ws?.email || "",
+            display_name: ws?.display_name || cm.display_name || cm.user_id,
+            email: ws?.email || cm.email || "",
           });
         });
 
-        // Then add remaining workspace members not already in the list
         workspaceMembers.forEach((wm) => {
           if (seen.has(wm.user_id)) return;
           seen.add(wm.user_id);
@@ -300,7 +335,7 @@ export default function CommentPanel({
       }
     })();
     return () => { cancelled = true; };
-  }, [workspaceId, campaignId]);
+  }, [workspaceId, campaignId, isOpen]);
 
   // ---------------------------------------------------------------------------
   // Mention autocomplete hook for the compose textarea
@@ -329,6 +364,13 @@ export default function CommentPanel({
       backdropRef.current.scrollTop = composeTextareaRef.current.scrollTop;
     }
   }, []);
+
+  const handleComposeKeyDown = useCallback((e) => {
+    if (e.key === "@") {
+      fetchMentionMembers().catch(() => {});
+    }
+    handleMentionKeyDown(e);
+  }, [fetchMentionMembers, handleMentionKeyDown]);
 
   // Build highlighted HTML for the backdrop
   const highlightedBody = useMemo(() => {
@@ -638,7 +680,8 @@ export default function CommentPanel({
               placeholder="Add a comment… (type @ to mention)"
               value={newBody}
               onChange={handleMentionChange}
-              onKeyDown={handleMentionKeyDown}
+              onKeyDown={handleComposeKeyDown}
+              onFocus={() => fetchMentionMembers().catch(() => {})}
               onScroll={handleComposeScroll}
               rows={3}
             />

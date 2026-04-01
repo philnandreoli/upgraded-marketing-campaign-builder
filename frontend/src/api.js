@@ -149,6 +149,15 @@ export const deactivateUser = (userId) =>
 export const reactivateUser = (userId) =>
   request("POST", `/api/admin/users/${encodeURIComponent(userId)}/reactivate`);
 
+export const deactivateWorkspaceAdmin = (workspaceId) =>
+  request("DELETE", `/api/admin/workspaces/${encodeURIComponent(workspaceId)}`);
+
+export const reactivateWorkspaceAdmin = (workspaceId) =>
+  request("POST", `/api/admin/workspaces/${encodeURIComponent(workspaceId)}/reactivate`);
+
+export const listAdminWorkspaces = () =>
+  request("GET", "/api/admin/workspaces");
+
 export const listAllCampaigns = async ({ limit = 50, offset = 0 } = {}) => {
   const params = new URLSearchParams();
   params.set("limit", limit);

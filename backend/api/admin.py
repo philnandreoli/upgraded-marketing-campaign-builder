@@ -8,6 +8,8 @@ Endpoints:
   DELETE /api/admin/users/{user_id}              — Deactivate a user (soft delete)
   POST   /api/admin/users/{user_id}/reactivate   — Reactivate an inactive user
   GET    /api/admin/campaigns                    — List all campaigns (admin view)
+    DELETE /api/admin/workspaces/{workspace_id}    — Deactivate a workspace (soft delete)
+    POST   /api/admin/workspaces/{workspace_id}/reactivate — Reactivate a workspace
   GET    /api/admin/entra/users                  — Search Microsoft Entra ID directory
   POST   /api/admin/users                        — Pre-provision a user from Entra ID
 """
@@ -29,7 +31,7 @@ from backend.config import get_settings
 from backend.models.user import User, UserRole, roles_from_db, roles_to_db
 from backend.infrastructure.auth import require_admin
 from backend.infrastructure.campaign_store import get_campaign_store
-from backend.infrastructure.database import CampaignMemberRow, UserRow, WorkspaceMemberRow, WorkspaceRow, get_db
+from backend.infrastructure.database import CampaignMemberRow, CampaignRow, UserRow, WorkspaceMemberRow, WorkspaceRow, get_db
 from backend.infrastructure.graph import InvalidSearchInputError, search_entra_users
 from backend.core.rate_limit import limiter
 
@@ -513,8 +515,72 @@ class UserWorkspaceDetail(BaseModel):
     workspace_id: str
     workspace_name: str
     is_personal: bool
+    is_active: bool
     role: str
     added_at: datetime
+
+
+class WorkspaceAdminResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str]
+    owner_id: Optional[str]
+    is_personal: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminWorkspaceSummaryResponse(BaseModel):
+    id: str
+    name: str
+    is_personal: bool
+    is_active: bool
+    owner_id: Optional[str] = None
+    owner_display_name: Optional[str] = None
+    member_count: int = 0
+    campaign_count: int = 0
+    created_at: datetime
+
+
+@router.get("/workspaces", response_model=list[AdminWorkspaceSummaryResponse])
+@limiter.limit("60/minute")
+async def list_admin_workspaces(
+    request: Request,
+    response: Response,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminWorkspaceSummaryResponse]:
+    """List all workspaces for admins, including personal workspaces."""
+    stmt = (
+        select(
+            WorkspaceRow,
+            UserRow.display_name.label("owner_display_name"),
+            func.count(func.distinct(WorkspaceMemberRow.user_id)).label("member_count"),
+            func.count(func.distinct(CampaignRow.id)).label("campaign_count"),
+        )
+        .outerjoin(UserRow, WorkspaceRow.owner_id == UserRow.id)
+        .outerjoin(WorkspaceMemberRow, WorkspaceRow.id == WorkspaceMemberRow.workspace_id)
+        .outerjoin(CampaignRow, WorkspaceRow.id == CampaignRow.workspace_id)
+        .group_by(WorkspaceRow.id, UserRow.display_name)
+        .order_by(WorkspaceRow.created_at.desc())
+    )
+
+    rows = (await db.execute(stmt)).all()
+    return [
+        AdminWorkspaceSummaryResponse(
+            id=r.WorkspaceRow.id,
+            name=r.WorkspaceRow.name,
+            is_personal=r.WorkspaceRow.is_personal,
+            is_active=r.WorkspaceRow.is_active,
+            owner_id=r.WorkspaceRow.owner_id,
+            owner_display_name=r.owner_display_name,
+            member_count=int(r.member_count or 0),
+            campaign_count=int(r.campaign_count or 0),
+            created_at=r.WorkspaceRow.created_at,
+        )
+        for r in rows
+    ]
 
 
 @router.get("/users/{user_id}/workspaces", response_model=list[UserWorkspaceDetail])
@@ -544,8 +610,77 @@ async def get_user_workspaces(
             workspace_id=r.WorkspaceRow.id,
             workspace_name=r.WorkspaceRow.name,
             is_personal=r.WorkspaceRow.is_personal,
+            is_active=r.WorkspaceRow.is_active,
             role=r.WorkspaceMemberRow.role,
             added_at=r.WorkspaceMemberRow.added_at,
         )
         for r in results
     ]
+
+
+@router.delete("/workspaces/{workspace_id}", response_model=WorkspaceAdminResponse)
+@limiter.limit("30/minute")
+async def deactivate_workspace(
+    request: Request,
+    response: Response,
+    workspace_id: str,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceAdminResponse:
+    """Soft-delete a workspace by setting is_active=False."""
+    workspace = await db.get(WorkspaceRow, workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    if workspace.is_personal:
+        raise HTTPException(status_code=409, detail="Personal workspaces cannot be deactivated")
+    if not workspace.is_active:
+        raise HTTPException(status_code=409, detail="Workspace is already inactive")
+
+    workspace.is_active = False
+    workspace.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(workspace)
+
+    return WorkspaceAdminResponse(
+        id=workspace.id,
+        name=workspace.name,
+        description=workspace.description,
+        owner_id=workspace.owner_id,
+        is_personal=workspace.is_personal,
+        is_active=workspace.is_active,
+        created_at=workspace.created_at,
+        updated_at=workspace.updated_at,
+    )
+
+
+@router.post("/workspaces/{workspace_id}/reactivate", response_model=WorkspaceAdminResponse)
+@limiter.limit("30/minute")
+async def reactivate_workspace(
+    request: Request,
+    response: Response,
+    workspace_id: str,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceAdminResponse:
+    """Reactivate a workspace by setting is_active=True."""
+    workspace = await db.get(WorkspaceRow, workspace_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    if workspace.is_active:
+        raise HTTPException(status_code=409, detail="Workspace is already active")
+
+    workspace.is_active = True
+    workspace.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(workspace)
+
+    return WorkspaceAdminResponse(
+        id=workspace.id,
+        name=workspace.name,
+        description=workspace.description,
+        owner_id=workspace.owner_id,
+        is_personal=workspace.is_personal,
+        is_active=workspace.is_active,
+        created_at=workspace.created_at,
+        updated_at=workspace.updated_at,
+    )

@@ -28,7 +28,7 @@ vi.mock('../ToastContext', () => ({
   useToast: () => ({ addToast: vi.fn() }),
 }));
 vi.mock('../NotificationContext', () => ({
-  useNotifications: () => ({ notifications: [], dismiss: vi.fn(), dismissAll: vi.fn() }),
+  useNotifications: () => ({ notifications: [], dismiss: vi.fn(), dismissAll: vi.fn(), addEvent: vi.fn() }),
 }));
 
 const WORKSPACE_ID = 'ws-1';
@@ -260,16 +260,41 @@ describe('ContentSection – combined email card', () => {
     expect(screen.getByText(EMAIL_BODY_PIECE.content)).toBeInTheDocument();
   });
 
-  it('shows editable subject and body in approval mode', () => {
+  it('shows rendered preview by default in approval mode and can toggle raw markdown editing', () => {
     renderSection({ data: EMAIL_DATA, isApprovalMode: true, status: 'content_approval' });
-    // Subject input
-    const subjectInput = screen.getByDisplayValue(EMAIL_SUBJECT_PIECE.content);
-    expect(subjectInput).toBeInTheDocument();
-    expect(subjectInput.tagName).toBe('INPUT');
-    // Body textarea
-    const bodyTextarea = screen.getByDisplayValue(EMAIL_BODY_PIECE.content);
-    expect(bodyTextarea).toBeInTheDocument();
-    expect(bodyTextarea.tagName).toBe('TEXTAREA');
+
+    expect(screen.getByText(EMAIL_SUBJECT_PIECE.content)).toBeInTheDocument();
+    expect(screen.getByText(EMAIL_BODY_PIECE.content)).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(EMAIL_SUBJECT_PIECE.content)).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue(EMAIL_BODY_PIECE.content)).not.toBeInTheDocument();
+
+    const editButtons = screen.getAllByRole('button', { name: /edit markdown/i });
+    expect(editButtons).toHaveLength(2);
+
+    fireEvent.click(editButtons[0]);
+    fireEvent.click(editButtons[1]);
+
+    expect(screen.getByDisplayValue(EMAIL_SUBJECT_PIECE.content)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(EMAIL_BODY_PIECE.content)).toBeInTheDocument();
+  });
+
+  it('shows rendered markdown preview for approval-mode content cards', () => {
+    const markdownData = {
+      theme: 'Markdown Approval',
+      tone_of_voice: 'Clear',
+      pieces: [
+        {
+          content_type: 'social_post',
+          content: '## Approval Preview\n\n- First bullet\n- Second bullet',
+        },
+      ],
+    };
+
+    const { container } = renderSection({ data: markdownData, isApprovalMode: true, status: 'content_approval' });
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Approval Preview' })).toBeInTheDocument();
+    expect(screen.getByText('First bullet')).toBeInTheDocument();
+    expect(container.querySelector('.approval-piece-preview ul')).not.toBeNull();
   });
 
   it('shows single set of approve/reject buttons for combined card', () => {
@@ -310,5 +335,25 @@ describe('ContentSection – combined email card', () => {
     expect(screen.getByText(PIECE_WITH_BRIEF.content)).toBeInTheDocument();
     expect(screen.getByText(/📧 Email/)).toBeInTheDocument();
     expect(screen.getByText('Subject')).toBeInTheDocument();
+  });
+
+  it('renders markdown formatting for read-only content pieces', () => {
+    const markdownData = {
+      theme: 'Markdown Campaign',
+      tone_of_voice: 'Clear',
+      pieces: [
+        {
+          content_type: 'body_copy',
+          content: '## Launch Checklist\n\n- Final QA\n- Publish campaign',
+        },
+      ],
+    };
+
+    const { container } = renderSection({ data: markdownData });
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Launch Checklist' })).toBeInTheDocument();
+    expect(screen.getByText('Final QA')).toBeInTheDocument();
+    expect(screen.getByText('Publish campaign')).toBeInTheDocument();
+    expect(container.querySelector('.piece-body ul')).not.toBeNull();
   });
 });
