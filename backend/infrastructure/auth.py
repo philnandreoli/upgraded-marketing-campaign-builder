@@ -132,10 +132,61 @@ async def _provision_user(
 
     Returns the existing or newly-created UserRow.
     """
+    async def ensure_personal_workspace(now: datetime) -> bool:
+        """Ensure the user has a personal workspace and creator membership.
+
+        Returns True when workspace/member rows were created.
+        """
+        ws_result = await db.execute(
+            select(WorkspaceRow).where(
+                WorkspaceRow.owner_id == user_id,
+                WorkspaceRow.is_personal.is_(True),
+            )
+        )
+        workspace_row = ws_result.scalars().first()
+        changed = False
+
+        if workspace_row is None:
+            if display_name:
+                workspace_name = f"{display_name}'s Workspace"
+            elif email:
+                workspace_name = f"{email}'s Workspace"
+            else:
+                workspace_name = "Personal Workspace"
+
+            workspace_row = WorkspaceRow(
+                id=str(uuid.uuid4()),
+                name=workspace_name,
+                owner_id=user_id,
+                is_personal=True,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(workspace_row)
+            await db.flush()
+            changed = True
+            logger.info("Created personal workspace '%s' for user %s", workspace_name, user_id)
+
+        member_row = await db.get(WorkspaceMemberRow, (workspace_row.id, user_id))
+        if member_row is None:
+            db.add(
+                WorkspaceMemberRow(
+                    workspace_id=workspace_row.id,
+                    user_id=user_id,
+                    role=WorkspaceRole.CREATOR.value,
+                    added_at=now,
+                )
+            )
+            changed = True
+            logger.info("Added missing personal-workspace membership for user %s", user_id)
+
+        return changed
+
     result = await db.get(UserRow, user_id)
     if result is not None:
         # Update email / display_name if the JWT now carries claims that
         # were missing (or changed) since the user was first provisioned.
+        now = datetime.utcnow()
         dirty = False
         if email and result.email != email:
             result.email = email
@@ -143,10 +194,13 @@ async def _provision_user(
         if display_name and result.display_name != display_name:
             result.display_name = display_name
             dirty = True
+        workspace_changed = await ensure_personal_workspace(now)
         if dirty:
-            result.updated_at = datetime.utcnow()
+            result.updated_at = now
+        if dirty or workspace_changed:
             await db.commit()
-            logger.info("Updated profile claims for user %s", user_id)
+            if dirty:
+                logger.info("Updated profile claims for user %s", user_id)
         return result
 
     # Determine the role(s): admin if the table is currently empty, else viewer.
@@ -167,34 +221,9 @@ async def _provision_user(
     db.add(new_user)
     await db.flush()
 
-    # Create a personal workspace for the new user.
-    if display_name:
-        workspace_name = f"{display_name}'s Workspace"
-    elif email:
-        workspace_name = f"{email}'s Workspace"
-    else:
-        workspace_name = "Personal Workspace"
-    workspace_row = WorkspaceRow(
-        id=str(uuid.uuid4()),
-        name=workspace_name,
-        owner_id=user_id,
-        is_personal=True,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(workspace_row)
-    await db.flush()
-
-    member_row = WorkspaceMemberRow(
-        workspace_id=workspace_row.id,
-        user_id=user_id,
-        role=WorkspaceRole.CREATOR.value,
-        added_at=now,
-    )
-    db.add(member_row)
+    await ensure_personal_workspace(now)
     await db.commit()
     logger.info("Provisioned new user %s with role %s", user_id, role)
-    logger.info("Created personal workspace '%s' for user %s", workspace_name, user_id)
     return new_user
 
 

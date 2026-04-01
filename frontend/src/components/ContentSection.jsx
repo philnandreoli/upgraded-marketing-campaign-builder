@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { submitContentApproval, updatePieceNotes, updatePieceDecision, generateImageAsset } from "../api";
 import { useConfirm } from "../ConfirmDialogContext";
 import { useToast } from "../ToastContext";
@@ -7,6 +7,7 @@ import ImageAssetCard from "./ImageAssetCard";
 import ContentChatPanel from "./ContentChatPanel";
 import BatchRefinementModal from "./BatchRefinementModal";
 import PresenceIndicator from "./PresenceIndicator";
+import MarkdownRenderer from "./MarkdownRenderer";
 
 const PLATFORM_LABELS = {
   facebook: "Facebook",
@@ -26,10 +27,6 @@ const CONTENT_TYPE_LABELS = {
   email_subject: "Email Subject",
   email_body: "Email Body",
 };
-
-// Stable no-op used as onChange for readOnly textareas to satisfy React's
-// controlled-component contract without recreating a function on every render.
-const noop = () => {};
 
 function detectSocialPlatform(piece, index, socialPlatforms = [], socialPostIndexMap = []) {
   const normalized = `${piece?.notes || ""} ${piece?.content || ""}`.toLowerCase();
@@ -83,22 +80,40 @@ export default function ContentSection({
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [presenceData, setPresenceData] = useState({});
+  const [editingModes, setEditingModes] = useState({});
 
-  const visiblePieces = data?.pieces?.filter(
+  const visiblePieces = useMemo(() => data?.pieces?.filter(
     (piece) => typeof piece?.content === "string" && piece.content.trim().length > 0
-  ) || [];
+  ) || [], [data?.pieces]);
 
   const setEdit = (idx, text) => setEditing((prev) => ({ ...prev, [idx]: text }));
   const setNote = (idx, text) => setNotes((prev) => ({ ...prev, [idx]: text }));
+  const setEditingMode = (key, value) => setEditingModes((prev) => ({ ...prev, [key]: value }));
+
+  const isPieceApproved = useCallback((idx) => {
+    const piece = visiblePieces[idx];
+    if (!piece) return false;
+    return piece.approval_status === "approved" || decisions[idx] === "approved";
+  }, [visiblePieces, decisions]);
 
   const openChatPanel = useCallback((idx) => {
+    if (isPieceApproved(idx)) {
+      addToast({ type: "info", stage: "Locked", message: "Approved content cannot be refined." });
+      return;
+    }
     setChatPieceIndex(idx);
     setIsChatPanelOpen(true);
-  }, []);
+  }, [isPieceApproved, addToast]);
 
   const closeChatPanel = useCallback(() => {
     setIsChatPanelOpen(false);
   }, []);
+
+  const renderApprovalPreview = useCallback((content, className = "piece-body") => (
+    <div className="approval-piece-preview">
+      <MarkdownRenderer content={content} className={className} />
+    </div>
+  ), []);
 
   // Listen for presence_update WebSocket events
   useEffect(() => {
@@ -199,6 +214,10 @@ export default function ContentSection({
   };
 
   const handleGenerateImage = async (pieceIndex) => {
+    if (isPieceApproved(pieceIndex)) {
+      addToast({ type: "info", stage: "Locked", message: "Approved content cannot regenerate images." });
+      return;
+    }
     setGeneratingImages((prev) => ({ ...prev, [pieceIndex]: true }));
     setImageErrors((prev) => ({ ...prev, [pieceIndex]: null }));
     try {
@@ -288,7 +307,7 @@ export default function ContentSection({
 
       {isApprovalMode && (
         <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginBottom: "1rem" }}>
-          Review each content piece below. You can edit the text, then approve or reject each piece individually.
+          Review each content piece below. Cards show a formatted preview by default; open raw markdown only when you need to edit it.
           Rejected pieces will be revised by AI and presented again.
         </p>
       )}
@@ -353,6 +372,8 @@ export default function ContentSection({
               // Reflect local staging decisions in visual state even before final submit
               const effectiveApproved = isAlreadyApproved || currentDecision === "approved";
               const effectiveRejected = isAlreadyRejected || currentDecision === "rejected";
+              const pieceEditKey = `piece-${i}`;
+              const isPieceEditing = Boolean(editingModes[pieceEditKey]);
 
               const borderColor = effectiveApproved
                 ? "var(--color-success)"
@@ -371,6 +392,10 @@ export default function ContentSection({
                 const bodyCurrentDecision = decisions[pairedBodyIndex];
                 const bodyEffectiveApproved = bodyIsAlreadyApproved || bodyCurrentDecision === "approved";
                 const bodyEffectiveRejected = bodyIsAlreadyRejected || bodyCurrentDecision === "rejected";
+                const subjectEditKey = `email-subject-${i}`;
+                const bodyEditKey = `email-body-${pairedBodyIndex}`;
+                const isSubjectEditing = Boolean(editingModes[subjectEditKey]);
+                const isBodyEditing = Boolean(editingModes[bodyEditKey]);
 
                 // Combined card is approved only when both are approved
                 const combinedApproved = effectiveApproved && bodyEffectiveApproved;
@@ -413,7 +438,7 @@ export default function ContentSection({
                             {combinedApproved ? "🔒 Approved" : combinedRejected ? "❌ Rejected" : "⏳ Pending"}
                           </span>
                         )}
-                        {isApprovalMode && (
+                        {isApprovalMode && !combinedApproved && (
                           <button
                             className="chat-refine-btn"
                             onClick={() => openChatPanel(i)}
@@ -446,32 +471,68 @@ export default function ContentSection({
 
                     {/* Subject field */}
                     <div className="email-combined-field">
-                      <label className="email-combined-label">Subject</label>
+                      <div className="approval-field-header">
+                        <label className="email-combined-label">Subject</label>
+                        {isApprovalMode && isPending && !effectiveApproved && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline approval-markdown-toggle"
+                            onClick={() => setEditingMode(subjectEditKey, !isSubjectEditing)}
+                            aria-expanded={isSubjectEditing}
+                          >
+                            {isSubjectEditing ? "Preview" : "Edit Markdown"}
+                          </button>
+                        )}
+                      </div>
                       {isApprovalMode ? (
-                        <input
-                          type="text"
-                          className={`email-combined-subject-input${(!isPending || effectiveApproved) ? " piece-edit-textarea-locked" : ""}`}
-                          value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
-                          onChange={isPending && !effectiveApproved ? (e) => setEdit(i, e.target.value) : noop}
-                          readOnly={!isPending || effectiveApproved}
-                        />
+                        isPending && !effectiveApproved && isSubjectEditing ? (
+                          <input
+                            type="text"
+                            className="email-combined-subject-input"
+                            value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
+                            onChange={(e) => setEdit(i, e.target.value)}
+                          />
+                        ) : (
+                          renderApprovalPreview(editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content), "email-combined-subject-display")
+                        )
                       ) : (
-                        <div className="email-combined-subject-display">{piece.human_edited_content || piece.content}</div>
+                        <MarkdownRenderer
+                          content={piece.human_edited_content || piece.content}
+                          className="email-combined-subject-display"
+                        />
                       )}
                     </div>
 
                     {/* Body field */}
                     <div className="email-combined-field">
-                      <label className="email-combined-label">Body</label>
+                      <div className="approval-field-header">
+                        <label className="email-combined-label">Body</label>
+                        {isApprovalMode && bodyIsPending && !bodyEffectiveApproved && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline approval-markdown-toggle"
+                            onClick={() => setEditingMode(bodyEditKey, !isBodyEditing)}
+                            aria-expanded={isBodyEditing}
+                          >
+                            {isBodyEditing ? "Preview" : "Edit Markdown"}
+                          </button>
+                        )}
+                      </div>
                       {isApprovalMode ? (
-                        <textarea
-                          className={`piece-edit-textarea${(!bodyIsPending || bodyEffectiveApproved) ? " piece-edit-textarea-locked" : ""}`}
-                          value={editing[pairedBodyIndex] !== undefined ? editing[pairedBodyIndex] : (bodyPiece.human_edited_content || bodyPiece.content)}
-                          onChange={bodyIsPending && !bodyEffectiveApproved ? (e) => setEdit(pairedBodyIndex, e.target.value) : noop}
-                          readOnly={!bodyIsPending || bodyEffectiveApproved}
-                        />
+                        bodyIsPending && !bodyEffectiveApproved && isBodyEditing ? (
+                          <textarea
+                            className="piece-edit-textarea"
+                            value={editing[pairedBodyIndex] !== undefined ? editing[pairedBodyIndex] : (bodyPiece.human_edited_content || bodyPiece.content)}
+                            onChange={(e) => setEdit(pairedBodyIndex, e.target.value)}
+                          />
+                        ) : (
+                          renderApprovalPreview(editing[pairedBodyIndex] !== undefined ? editing[pairedBodyIndex] : (bodyPiece.human_edited_content || bodyPiece.content), "piece-body")
+                        )
                       ) : (
-                        <div className="piece-body">{bodyPiece.human_edited_content || bodyPiece.content}</div>
+                        <MarkdownRenderer
+                          content={bodyPiece.human_edited_content || bodyPiece.content}
+                          className="piece-body"
+                        />
                       )}
                     </div>
 
@@ -586,7 +647,7 @@ export default function ContentSection({
                                 asset={latestImage}
                                 workspaceId={workspaceId}
                                 campaignId={campaignId}
-                                canEdit={!isViewer && !(imgPiece.approval_status === "approved" && status === "approved")}
+                                canEdit={!isViewer && !bodyEffectiveApproved}
                                 compact
                                 onRegenerated={onImageGenerated}
                               />
@@ -603,7 +664,7 @@ export default function ContentSection({
                           ) : imgPiece.image_brief ? (
                             <button
                               className="btn btn-sm btn-outline"
-                              disabled={isViewer || !!generatingImages[imgIdx] || (imgPiece.approval_status === "approved" && status === "approved")}
+                              disabled={isViewer || !!generatingImages[imgIdx] || bodyEffectiveApproved}
                               onClick={() => handleGenerateImage(imgIdx)}
                               aria-label={generatingImages[imgIdx] ? `Generating image for piece ${imgIdx + 1}` : `Generate image for piece ${imgIdx + 1}`}
                             >
@@ -648,7 +709,7 @@ export default function ContentSection({
                           {effectiveApproved ? "🔒 Approved" : effectiveRejected ? "❌ Rejected" : "⏳ Pending"}
                         </span>
                       )}
-                      {isApprovalMode && (
+                      {isApprovalMode && !effectiveApproved && (
                         <button
                           className="chat-refine-btn"
                           onClick={() => openChatPanel(i)}
@@ -682,16 +743,33 @@ export default function ContentSection({
                     <div className="piece-platform">📱 Platform: {socialPlatformLabel}</div>
                   )}
 
+                  {isApprovalMode && isPending && !effectiveApproved && (
+                    <div className="approval-field-header approval-field-header--content">
+                      <span className="email-combined-label">Content</span>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline approval-markdown-toggle"
+                        onClick={() => setEditingMode(pieceEditKey, !isPieceEditing)}
+                        aria-expanded={isPieceEditing}
+                      >
+                        {isPieceEditing ? "Preview" : "Edit Markdown"}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Content body: editable textarea for pending pieces, readOnly textarea
                       when approved (locally or server-confirmed) so content stays
                       clearly visible while locked, plain div outside approval mode. */}
                   {isApprovalMode ? (
-                    <textarea
-                      className={`piece-edit-textarea${(!isPending || effectiveApproved) ? " piece-edit-textarea-locked" : ""}`}
-                      value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
-                      onChange={isPending && !effectiveApproved ? (e) => setEdit(i, e.target.value) : noop}
-                      readOnly={!isPending || effectiveApproved}
-                    />
+                    isPending && !effectiveApproved && isPieceEditing ? (
+                      <textarea
+                        className="piece-edit-textarea"
+                        value={editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content)}
+                        onChange={(e) => setEdit(i, e.target.value)}
+                      />
+                    ) : (
+                      renderApprovalPreview(editing[i] !== undefined ? editing[i] : (piece.human_edited_content || piece.content), "piece-body")
+                    )
                   ) : piece.content_type === "headline_cta" ? (
                     (() => {
                       const displayContent = piece.human_edited_content || piece.content;
@@ -700,20 +778,21 @@ export default function ContentSection({
                       const ctaPart = parts[1] || "";
                       return (
                         <div className="piece-body piece-body-headline-cta">
-                          <div className="headline-cta-headline">{headlinePart}</div>
+                          <MarkdownRenderer content={headlinePart} className="headline-cta-headline" />
                           {ctaPart && (
                             <>
                               <div className="headline-cta-divider" />
-                              <div className="headline-cta-cta">{ctaPart}</div>
+                              <MarkdownRenderer content={ctaPart} className="headline-cta-cta" />
                             </>
                           )}
                         </div>
                       );
                     })()
                   ) : (
-                    <div className="piece-body">
-                      {piece.human_edited_content || piece.content}
-                    </div>
+                    <MarkdownRenderer
+                      content={piece.human_edited_content || piece.content}
+                      className="piece-body"
+                    />
                   )}
 
                   {piece.notes && (
@@ -821,7 +900,7 @@ export default function ContentSection({
                               asset={latestImage}
                               workspaceId={workspaceId}
                               campaignId={campaignId}
-                              canEdit={!isViewer && !(piece.approval_status === "approved" && status === "approved")}
+                              canEdit={!isViewer && !effectiveApproved}
                               compact
                               onRegenerated={onImageGenerated}
                             />
@@ -838,7 +917,7 @@ export default function ContentSection({
                         ) : piece.image_brief ? (
                           <button
                             className="btn btn-sm btn-outline"
-                            disabled={isViewer || !!generatingImages[i] || (piece.approval_status === "approved" && status === "approved")}
+                            disabled={isViewer || !!generatingImages[i] || effectiveApproved}
                             onClick={() => handleGenerateImage(i)}
                             aria-label={generatingImages[i] ? `Generating image for piece ${i + 1}` : `Generate image for piece ${i + 1}`}
                           >

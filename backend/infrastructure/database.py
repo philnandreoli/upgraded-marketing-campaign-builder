@@ -233,6 +233,7 @@ class WorkspaceRow(Base):
     description = Column(String, nullable=True)
     owner_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     is_personal = Column(Boolean, nullable=False, default=False)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
 

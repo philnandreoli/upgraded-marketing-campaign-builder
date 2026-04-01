@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
-import { listUsers, updateUserRoles, deactivateUser, reactivateUser, listAllCampaigns, listWorkspaces, searchEntraUsers, provisionUser, getUserWorkspaces, getAdminTemplateAnalytics } from "../api";
+import { listUsers, updateUserRoles, deactivateUser, reactivateUser, listAllCampaigns, listAdminWorkspaces, searchEntraUsers, provisionUser, getUserWorkspaces, getAdminTemplateAnalytics, deactivateWorkspaceAdmin, reactivateWorkspaceAdmin } from "../api";
 import WorkspaceBadge from "../components/WorkspaceBadge.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { useConfirm } from "../ConfirmDialogContext";
@@ -126,6 +126,8 @@ export default function Admin() {
   const [usersError, setUsersError] = useState(null);
   const [campaignsError, setCampaignsError] = useState(null);
   const [workspacesError, setWorkspacesError] = useState(null);
+  const [workspaceActionError, setWorkspaceActionError] = useState(null);
+  const [workspaceActionLoading, setWorkspaceActionLoading] = useState({});
   const [deactivateError, setDeactivateError] = useState(null);
   const [reactivateError, setReactivateError] = useState(null);
   const [activeTab, setActiveTab] = useState("users");
@@ -197,7 +199,7 @@ export default function Admin() {
     setLoadingWorkspaces(true);
     setWorkspacesError(null);
     try {
-      setWorkspaces(await listWorkspaces());
+      setWorkspaces(await listAdminWorkspaces());
     } catch (err) {
       setWorkspacesError(err.message);
     } finally {
@@ -286,6 +288,46 @@ export default function Admin() {
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: true } : u)));
     } catch (err) {
       setReactivateError(err.message);
+    }
+  };
+
+  const handleDeactivateWorkspace = async (workspaceId, workspaceName) => {
+    const confirmed = await confirm({
+      title: "Deactivate workspace?",
+      message: `Deactivate '${workspaceName}'? Members will no longer see it in their workspace list.`,
+      confirmLabel: "Deactivate",
+      destructive: true,
+    });
+    if (!confirmed) return;
+    setWorkspaceActionError(null);
+    setWorkspaceActionLoading((prev) => ({ ...prev, [workspaceId]: true }));
+    try {
+      await deactivateWorkspaceAdmin(workspaceId);
+      setWorkspaces((prev) => prev.map((ws) => (ws.id === workspaceId ? { ...ws, is_active: false } : ws)));
+    } catch (err) {
+      setWorkspaceActionError(err.message);
+    } finally {
+      setWorkspaceActionLoading((prev) => ({ ...prev, [workspaceId]: false }));
+    }
+  };
+
+  const handleReactivateWorkspace = async (workspaceId, workspaceName) => {
+    const confirmed = await confirm({
+      title: "Reactivate workspace?",
+      message: `Reactivate '${workspaceName}'? Members will regain access.`,
+      confirmLabel: "Reactivate",
+      destructive: false,
+    });
+    if (!confirmed) return;
+    setWorkspaceActionError(null);
+    setWorkspaceActionLoading((prev) => ({ ...prev, [workspaceId]: true }));
+    try {
+      await reactivateWorkspaceAdmin(workspaceId);
+      setWorkspaces((prev) => prev.map((ws) => (ws.id === workspaceId ? { ...ws, is_active: true } : ws)));
+    } catch (err) {
+      setWorkspaceActionError(err.message);
+    } finally {
+      setWorkspaceActionLoading((prev) => ({ ...prev, [workspaceId]: false }));
     }
   };
 
@@ -925,11 +967,16 @@ export default function Admin() {
             </div>
           ) : (
             <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              {workspaceActionError && (
+                <div style={{ padding: "0.65rem 1rem", color: "var(--color-danger)", borderBottom: "1px solid var(--color-border)" }}>
+                  Workspace action failed: {workspaceActionError}
+                </div>
+              )}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                      {["Name", "Owner", "Members", "Campaigns", "Type", "Created"].map((h) => (
+                      {["Name", "Owner", "Members", "Campaigns", "Type", "Status", "Created", "Actions"].map((h) => (
                         <th
                           key={h}
                           style={{
@@ -976,8 +1023,49 @@ export default function Admin() {
                             </span>
                           )}
                         </td>
+                        <td style={{ padding: "0.6rem 1rem" }}>
+                          <span
+                            className="badge"
+                            style={{
+                              background: ws.is_active === false ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.14)",
+                              color: ws.is_active === false ? "var(--color-danger)" : "var(--color-success)",
+                              fontSize: "0.7rem",
+                            }}
+                          >
+                            {ws.is_active === false ? "Inactive" : "Active"}
+                          </span>
+                        </td>
                         <td style={{ padding: "0.6rem 1rem", color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
                           {formatDate(ws.created_at)}
+                        </td>
+                        <td style={{ padding: "0.6rem 1rem" }}>
+                          {ws.is_personal ? (
+                            <span style={{ color: "var(--color-text-dim)", fontSize: "0.75rem" }}>Not allowed</span>
+                          ) : ws.is_active === false ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline"
+                              disabled={!!workspaceActionLoading[ws.id]}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReactivateWorkspace(ws.id, ws.name);
+                              }}
+                            >
+                              {workspaceActionLoading[ws.id] ? "Working…" : "Reactivate"}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-danger"
+                              disabled={!!workspaceActionLoading[ws.id]}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeactivateWorkspace(ws.id, ws.name);
+                              }}
+                            >
+                              {workspaceActionLoading[ws.id] ? "Working…" : "Deactivate"}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

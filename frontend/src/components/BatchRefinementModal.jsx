@@ -27,6 +27,22 @@ const STATUS_ICONS = {
   failed: "❌",
 };
 
+function formatChannelLabel(channel) {
+  if (!channel) return "";
+  return String(channel)
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getChannelClassSuffix(channel) {
+  if (!channel) return "default";
+  const normalized = String(channel)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "default";
+}
+
 // ---------------------------------------------------------------------------
 // BatchRefinementModal
 // ---------------------------------------------------------------------------
@@ -255,8 +271,11 @@ export default function BatchRefinementModal({
               <p className="batch-modal-empty">No eligible pieces — all pieces are already approved.</p>
             )}
             {eligiblePieces.map(({ piece, idx }) => {
-              const preview = (piece.content || "").slice(0, 80) + ((piece.content || "").length > 80 ? "…" : "");
+              const sourceContent = piece.human_edited_content || piece.content || "";
+              const preview = sourceContent.slice(0, 140) + (sourceContent.length > 140 ? "…" : "");
               const typeLabel = CONTENT_TYPE_LABELS[piece.content_type] || piece.content_type;
+              const channelLabel = formatChannelLabel(piece.channel);
+              const channelBadgeClass = `batch-modal-piece-channel-badge batch-modal-piece-channel-badge--${getChannelClassSuffix(piece.channel)}`;
               return (
                 <label key={idx} className="batch-modal-piece-row">
                   <input
@@ -266,8 +285,10 @@ export default function BatchRefinementModal({
                     disabled={submitting}
                   />
                   <span className="batch-modal-piece-info">
-                    <span className="batch-modal-piece-type">{typeLabel}</span>
-                    {piece.channel && <span className="batch-modal-piece-channel">· {piece.channel}</span>}
+                    <span className="batch-modal-piece-meta">
+                      <span className="batch-modal-piece-type">{typeLabel}</span>
+                      {piece.channel && <span className={channelBadgeClass}>{channelLabel}</span>}
+                    </span>
                     <span className="batch-modal-piece-preview">{preview}</span>
                   </span>
                 </label>

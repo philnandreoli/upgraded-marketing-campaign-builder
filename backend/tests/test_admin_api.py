@@ -21,7 +21,7 @@ from backend.main import app
 from backend.models.campaign import Campaign, CampaignBrief
 from backend.models.user import User, UserRole
 from backend.infrastructure.auth import get_current_user
-from backend.infrastructure.database import Base, CampaignMemberRow, UserRow, get_db
+from backend.infrastructure.database import Base, CampaignMemberRow, UserRow, WorkspaceRow, WorkspaceMemberRow, get_db
 from backend.tests.mock_store import InMemoryCampaignStore
 
 _ADMIN_USER = User(
@@ -494,6 +494,156 @@ class TestReactivateUser:
 
         r = await client.post("/api/admin/users/u1/reactivate")
         assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Workspace deactivate/reactivate (admin)
+# ---------------------------------------------------------------------------
+
+
+class TestWorkspaceAdminLifecycle:
+    async def test_admin_list_workspaces_includes_personal_and_team(self, admin_client, db_session):
+        client, _ = admin_client
+        now = datetime.utcnow()
+        db_session.add(_make_user_row("owner-a", email="a@example.com", display_name="Owner A"))
+        db_session.add(_make_user_row("owner-b", email="b@example.com", display_name="Owner B"))
+        db_session.add(
+            WorkspaceRow(
+                id="ws-personal-a",
+                name="Owner A Personal",
+                description=None,
+                owner_id="owner-a",
+                is_personal=True,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db_session.add(
+            WorkspaceRow(
+                id="ws-team-b",
+                name="Team B",
+                description=None,
+                owner_id="owner-b",
+                is_personal=False,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await db_session.commit()
+
+        r = await client.get("/api/admin/workspaces")
+        assert r.status_code == 200
+        ids = {w["id"] for w in r.json()}
+        assert "ws-personal-a" in ids
+        assert "ws-team-b" in ids
+
+    async def test_deactivates_workspace(self, admin_client, db_session):
+        client, _ = admin_client
+        now = datetime.utcnow()
+        db_session.add(
+            WorkspaceRow(
+                id="ws-1",
+                name="Team Workspace",
+                description=None,
+                owner_id="u1",
+                is_personal=False,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await db_session.commit()
+
+        r = await client.delete("/api/admin/workspaces/ws-1")
+        assert r.status_code == 200
+        assert r.json()["is_active"] is False
+
+        row = await db_session.get(WorkspaceRow, "ws-1")
+        await db_session.refresh(row)
+        assert row.is_active is False
+
+    async def test_reactivates_workspace(self, admin_client, db_session):
+        client, _ = admin_client
+        now = datetime.utcnow()
+        db_session.add(
+            WorkspaceRow(
+                id="ws-2",
+                name="Inactive Workspace",
+                description=None,
+                owner_id="u1",
+                is_personal=False,
+                is_active=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await db_session.commit()
+
+        r = await client.post("/api/admin/workspaces/ws-2/reactivate")
+        assert r.status_code == 200
+        assert r.json()["is_active"] is True
+
+        row = await db_session.get(WorkspaceRow, "ws-2")
+        await db_session.refresh(row)
+        assert row.is_active is True
+
+    async def test_personal_workspace_cannot_be_deactivated(self, admin_client, db_session):
+        client, _ = admin_client
+        now = datetime.utcnow()
+        db_session.add(
+            WorkspaceRow(
+                id="ws-personal",
+                name="Personal",
+                description=None,
+                owner_id="u1",
+                is_personal=True,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        await db_session.commit()
+
+        r = await client.delete("/api/admin/workspaces/ws-personal")
+        assert r.status_code == 409
+
+    async def test_returns_404_when_workspace_missing(self, admin_client):
+        client, _ = admin_client
+        r = await client.delete("/api/admin/workspaces/missing")
+        assert r.status_code == 404
+
+    async def test_user_workspace_detail_includes_is_active(self, admin_client, db_session):
+        client, _ = admin_client
+        now = datetime.utcnow()
+        db_session.add(_make_user_row("u1", email="u1@example.com"))
+        db_session.add(
+            WorkspaceRow(
+                id="ws-a",
+                name="Workspace A",
+                description=None,
+                owner_id="u1",
+                is_personal=False,
+                is_active=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db_session.add(
+            WorkspaceMemberRow(
+                workspace_id="ws-a",
+                user_id="u1",
+                role="creator",
+                added_at=now,
+            )
+        )
+        await db_session.commit()
+
+        r = await client.get("/api/admin/users/u1/workspaces")
+        assert r.status_code == 200
+        data = r.json()
+        assert data[0]["is_active"] is False
 
 
 # ---------------------------------------------------------------------------

@@ -199,6 +199,70 @@ class TestProvisionUser:
         workspaces = result.scalars().all()
         assert len(workspaces) == 1
 
+    async def test_existing_user_gets_personal_workspace_if_missing(self, db_session):
+        """Pre-existing users are backfilled with a personal workspace on login."""
+        from sqlalchemy import select as sa_select
+
+        now = datetime.utcnow()
+        db_session.add(
+            UserRow(
+                id="legacy-user",
+                email="legacy@example.com",
+                display_name="Legacy User",
+                role="viewer",
+                created_at=now,
+                updated_at=now,
+                is_active=True,
+            )
+        )
+        await db_session.commit()
+
+        await _provision_user(db_session, "legacy-user", "legacy@example.com", "Legacy User")
+
+        result = await db_session.execute(
+            sa_select(WorkspaceRow).where(WorkspaceRow.owner_id == "legacy-user", WorkspaceRow.is_personal.is_(True))
+        )
+        ws = result.scalars().first()
+        assert ws is not None
+
+    async def test_existing_user_personal_workspace_restores_missing_membership(self, db_session):
+        """If personal workspace exists but membership row is missing, provisioning restores it."""
+        from sqlalchemy import select as sa_select
+
+        now = datetime.utcnow()
+        db_session.add(
+            UserRow(
+                id="legacy-no-member",
+                email="legacy2@example.com",
+                display_name="Legacy Two",
+                role="viewer",
+                created_at=now,
+                updated_at=now,
+                is_active=True,
+            )
+        )
+        workspace = WorkspaceRow(
+            id="legacy-ws-id",
+            name="Legacy Two's Workspace",
+            owner_id="legacy-no-member",
+            is_personal=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db_session.add(workspace)
+        await db_session.commit()
+
+        await _provision_user(db_session, "legacy-no-member", "legacy2@example.com", "Legacy Two")
+
+        member_result = await db_session.execute(
+            sa_select(WorkspaceMemberRow).where(
+                WorkspaceMemberRow.workspace_id == "legacy-ws-id",
+                WorkspaceMemberRow.user_id == "legacy-no-member",
+            )
+        )
+        member = member_result.scalars().first()
+        assert member is not None
+
 
 # ---------------------------------------------------------------------------
 # validate_token — deactivated user check

@@ -169,6 +169,24 @@ class TestListWorkspaces:
         assert "ws-a" in ids
         assert "ws-b" in ids
 
+    def test_admin_cannot_see_other_users_personal_workspaces(self, _isolated_store, admin_client):
+        _isolated_store._workspaces["ws-admin-personal"] = _make_workspace(
+            "ws-admin-personal", "Admin Personal", _ADMIN_USER.id, is_personal=True
+        )
+        _isolated_store._workspaces["ws-other-personal"] = _make_workspace(
+            "ws-other-personal", "Other Personal", _CREATOR_USER.id, is_personal=True
+        )
+        _isolated_store._workspaces["ws-team"] = _make_workspace(
+            "ws-team", "Team WS", _CREATOR_USER.id, is_personal=False
+        )
+
+        r = admin_client.get("/api/workspaces")
+        assert r.status_code == 200
+        ids = [w["id"] for w in r.json()]
+        assert "ws-admin-personal" in ids
+        assert "ws-team" in ids
+        assert "ws-other-personal" not in ids
+
     def test_workspace_summary_includes_role(self, _isolated_store, creator_client):
         _isolated_store._workspaces["ws-a"] = _make_workspace("ws-a", "WS A", _CREATOR_USER.id)
         _isolated_store._workspace_members[("ws-a", _CREATOR_USER.id)] = "creator"
@@ -177,6 +195,22 @@ class TestListWorkspaces:
         assert r.status_code == 200
         ws = next(w for w in r.json() if w["id"] == "ws-a")
         assert ws["role"] == "creator"
+
+    def test_list_restores_personal_workspace_membership_when_missing(self, _isolated_store, creator_client):
+        _isolated_store._workspaces["ws-personal"] = _make_workspace(
+            "ws-personal", "Personal", _CREATOR_USER.id, is_personal=True
+        )
+        # Simulate a provisioning/membership race: personal workspace exists
+        # but membership row is missing.
+        _isolated_store._workspace_members.pop(("ws-personal", _CREATOR_USER.id), None)
+
+        r = creator_client.get("/api/workspaces")
+        assert r.status_code == 200
+        items = r.json()
+        assert len(items) == 1
+        assert items[0]["id"] == "ws-personal"
+        assert items[0]["is_personal"] is True
+        assert _isolated_store._workspace_members[("ws-personal", _CREATOR_USER.id)] == "creator"
 
     def test_list_uses_bounded_workspace_summary_aggregation(self, _isolated_store, creator_client):
         from backend.models.campaign import Campaign, CampaignBrief

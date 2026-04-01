@@ -493,6 +493,7 @@ class CampaignStore:
             description=workspace.description,
             owner_id=workspace.owner_id,
             is_personal=workspace.is_personal,
+            is_active=workspace.is_active,
             created_at=now,
             updated_at=now,
         )
@@ -1282,6 +1283,7 @@ class CampaignStore:
             description=row.description,
             owner_id=row.owner_id,
             is_personal=row.is_personal,
+            is_active=row.is_active,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

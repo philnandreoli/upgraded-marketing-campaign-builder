@@ -12,6 +12,7 @@ import { useToast } from "../ToastContext";
 import QuickActionChips from "./QuickActionChips";
 import ContentDiffView from "./ContentDiffView";
 import ContentScoreBadge from "./ContentScoreBadge";
+import MarkdownRenderer from "./MarkdownRenderer";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,6 +42,34 @@ function formatRelativeTime(dateStr) {
   return `${days}d ago`;
 }
 
+function parseSuggestionPayload(rawContent) {
+  if (!rawContent || typeof rawContent !== "string") return null;
+  try {
+    const parsed = JSON.parse(rawContent);
+    if (!parsed || !Array.isArray(parsed.suggestions)) return null;
+    return parsed.suggestions
+      .map((item) => {
+        if (typeof item === "string") {
+          return { title: item, description: "", instruction: item };
+        }
+        return {
+          title: item?.title || item?.instruction || "Suggestion",
+          description: item?.description || "",
+          instruction: item?.instruction || item?.title || "",
+        };
+      })
+      .filter((s) => s.instruction);
+  } catch {
+    return null;
+  }
+}
+
+function isRenderableChatMessage(message) {
+  if (!message || !message.role) return false;
+  if (message.role === "system") return false;
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // ChatMessage — renders a single message bubble
 // ---------------------------------------------------------------------------
@@ -59,7 +88,7 @@ function ChatMessage({ message, onApply, onRevert, onApprove, isLatestAssistant 
       data-testid="chat-message"
     >
       <div className="chat-panel-message-bubble">
-        <div className="chat-panel-message-text">{message.content}</div>
+        <MarkdownRenderer content={message.content} className="chat-panel-message-text" />
         <div className="chat-panel-message-time">{formatRelativeTime(message.created_at)}</div>
       </div>
 
@@ -142,6 +171,7 @@ export default function ContentChatPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [versions, setVersions] = useState([]);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState(null);
@@ -155,6 +185,7 @@ export default function ContentChatPanel({
   const processedEventsRef = useRef(new Set());
 
   const pieceTypeLabel = CONTENT_TYPE_LABELS[piece?.content_type] || piece?.content_type || "Content";
+  const visibleSuggestions = showAllSuggestions ? suggestions : suggestions.slice(0, 2);
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -166,7 +197,8 @@ export default function ContentChatPanel({
     setError(null);
     try {
       const data = await getContentChatHistory(workspaceId, campaignId, pieceIndex);
-      setMessages(Array.isArray(data) ? data : data?.messages ?? []);
+      const rawMessages = Array.isArray(data) ? data : data?.messages ?? [];
+      setMessages(rawMessages.filter(isRenderableChatMessage));
     } catch (err) {
       setError(err.message || "Failed to load chat history.");
     } finally {
@@ -180,6 +212,7 @@ export default function ContentChatPanel({
       const data = await getContentChatSuggestions(workspaceId, campaignId, pieceIndex);
       setSuggestions(Array.isArray(data) ? data : data?.suggestions ?? []);
       setShowSuggestions(true);
+      setShowAllSuggestions(false);
     } catch {
       // Suggestions are non-critical — silently ignore errors
     }
@@ -244,16 +277,22 @@ export default function ContentChatPanel({
       if (kind === "chat_stream_end" && evt.piece_index === pieceIndex) {
         const finalContent = streamingContent + (evt.token ?? evt.content ?? "");
         if (finalContent) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: evt.message_id || `msg-${Date.now()}`,
-              role: "assistant",
-              content: finalContent,
-              created_at: evt.timestamp || new Date().toISOString(),
-              metadata: evt.metadata ?? {},
-            },
-          ]);
+          const parsedSuggestions = parseSuggestionPayload(finalContent);
+          if (parsedSuggestions?.length) {
+            setSuggestions(parsedSuggestions);
+            setShowSuggestions(true);
+          } else {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: evt.message_id || `msg-${Date.now()}`,
+                role: "assistant",
+                content: finalContent,
+                created_at: evt.timestamp || new Date().toISOString(),
+                metadata: evt.metadata ?? {},
+              },
+            ]);
+          }
         }
         setStreamingContent("");
         setStreamingMessageId(null);
@@ -297,10 +336,19 @@ export default function ContentChatPanel({
 
       // Add assistant response
       if (response) {
+        const assistantContent = response.revised_content || response.content || response.message || response.refined_content || "";
+        const parsedSuggestions = parseSuggestionPayload(assistantContent);
+        if (parsedSuggestions?.length) {
+          setSuggestions(parsedSuggestions);
+          setShowSuggestions(true);
+          setShowAllSuggestions(false);
+          return;
+        }
+
         const assistantMsg = {
           id: response.id || response.message_id || `assistant-${Date.now()}`,
           role: "assistant",
-          content: response.content || response.message || response.refined_content || "",
+          content: assistantContent,
           created_at: response.created_at || new Date().toISOString(),
           metadata: response.metadata ?? {},
         };
@@ -492,8 +540,10 @@ export default function ContentChatPanel({
                 ✕
               </button>
             </div>
-            <div className="chat-panel-suggestions-chips">
-              {suggestions.slice(0, 3).map((suggestion, idx) => {
+            <div
+              className="chat-panel-suggestions-chips"
+            >
+              {visibleSuggestions.map((suggestion, idx) => {
                 const title = typeof suggestion === "string" ? suggestion : suggestion.title || suggestion.instruction;
                 return (
                   <button
@@ -507,6 +557,17 @@ export default function ContentChatPanel({
                   </button>
                 );
               })}
+              {suggestions.length > 2 && (
+                <button
+                  type="button"
+                  className="chat-panel-suggestion-chip chat-panel-suggestion-chip--toggle"
+                  onClick={() => setShowAllSuggestions((prev) => !prev)}
+                  aria-expanded={showAllSuggestions}
+                  aria-label={showAllSuggestions ? "Show fewer suggestions" : `Show ${suggestions.length - 2} more suggestions`}
+                >
+                  {showAllSuggestions ? "−" : `+${suggestions.length - 2}`}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -546,7 +607,7 @@ export default function ContentChatPanel({
           {streamingMessageId && streamingContent && (
             <div className="chat-panel-message chat-panel-message--assistant" data-testid="chat-streaming">
               <div className="chat-panel-message-bubble">
-                <div className="chat-panel-message-text">{streamingContent}</div>
+                <MarkdownRenderer content={streamingContent} className="chat-panel-message-text" />
                 <div className="chat-panel-message-time">
                   <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
                 </div>

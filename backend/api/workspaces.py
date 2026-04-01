@@ -114,6 +114,7 @@ class WorkspaceResponse(BaseModel):
     description: Optional[str]
     owner_id: str
     is_personal: bool
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 
@@ -122,6 +123,7 @@ class WorkspaceSummary(BaseModel):
     id: str
     name: str
     is_personal: bool
+    is_active: bool = True
     role: str  # the current user's role in this workspace
     member_count: int = 0
     campaign_count: int = 0
@@ -181,6 +183,17 @@ async def list_workspaces(
     store = get_campaign_store()
     if user is not None:
         workspaces = await store.list_workspaces(user.id, is_admin=user.is_admin)
+
+        # Safety net: if a user owns a personal workspace but lacks membership,
+        # re-link membership and include that workspace so first login doesn't
+        # render an empty workspace list.
+        if not user.is_admin and len(workspaces) == 0 and hasattr(store, "get_personal_workspace"):
+            personal_workspace = await store.get_personal_workspace(user.id)
+            if personal_workspace is not None:
+                member_role = await store.get_workspace_member_role(personal_workspace.id, user.id)
+                if member_role is None and hasattr(store, "add_workspace_member"):
+                    await store.add_workspace_member(personal_workspace.id, user.id, WorkspaceRole.CREATOR)
+                workspaces = [personal_workspace]
     else:
         workspaces = await store.list_workspaces("local", is_admin=True)
 
@@ -195,6 +208,11 @@ async def list_workspaces(
 
     result: list[WorkspaceSummary] = []
     for ws in workspaces:
+        if not ws.is_active and not (user is not None and user.is_admin):
+            continue
+        # Personal workspaces are private and should only be visible to their owner.
+        if user is not None and ws.is_personal and ws.owner_id != user.id:
+            continue
         summary = summary_map.get(ws.id)
         if summary is not None:
             role_str = str(summary.get("role", WorkspaceRole.VIEWER.value))
@@ -241,6 +259,7 @@ async def list_workspaces(
                 id=ws.id,
                 name=ws.name,
                 is_personal=ws.is_personal,
+                is_active=ws.is_active,
                 role=role_str,
                 member_count=member_count,
                 campaign_count=campaign_count,
@@ -289,7 +308,7 @@ async def get_workspace(
     """Get workspace details. Requires workspace membership or admin."""
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
-    if workspace is None:
+    if workspace is None or not workspace.is_active:
         raise HTTPException(status_code=404, detail="Workspace not found")
     await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
     return _workspace_to_response(workspace)
@@ -304,7 +323,7 @@ async def update_workspace(
     """Update workspace name or description. Requires CREATOR role or admin."""
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
-    if workspace is None:
+    if workspace is None or not workspace.is_active:
         raise HTTPException(status_code=404, detail="Workspace not found")
     await _authorize_workspace(workspace_id, user, WorkspaceAction.WRITE, store)
     try:
@@ -327,7 +346,7 @@ async def delete_workspace(
     Campaigns belonging to the workspace are orphaned (not deleted)."""
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
-    if workspace is None:
+    if workspace is None or not workspace.is_active:
         raise HTTPException(status_code=404, detail="Workspace not found")
     await _authorize_workspace(workspace_id, user, WorkspaceAction.DELETE, store)
     if workspace.is_personal:
@@ -354,7 +373,7 @@ async def get_workspace_calendar(
     """
     store = get_campaign_store()
     workspace = await store.get_workspace(workspace_id)
-    if workspace is None:
+    if workspace is None or not workspace.is_active:
         raise HTTPException(status_code=404, detail="Workspace not found")
     await _authorize_workspace(workspace_id, user, WorkspaceAction.READ, store)
 
@@ -456,6 +475,7 @@ def _workspace_to_response(workspace: Workspace) -> WorkspaceResponse:
         description=workspace.description,
         owner_id=workspace.owner_id,
         is_personal=workspace.is_personal,
+        is_active=workspace.is_active,
         created_at=workspace.created_at,
         updated_at=workspace.updated_at,
     )

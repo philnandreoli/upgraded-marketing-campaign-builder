@@ -36,6 +36,7 @@ class Workspace(BaseModel):
     description: Optional[str] = Field(default=None, description="Optional description of the workspace.")
     owner_id: str = Field(description="ID of the user who owns this workspace (FK to users.id).")
     is_personal: bool = Field(default=False, description="True for auto-created personal workspaces.")
+    is_active: bool = Field(default=True, description="False when the workspace has been deactivated by an admin.")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
